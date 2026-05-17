@@ -23,7 +23,7 @@ class _ChatInputState extends State<ChatInput> {
     if (text.isEmpty) return;
     
     // ChatProviderを取得して送信
-    context.read<ChatProvider>().sendMessage(text);
+    context.read<ChatProvider>().sendUserMessage(text);
     
     // 入力欄をクリア
     _controller.clear();

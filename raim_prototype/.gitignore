@@ -1,3 +1,7 @@
+# ============================================
+# 既存のFlutter用ignore（そのまま残す）
+# ============================================
+
 # Miscellaneous
 *.class
 *.log
@@ -17,11 +21,6 @@ migrate_working_dir/
 *.ipr
 *.iws
 .idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
 
 # Flutter/Dart/Pub related
 **/doc/api/
@@ -43,3 +42,69 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Windows
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugin_registrant.h
+windows/flutter/generated_plugins.cmake
+
+# ============================================
+# Unity プロジェクト用 ignore
+# ============================================
+
+# Unity の自動生成フォルダ（unity/ 配下のすべてのプロジェクトに適用）
+unity/**/[Ll]ibrary/
+unity/**/[Tt]emp/
+unity/**/[Oo]bj/
+unity/**/[Bb]uild/
+unity/**/[Bb]uilds/
+unity/**/[Ll]ogs/
+unity/**/[Uu]ser[Ss]ettings/
+unity/**/[Mm]emoryCaptures/
+unity/**/[Rr]ecordings/
+
+# Visual Studio cache
+unity/**/.vs/
+
+# Gradle cache
+unity/**/.gradle/
+
+# Auto-generated solution/project files
+unity/**/*.csproj
+unity/**/*.unityproj
+unity/**/*.sln
+unity/**/*.suo
+unity/**/*.tmp
+unity/**/*.user
+unity/**/*.userprefs
+unity/**/*.pidb
+unity/**/*.booproj
+unity/**/*.svd
+unity/**/*.pdb
+unity/**/*.mdb
+unity/**/*.opendb
+unity/**/*.VC.db
+
+# Unity meta files
+unity/**/*.pidb.meta
+unity/**/*.pdb.meta
+unity/**/*.mdb.meta
+
+# Crash reports
+unity/**/sysinfo.txt
+
+# Unity Builds
+unity/**/*.apk
+unity/**/*.aab
+unity/**/*.unitypackage
+unity/**/*.app
+
+# Crashlytics
+unity/**/crashlytics-build.properties
+
+# Packed Addressables
+unity/**/[Aa]ssets/[Aa]ddressable[Aa]ssets[Dd]ata/*/*.bin*
+
+# Auto-generated Android Assets
+unity/**/[Aa]ssets/[Ss]treamingAssets/aa.meta
+unity/**/[Aa]ssets/[Ss]treamingAssets/aa/*
