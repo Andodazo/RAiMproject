@@ -28,15 +28,23 @@ class ChatProvider extends ChangeNotifier {
       role: MessageRole.user,
       timestamp: DateTime.now(),
     ));
-    notifyListeners();  // UIに「変わったよ」と通知
+    notifyListeners();
     
     // 2. ローディング開始
     _isLoading = true;
     notifyListeners();
     
-    // 3. LLMサービスを呼ぶ
+    // 3. LLMサービスを呼ぶ（履歴を渡す）
     try {
-      final LLMResponse response = await _llmService.sendMessage(text);
+      // 直近10往復だけ送る（ユーザー＋AI×10ペア = 20件）
+      final recentHistory = _messages.length > 21
+          ? _messages.sublist(_messages.length - 21, _messages.length - 1)
+          : _messages.sublist(0, _messages.length - 1);
+      
+      final LLMResponse response = await _llmService.sendMessage(
+        text,
+        history: recentHistory,
+      );
       
       // 4. LLM応答を履歴に追加
       _messages.add(Message(
@@ -47,14 +55,12 @@ class ChatProvider extends ChangeNotifier {
         intensity: response.intensity,
       ));
     } catch (e) {
-      // エラー時は仮のメッセージを表示
       _messages.add(Message(
         text: "エラーが発生しました: $e",
         role: MessageRole.assistant,
         timestamp: DateTime.now(),
       ));
     } finally {
-      // 5. ローディング終了
       _isLoading = false;
       notifyListeners();
     }

@@ -14,7 +14,9 @@ class RaimApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => ChatProvider(MockLLMService()),
+      // create: (_) => ChatProvider(MockLLMService()), // Mockの場合
+      create: (_) => ChatProvider(OllamaService()), // Ollamaの場合
+      // create: (_) => ChatProvider(OllamaService(baseUrl: 'http://100.x.x.x:11434')), //Tailscale経由で接続する場合
       child: MaterialApp(
         title: 'RAiM',
         theme: ThemeData(
