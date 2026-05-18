@@ -1,21 +1,14 @@
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
-// 1. just_audio を削除し、audioplayers に変更
 import 'package:audioplayers/audioplayers.dart';
 
 /// VOICEVOX を使った TTS サービス（audioplayers 版）
 class TTSService {
   final String baseUrl;
-  final int speakerId;
   
-  // 2. audioplayers のインスタンス
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  
-  TTSService({
-    this.baseUrl = 'http://localhost:50021',
-    this.speakerId = 8,  // 春日部つむぎ
-    // VOICEVOX 女性キャラクター話者IDリスト（標準スタイル）
-  // --- 前回のリスト ---
+  // ==========================================
+  // VOICEVOX 女性キャラクター話者IDリスト（標準スタイル）
+  // ==========================================
   //  2 : 四国めたん (はっきりした芯のある声)
   //  3 : ずんだもん (元気な少女声)
   //  8 : 春日部つむぎ (元気なギャル風)
@@ -27,7 +20,7 @@ class TTSService {
   // 47 : ナースロボ＿タイプＴ (少しミステリアスなロボ声)
   // 54 : 夜桜よる (クールで知的なお姉さん声)
   //
-  // --- 追加分（定番＆東北ファミリー） ---
+  // --- 定番＆東北ファミリー ---
   // 11 : 東北ずん子 (おっとりしたお姉さん声)
   // 12 : 東北きりたん (しっかりものの妹系ボイス)
   // 13 : 東北イタコ (セクシーな気風のいいお姉さん声)
@@ -39,11 +32,17 @@ class TTSService {
   // 52 : 夜語トバリ (ダウナーで落ち着いた大人の女性声)
   // 53 : ぞん子 (エネルギッシュでサイバー感のある声)
   //
-  // --- 追加分（最新・追加キャラクター） ---
+  // --- 最新・追加キャラクター ---
   // 66 : ユーレイちゃん (少しハスキーで儚げな声)
   // 74 : ミタマ (和風でミステリアスな少女声)
   // 76 : 里石ユカ (ナチュラルで親しみやすい女性声)
-  final int speakerId;
+  final int speakerId; 
+  
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  
+  TTSService({
+    this.baseUrl = 'http://localhost:50021',
+    this.speakerId = 8,  // ← 別の声にしたい時は、ここ数値を上のリストのIDに変えてね！
   });
   
   Future<void> initialize() async {
@@ -83,7 +82,6 @@ class TTSService {
       // Step 3: WAVバイナリを audioplayers で再生
       final Uint8List audioData = synthesisResponse.bodyBytes;
       
-      // 【変更点】BytesSource を使って直接メモリから再生します
       await _audioPlayer.play(BytesSource(audioData));
       
       print('TTS発話: $text');
