@@ -3,15 +3,19 @@ import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/models/llm_response.dart';
 import 'package:raim_prototype/services/llm_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
+import 'package:raim_prototype/services/tts_service.dart';  // ←追加
 
 class ChatProvider extends ChangeNotifier {
   final LLMService _llmService;
   final UnityCommunicator _unityBridge;
+  final TTSService _ttsService = TTSService();  // ←追加
   
   final List<Message> _messages = [];
   bool _isLoading = false;
   
-  ChatProvider(this._llmService, this._unityBridge);
+  ChatProvider(this._llmService, this._unityBridge) {
+    _ttsService.initialize();  // ←追加（コンストラクタ内で初期化）
+  }
   
   List<Message> get messages => List.unmodifiable(_messages);
   bool get isLoading => _isLoading;
@@ -45,11 +49,15 @@ class ChatProvider extends ChangeNotifier {
         intensity: response.intensity,
       ));
       
+      // Unity に感情パラメータ送信
       _unityBridge.sendEmotion(
         text: response.text,
         emotion: response.emotion,
         intensity: response.intensity,
       );
+      
+      // ★ TTSで応答を読み上げ ★
+      _ttsService.speak(response.text);
       
     } catch (e) {
       _messages.add(Message(
