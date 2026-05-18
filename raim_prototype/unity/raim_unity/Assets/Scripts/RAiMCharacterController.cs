@@ -9,8 +9,9 @@ public class RAiMCharacterController : MonoBehaviour
     // Inspector から設定するフィールド
     // ========================================
     
-    [Header("WebSocket設定")]
+    [Header("WebSocket設定（Windows版のみ使用）")]
     [SerializeField] private string serverUrl = "ws://localhost:8765";
+    [SerializeField] private bool useWebSocket = true;  // Windows ビルド時のみ true
     
     [Header("表情スプライト")]
     [SerializeField] private Sprite defaultSprite;
@@ -49,18 +50,58 @@ public class RAiMCharacterController : MonoBehaviour
             { "angry", angrySprite },
             { "surprised", surprisedSprite },
             { "neutral", defaultSprite },
-            { "caring", defaultSprite },  // caring は default にフォールバック
+            { "caring", defaultSprite },
         };
         
         // 初期表情を default に
         spriteRenderer.sprite = defaultSprite;
         
-        // WebSocket 接続開始
-        await ConnectWebSocket();
+        // モバイルプラットフォームの場合はWebSocket無効化
+#if UNITY_ANDROID || UNITY_IOS
+        useWebSocket = false;
+        Debug.Log("モバイルプラットフォーム検出: WebSocket無効、flutter_embed_unity 経由で受信");
+#endif
+        
+        // Windows版の場合はWebSocket接続
+        if (useWebSocket)
+        {
+            await ConnectWebSocket();
+        }
     }
     
     // ========================================
-    // WebSocket 接続
+    // ★ Flutter (flutter_embed_unity) から呼ばれるメソッド
+    // ========================================
+    
+    /// <summary>
+    /// Flutter 側から sendToUnity("character", "ReceiveEmotion", "happy") で呼ばれる
+    /// </summary>
+    public void ReceiveEmotion(string emotion)
+    {
+        Debug.Log($"Flutter から受信: emotion={emotion}");
+        ChangeEmotion(emotion);
+    }
+    
+    /// <summary>
+    /// Flutter 側から JSON 全体を渡す場合用
+    /// JSON 例: {"text":"...","emotion":"happy","intensity":0.8}
+    /// </summary>
+    public void ReceiveMessage(string json)
+    {
+        Debug.Log($"Flutter から受信: {json}");
+        try
+        {
+            var data = JsonUtility.FromJson<EmotionMessage>(json);
+            ChangeEmotion(data.emotion);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"JSON パースエラー: {e.Message}");
+        }
+    }
+    
+    // ========================================
+    // WebSocket 接続（Windows版のみ）
     // ========================================
     
     async System.Threading.Tasks.Task ConnectWebSocket()
@@ -85,18 +126,14 @@ public class RAiMCharacterController : MonoBehaviour
         websocket.OnMessage += (bytes) =>
         {
             string message = System.Text.Encoding.UTF8.GetString(bytes);
-            Debug.Log($"受信: {message}");
-            HandleMessage(message);
+            Debug.Log($"WebSocket 受信: {message}");
+            HandleWebSocketMessage(message);
         };
         
         await websocket.Connect();
     }
     
-    // ========================================
-    // 受信メッセージ処理
-    // ========================================
-    
-    void HandleMessage(string json)
+    void HandleWebSocketMessage(string json)
     {
         try
         {
@@ -105,9 +142,13 @@ public class RAiMCharacterController : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError($"JSON パースエラー: {e.Message}");
+            Debug.LogError($"WebSocket JSON パースエラー: {e.Message}");
         }
     }
+    
+    // ========================================
+    // 共通：emotion で Sprite 切り替え
+    // ========================================
     
     void ChangeEmotion(string emotion)
     {
@@ -118,20 +159,22 @@ public class RAiMCharacterController : MonoBehaviour
         }
         else
         {
-            // 未知の感情は default にフォールバック
             spriteRenderer.sprite = defaultSprite;
             Debug.LogWarning($"未知の感情: {emotion} → default にフォールバック");
         }
     }
     
     // ========================================
-    // 毎フレーム処理（WebSocket メッセージ受信のため必要）
+    // 毎フレーム処理（WebSocket メッセージ受信のため、Windows版のみ必要）
     // ========================================
     
     void Update()
     {
 #if !UNITY_WEBGL || UNITY_EDITOR
-        websocket?.DispatchMessageQueue();
+        if (useWebSocket && websocket != null)
+        {
+            websocket.DispatchMessageQueue();
+        }
 #endif
     }
     

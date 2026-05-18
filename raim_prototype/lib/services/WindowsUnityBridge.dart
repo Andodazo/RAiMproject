@@ -1,32 +1,28 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';                      // ← これを追加
-import 'package:shelf/shelf.dart';
+import 'dart:io';
+import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-/// Unity との通信を担当するブリッジ
+/// Windows 版での Unity 通信実装
 /// 
 /// FlutterはWebSocketサーバーとして動作し、Unityがクライアントとして接続する
-/// Flutterから感情パラメータを送信すると、Unity側で立ち絵が切り替わる
-class UnityBridge {
+class WindowsUnityBridge implements UnityCommunicator {
   final int port;
   
-  // 接続中のクライアント（Unity）を保持
   final Set<WebSocketChannel> _clients = {};
-  
   HttpServer? _server;
   
-  UnityBridge({this.port = 8765});
+  WindowsUnityBridge({this.port = 8765});
   
-  /// WebSocketサーバーを起動
+  @override
   Future<void> start() async {
     final handler = webSocketHandler((WebSocketChannel webSocket, _) {
       print('Unity 接続: ${_clients.length + 1}台目');
       _clients.add(webSocket);
       
-      // クライアントからのメッセージを受信（今は使わないが将来用）
       webSocket.stream.listen(
         (message) {
           print('Unity から受信: $message');
@@ -46,7 +42,7 @@ class UnityBridge {
     print('WebSocketサーバー起動: ws://localhost:$port');
   }
   
-  /// 全クライアントに感情パラメータを送信
+  @override
   void sendEmotion({
     required String text,
     required String emotion,
@@ -70,7 +66,7 @@ class UnityBridge {
     print('送信: $message (${_clients.length}台に配信)');
   }
   
-  /// サーバー停止
+  @override
   Future<void> stop() async {
     for (final client in _clients) {
       await client.sink.close();

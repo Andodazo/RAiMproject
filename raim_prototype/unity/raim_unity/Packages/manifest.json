@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "com.endel.nativewebsocket": "https://github.com/endel/NativeWebSocket.git#upm",
+    "com.learntoflutter.flutter_embed_unity_2022_3": "https://github.com/learntoflutter/flutter_embed_unity.git?path=example_unity_2022_3_project/Assets/FlutterEmbed",
     "com.unity.collab-proxy": "2.12.4",
     "com.unity.feature.2d": "2.0.0",
     "com.unity.ide.rider": "3.0.28",
