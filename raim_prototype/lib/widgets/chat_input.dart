@@ -22,33 +22,70 @@ class _ChatInputState extends State<ChatInput> {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     
-    // ChatProviderを取得して送信
     context.read<ChatProvider>().sendUserMessage(text);
-    
-    // 入力欄をクリア
     _controller.clear();
   }
   
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(12),
       child: Row(
         children: [
           Expanded(
             child: TextField(
               controller: _controller,
-              decoration: const InputDecoration(
+              // ★ テキスト色を白に
+              style: const TextStyle(color: Colors.white, fontSize: 15),
+              cursorColor: Colors.white,
+              decoration: InputDecoration(
                 hintText: '何でも話してね',
-                border: OutlineInputBorder(),
+                // ★ ヒント色を薄い白に
+                hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                // ★ 背景を半透明白で塗る
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.15),
+                // ★ 枠線を白系に
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide(
+                    color: Colors.white.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(
+                    color: Colors.white,
+                    width: 1.5,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
               ),
               onSubmitted: (_) => _sendMessage(),
             ),
           ),
           const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.send),
-            onPressed: _sendMessage,
+          // ★ 送信ボタンを目立つように
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF8BC34A),  // ライムグリーン
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.send, color: Colors.white),
+              onPressed: _sendMessage,
+            ),
           ),
         ],
       ),

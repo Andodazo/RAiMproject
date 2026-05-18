@@ -2,16 +2,15 @@ import 'package:flutter/foundation.dart';
 import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/models/llm_response.dart';
 import 'package:raim_prototype/services/llm_service.dart';
-import 'package:raim_prototype/services/unity_bridge.dart';  // ←追加
+import 'package:raim_prototype/services/unity_communicator.dart';
 
 class ChatProvider extends ChangeNotifier {
   final LLMService _llmService;
-  final UnityBridge _unityBridge;  // ←追加
+  final UnityCommunicator _unityBridge;
   
   final List<Message> _messages = [];
   bool _isLoading = false;
   
-  // コンストラクタで両方受け取る
   ChatProvider(this._llmService, this._unityBridge);
   
   List<Message> get messages => List.unmodifiable(_messages);
@@ -46,7 +45,6 @@ class ChatProvider extends ChangeNotifier {
         intensity: response.intensity,
       ));
       
-      // ★ Unity に感情パラメータを送信 ★
       _unityBridge.sendEmotion(
         text: response.text,
         emotion: response.emotion,
