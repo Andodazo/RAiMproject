@@ -111,3 +111,18 @@ unity/**/[Aa]ssets/[Aa]ddressable[Aa]ssets[Dd]ata/*/*.bin*
 # Auto-generated Android Assets
 unity/**/[Aa]ssets/[Ss]treamingAssets/aa.meta
 unity/**/[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# ============================================
+# flutter_embed_unity が生成する unityLibrary
+# ============================================
+
+# Android: Unity Export で生成される、各自再生成するべきフォルダ
+android/unityLibrary/
+android/.gradle/
+
+# iOS: 同じく Unity Export 後に生成される
+ios/UnityFramework/
+ios/UnityLibrary/
+
+# Unity Export の生成ログ
+unity/**/*Build*.log
