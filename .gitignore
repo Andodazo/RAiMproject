@@ -1,128 +1,87 @@
 # ============================================
-# 既存のFlutter用ignore（そのまま残す）
+# Flutter 自動生成物の完全網羅(追記、2026/05/19)
 # ============================================
 
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
+# Build 関連(再強化、**/ で全階層対応)
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
 
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
+# Android Flutter 自動生成物
+**/android/.gradle/
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/gradle/wrapper/gradle-wrapper.jar
+**/android/local.properties
+**/android/key.properties
+**/android/app/release/
+**/android/app/profile/
+**/android/app/debug/
+**/android/**/GeneratedPluginRegistrant.java
+**/android/**/GeneratedPluginRegistrant.kt
+**/android/.idea/
 
-# Flutter/Dart/Pub related
-**/doc/api/
+# iOS Flutter 自動生成物
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
 **/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
-/coverage/
+**/ios/ServiceDefinitions.json
+**/ios/.symlinks/
+**/ios/Pods/
+**/ios/**/xcuserdata/
+**/ios/**/*.xcuserstate
+**/ios/Runner/GeneratedPluginRegistrant.*
 
-# Symbolication related
-app.*.symbols
+# Windows Flutter 自動生成物
+**/windows/flutter/ephemeral/
+**/windows/flutter/generated_plugin_registrant.cc
+**/windows/flutter/generated_plugin_registrant.h
+**/windows/flutter/generated_plugins.cmake
+**/windows/.vs/
+**/windows/build/
 
-# Obfuscation related
-app.*.map.json
+# macOS Flutter 自動生成物
+**/macos/Flutter/ephemeral/
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Pods/
+**/macos/**/xcuserdata/
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+# Linux Flutter 自動生成物
+**/linux/flutter/ephemeral/
+**/linux/flutter/generated_plugin_registrant.cc
+**/linux/flutter/generated_plugin_registrant.h
+**/linux/flutter/generated_plugins.cmake
+**/linux/build/
 
-# Windows
-windows/flutter/generated_plugin_registrant.cc
-windows/flutter/generated_plugin_registrant.h
-windows/flutter/generated_plugins.cmake
+# Web Flutter 自動生成物
+**/web/build/
 
-# ============================================
-# Unity プロジェクト用 ignore
-# ============================================
+# CMake キャッシュ(プラットフォーム横断)
+**/CMakeCache.txt
+**/CMakeFiles/
+**/cmake_install.cmake
 
-# Unity の自動生成フォルダ（unity/ 配下のすべてのプロジェクトに適用）
-unity/**/[Ll]ibrary/
-unity/**/[Tt]emp/
-unity/**/[Oo]bj/
-unity/**/[Bb]uild/
-unity/**/[Bb]uilds/
-unity/**/[Ll]ogs/
-unity/**/[Uu]ser[Ss]ettings/
-unity/**/[Mm]emoryCaptures/
-unity/**/[Rr]ecordings/
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
 
-# バックアップフォルダ
-unity/raim_unity_backup/
+# IDE 個人設定(再強化)
+**/.idea/
+**/.vscode/launch.json
+**/.vscode/settings.json
+**/*.iml
 
-# Visual Studio cache
-unity/**/.vs/
-
-# Gradle cache
-unity/**/.gradle/
-
-# Auto-generated solution/project files
-unity/**/*.csproj
-unity/**/*.unityproj
-unity/**/*.sln
-unity/**/*.suo
-unity/**/*.tmp
-unity/**/*.user
-unity/**/*.userprefs
-unity/**/*.pidb
-unity/**/*.booproj
-unity/**/*.svd
-unity/**/*.pdb
-unity/**/*.mdb
-unity/**/*.opendb
-unity/**/*.VC.db
-
-# Unity meta files
-unity/**/*.pidb.meta
-unity/**/*.pdb.meta
-unity/**/*.mdb.meta
-
-# Crash reports
-unity/**/sysinfo.txt
-
-# Unity Builds
-unity/**/*.apk
-unity/**/*.aab
-unity/**/*.unitypackage
-unity/**/*.app
-
-# Crashlytics
-unity/**/crashlytics-build.properties
-
-# Packed Addressables
-unity/**/[Aa]ssets/[Aa]ddressable[Aa]ssets[Dd]ata/*/*.bin*
-
-# Auto-generated Android Assets
-unity/**/[Aa]ssets/[Ss]treamingAssets/aa.meta
-unity/**/[Aa]ssets/[Ss]treamingAssets/aa/*
-
-# ============================================
-# flutter_embed_unity が生成する unityLibrary
-# ============================================
-
-# Android: Unity Export で生成される、各自再生成するべきフォルダ
-android/unityLibrary/
-android/.gradle/
-
-# iOS: 同じく Unity Export 後に生成される
-ios/UnityFramework/
-ios/UnityLibrary/
-
-# Unity Export の生成ログ
-unity/**/*Build*.log
+# Tailscale / ローカル設定ファイル
+.env
+.env.local
