@@ -85,3 +85,132 @@ Thumbs.db
 # Tailscale / ローカル設定ファイル
 .env
 .env.local
+
+# ============================================
+# 既存のFlutter用ignore（そのまま残す）
+# ============================================
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Windows
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugin_registrant.h
+windows/flutter/generated_plugins.cmake
+
+# ============================================
+# Unity プロジェクト用 ignore
+# ============================================
+
+# Unity の自動生成フォルダ（unity/ 配下のすべてのプロジェクトに適用）
+unity/**/[Ll]ibrary/
+unity/**/[Tt]emp/
+unity/**/[Oo]bj/
+unity/**/[Bb]uild/
+unity/**/[Bb]uilds/
+unity/**/[Ll]ogs/
+unity/**/[Uu]ser[Ss]ettings/
+unity/**/[Mm]emoryCaptures/
+unity/**/[Rr]ecordings/
+
+# バックアップフォルダ
+unity/raim_unity_backup/
+
+# Visual Studio cache
+unity/**/.vs/
+
+# Gradle cache
+unity/**/.gradle/
+
+# Auto-generated solution/project files
+unity/**/*.csproj
+unity/**/*.unityproj
+unity/**/*.sln
+unity/**/*.suo
+unity/**/*.tmp
+unity/**/*.user
+unity/**/*.userprefs
+unity/**/*.pidb
+unity/**/*.booproj
+unity/**/*.svd
+unity/**/*.pdb
+unity/**/*.mdb
+unity/**/*.opendb
+unity/**/*.VC.db
+
+# Unity meta files
+unity/**/*.pidb.meta
+unity/**/*.pdb.meta
+unity/**/*.mdb.meta
+
+# Crash reports
+unity/**/sysinfo.txt
+
+# Unity Builds
+unity/**/*.apk
+unity/**/*.aab
+unity/**/*.unitypackage
+unity/**/*.app
+
+# Crashlytics
+unity/**/crashlytics-build.properties
+
+# Packed Addressables
+unity/**/[Aa]ssets/[Aa]ddressable[Aa]ssets[Dd]ata/*/*.bin*
+
+# Auto-generated Android Assets
+unity/**/[Aa]ssets/[Ss]treamingAssets/aa.meta
+unity/**/[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# ============================================
+# flutter_embed_unity が生成する unityLibrary
+# ============================================
+
+# Android: Unity Export で生成される、各自再生成するべきフォルダ
+android/unityLibrary/
+android/.gradle/
+
+# iOS: 同じく Unity Export 後に生成される
+ios/UnityFramework/
+ios/UnityLibrary/
+
+# Unity Export の生成ログ
+unity/**/*Build*.log
