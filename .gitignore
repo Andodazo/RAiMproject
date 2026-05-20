@@ -1,4 +1,92 @@
 # ============================================
+# Flutter 自動生成物の完全網羅(追記、2026/05/19)
+# ============================================
+
+# Build 関連(再強化、**/ で全階層対応)
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+
+# Android Flutter 自動生成物
+**/android/.gradle/
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/gradle/wrapper/gradle-wrapper.jar
+**/android/local.properties
+**/android/key.properties
+**/android/app/release/
+**/android/app/profile/
+**/android/app/debug/
+**/android/**/GeneratedPluginRegistrant.java
+**/android/**/GeneratedPluginRegistrant.kt
+**/android/.idea/
+
+# iOS Flutter 自動生成物
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/.last_build_id
+**/ios/ServiceDefinitions.json
+**/ios/.symlinks/
+**/ios/Pods/
+**/ios/**/xcuserdata/
+**/ios/**/*.xcuserstate
+**/ios/Runner/GeneratedPluginRegistrant.*
+
+# Windows Flutter 自動生成物
+**/windows/flutter/ephemeral/
+**/windows/flutter/generated_plugin_registrant.cc
+**/windows/flutter/generated_plugin_registrant.h
+**/windows/flutter/generated_plugins.cmake
+**/windows/.vs/
+**/windows/build/
+
+# macOS Flutter 自動生成物
+**/macos/Flutter/ephemeral/
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Pods/
+**/macos/**/xcuserdata/
+
+# Linux Flutter 自動生成物
+**/linux/flutter/ephemeral/
+**/linux/flutter/generated_plugin_registrant.cc
+**/linux/flutter/generated_plugin_registrant.h
+**/linux/flutter/generated_plugins.cmake
+**/linux/build/
+
+# Web Flutter 自動生成物
+**/web/build/
+
+# CMake キャッシュ(プラットフォーム横断)
+**/CMakeCache.txt
+**/CMakeFiles/
+**/cmake_install.cmake
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE 個人設定(再強化)
+**/.idea/
+**/.vscode/launch.json
+**/.vscode/settings.json
+**/*.iml
+
+# Tailscale / ローカル設定ファイル
+.env
+.env.local
+
+# ============================================
 # 既存のFlutter用ignore（そのまま残す）
 # ============================================
 
