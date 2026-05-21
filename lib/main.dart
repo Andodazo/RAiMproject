@@ -40,8 +40,8 @@ class RaimApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       // create: (_) => ChatProvider(MockLLMService(), unityBridge), // Mockの場合
-      create: (_) => ChatProvider(OllamaService(), unityBridge), // Ollamaの場合
-      // create: (_) => ChatProvider(OllamaService(baseUrl: 'http://100.x.x.x:11434'), unityBridge), // Tailscale経由
+      //create: (_) => ChatProvider(OllamaService(), unityBridge), Ollamaの場合
+      create: (_) => ChatProvider(OllamaService(baseUrl: 'http://100.81.35.109:11434'), unityBridge), // Tailscale経由
       child: MaterialApp(
         title: 'RAiM',
         theme: ThemeData(

@@ -24,3 +24,6 @@ plugins {
 }
 
 include(":app")
+// === flutter_embed_unity 追加 ===
+include(":unityLibrary")
+project(":unityLibrary").projectDir = file("./unityLibrary")
