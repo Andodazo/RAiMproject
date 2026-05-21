@@ -151,8 +151,6 @@ unity/**/[Uu]ser[Ss]ettings/
 unity/**/[Mm]emoryCaptures/
 unity/**/[Rr]ecordings/
 
-# バックアップフォルダ
-unity/raim_unity_backup/
 
 # Visual Studio cache
 unity/**/.vs/
