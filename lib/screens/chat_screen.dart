@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_embed_unity/flutter_embed_unity.dart';
@@ -70,6 +71,10 @@ class ChatScreen extends StatelessWidget {
   /// 
   /// Q3.C の方針: 下寄せ・縦長で配置、頭が見切れないよう上に余白
   Widget _buildCharacterLayer(BuildContext context) {
+        /// ガラス風のカメラ・マイクボタン
+        ///
+        /// 内部処理はまだ入れない。
+        /// EmbedUnity方式は変更せず、UIボタンだけを重ねる。
     final size = MediaQuery.of(context).size;
     
     if (_isMobile) {
@@ -92,6 +97,76 @@ class ChatScreen extends StatelessWidget {
       );
     }
   }
+
+   Widget _buildGlassActionButtons(BuildContext context) {
+          final safeTop = MediaQuery.of(context).padding.top;
+
+          return Positioned(
+            top: safeTop + 70,
+            right: 24,
+            child: IgnorePointer(
+              ignoring: false,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _glassButton(
+                    icon: Icons.camera_alt_rounded,
+                    onTap: () {
+                      // TODO: カメラ処理はまだ入れない
+                    },
+                  ),
+                  const SizedBox(width: 14),
+                  _glassButton(
+                    icon: Icons.mic_rounded,
+                    onTap: () {
+                      // TODO: 音声入力処理はまだ入れない
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+          /// ガラス風ボタン本体
+        Widget _glassButton({
+  required IconData icon,
+  required VoidCallback onTap,
+}) {
+  return Material(
+    color: Colors.transparent,
+    child: InkWell(
+      onTap: () {
+        debugPrint('camera button tapped');
+      // TODO: カメラ処理はまだ入れない
+      },
+      child: Container(
+        width: 72,
+        height: 72,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.18),
+            width: 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Icon(
+          icon,
+          color: Colors.white.withValues(alpha: 0.75),
+          size: 34,
+        ),
+      ),
+    ),
+  );
+}
   
   /// Unity からのメッセージハンドラ
   /// 
@@ -128,6 +203,9 @@ class ChatScreen extends StatelessWidget {
         // Layer 2: キャラクター(Unity または立ち絵)
         // ====================================================
         _buildCharacterLayer(context),
+
+         // カメラ・音声入力ボタン
+        _buildGlassActionButtons(context),
         
         // ====================================================
         // Layer 3: UI オーバーレイ
@@ -220,6 +298,7 @@ class ChatScreen extends StatelessWidget {
         _buildBackground(),
         _buildBackgroundOverlay(),
         _buildCharacterLayer(context),
+        _buildGlassActionButtons(context),
         
         // 左上タイトル
         Positioned(
@@ -233,7 +312,9 @@ class ChatScreen extends StatelessWidget {
               fontWeight: FontWeight.bold,
               letterSpacing: 2,
               shadows: [
-                Shadow(blurRadius: 12, color: Colors.black.withOpacity(0.8)),
+                Shadow(
+                blurRadius: 12, 
+                color: Colors.black.withOpacity(0.8)),
               ],
             ),
           ),
