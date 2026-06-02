@@ -98,75 +98,274 @@ class ChatScreen extends StatelessWidget {
     }
   }
 
-   Widget _buildGlassActionButtons(BuildContext context) {
-          final safeTop = MediaQuery.of(context).padding.top;
+   
+    /// 参考UI風の上部ヘッダー
+  ///
+  /// EmbedUnity方式は変更せず、FlutterのUIとして上に重ねる。
+  Widget _buildReferenceTopBar(BuildContext context) {
+    final safeTop = MediaQuery.of(context).padding.top;
 
-          return Positioned(
-            top: safeTop + 70,
-            right: 24,
-            child: IgnorePointer(
-              ignoring: false,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _glassButton(
-                    icon: Icons.camera_alt_rounded,
-                    onTap: () {
-                      // TODO: カメラ処理はまだ入れない
-                    },
+    return Positioned(
+      top: safeTop + 60,//上部三つのボタンの位置を変える
+      left: 24,
+      right: 24,
+      child: Row(
+        children: [
+          _glassMenuButton(context),
+          const SizedBox(width: 12),
+
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
+                child: Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      width: 1,
+                    ),
                   ),
-                  const SizedBox(width: 14),
-                  _glassButton(
-                    icon: Icons.mic_rounded,
-                    onTap: () {
-                      // TODO: 音声入力処理はまだ入れない
-                    },
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        color: Colors.white70,
+                        size: 18,
+                      ),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '新しい会話',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: Colors.white70,
+                        size: 22,
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
-          );
-        }
-
-          /// ガラス風ボタン本体
-        Widget _glassButton({
-  required IconData icon,
-  required VoidCallback onTap,
-}) {
-  return Material(
-    color: Colors.transparent,
-    child: InkWell(
-      onTap: () {
-        debugPrint('camera button tapped');
-      // TODO: カメラ処理はまだ入れない
-      },
-      child: Container(
-        width: 72,
-        height: 72,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.18),
-            width: 1.0,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
+
+          const SizedBox(width: 12),
+
+          ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () {
+                  debugPrint('[ChatScreen] CAPTUREボタンが押されました');
+                },
+                child: Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      width: 1,
+                    ),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.camera_alt_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'CAPTURE',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+Widget _glassMenuButton(BuildContext context) {
+  return PopupMenuButton<String>(
+    tooltip: 'メニュー',
+    color: Colors.black.withValues(alpha: 0.88),
+    offset: const Offset(0, 56),
+    onSelected: (value) {
+      if (value == 'settings') {
+        debugPrint('[ChatScreen] 設定が押されました');
+      }
+    },
+    itemBuilder: (context) => const [
+      PopupMenuItem(
+        value: 'settings',
+        child: Row(
+          children: [
+            Icon(Icons.settings_rounded, color: Colors.white70),
+            SizedBox(width: 12),
+            Text('設定', style: TextStyle(color: Colors.white)),
           ],
         ),
-        child: Icon(
-          icon,
-          color: Colors.white.withValues(alpha: 0.75),
-          size: 34,
-        ),
       ),
-    ),
+    ],
+    child: _glassSmallButtonVisual(icon: Icons.menu_rounded),
   );
 }
+
+  Widget _glassSmallButtonVisual({
+    required IconData icon,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 1.4, sigmaY: 1.4),
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.16),
+              width: 1,
+            ),
+          ),
+          child: Icon(
+            icon,
+            color: Colors.white.withValues(alpha: 0.82),
+            size: 24,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 下部の丸い操作ボタン
+  ///
+  /// 設定・音量・マイクを表示する。
+  Widget _buildReferenceBottomButtons(BuildContext context) {
+    final safeTop = MediaQuery.of(context).padding.top;
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+
+    return Positioned(
+      // ★変更: RAiM の文字に被らないように下へ移動
+      top: safeTop - 500,
+      left: 0,
+      right: -280,
+      bottom: safeBottom + 92,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const SizedBox(width: 18),
+          _glassLargeButton(
+            icon: Icons.volume_up_rounded,
+            onTap: () {
+              debugPrint('[ChatScreen] 音量ボタンが押されました');
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 小さいガラス風ボタン
+  Widget _glassSmallButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 1.4, sigmaY: 1.4),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(24),
+            onTap: onTap,
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.16),
+                  width: 1,
+                ),
+              ),
+              child: Icon(
+                icon,
+                color: Colors.white.withValues(alpha: 0.82),
+                size: 24,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 少し大きいガラス風ボタン
+  Widget _glassLargeButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 1.6, sigmaY: 1.6),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(28),
+            onTap: onTap,
+            child: Container(
+              width: 64,
+              height: 54,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  width: 1,
+                ),
+              ),
+              child: Icon(
+                icon,
+                color: Colors.white.withValues(alpha: 0.88),
+                size: 28,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
   
   /// Unity からのメッセージハンドラ
   /// 
@@ -203,9 +402,7 @@ class ChatScreen extends StatelessWidget {
         // Layer 2: キャラクター(Unity または立ち絵)
         // ====================================================
         _buildCharacterLayer(context),
-
-         // カメラ・音声入力ボタン
-        _buildGlassActionButtons(context),
+        
         
         // ====================================================
         // Layer 3: UI オーバーレイ
@@ -285,6 +482,11 @@ class ChatScreen extends StatelessWidget {
             child: const ChatInput(),
           ),
         ),
+        // 参考UI風の上部ヘッダー
+        _buildReferenceTopBar(context),
+
+        // 参考UI風の下部操作ボタン
+        _buildReferenceBottomButtons(context),
       ],
     );
   }
@@ -298,7 +500,6 @@ class ChatScreen extends StatelessWidget {
         _buildBackground(),
         _buildBackgroundOverlay(),
         _buildCharacterLayer(context),
-        _buildGlassActionButtons(context),
         
         // 左上タイトル
         Positioned(
