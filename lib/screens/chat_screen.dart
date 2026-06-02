@@ -31,6 +31,9 @@ class ChatScreen extends StatelessWidget {
     final isWideScreen = screenSize.width >= 600;
     
     return Scaffold(
+      // キーボード表示時に画面全体が縮むのを防ぐ。
+      // キャラクター表示や背景のサイズを固定したままにするため false にする。
+      resizeToAvoidBottomInset: false,
       backgroundColor: const Color(0xFF1a1a2e),
       body: isWideScreen 
           ? _buildWideLayout(context) 
@@ -211,7 +214,7 @@ class ChatScreen extends StatelessWidget {
     );
   }
 
-Widget _glassMenuButton(BuildContext context) {
+Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュー
   return PopupMenuButton<String>(
     tooltip: 'メニュー',
     color: Colors.black.withValues(alpha: 0.88),
@@ -221,7 +224,7 @@ Widget _glassMenuButton(BuildContext context) {
         debugPrint('[ChatScreen] 設定が押されました');
       }
     },
-    itemBuilder: (context) => const [
+    itemBuilder: (context) => const [ //設定変更
       PopupMenuItem(
         value: 'settings',
         child: Row(
@@ -268,30 +271,22 @@ Widget _glassMenuButton(BuildContext context) {
   /// 下部の丸い操作ボタン
   ///
   /// 設定・音量・マイクを表示する。
-  Widget _buildReferenceBottomButtons(BuildContext context) {
-    final safeTop = MediaQuery.of(context).padding.top;
-    final safeBottom = MediaQuery.of(context).padding.bottom;
+  // 音量ボタンは画面右上寄りに固定する。
+  // bottom を指定するとキーボード表示時に位置がずれるため、top と right のみ使う。
+  Widget _buildVolumeButton(BuildContext context) {
+  final safeTop = MediaQuery.of(context).padding.top;
 
-    return Positioned(
-      // ★変更: RAiM の文字に被らないように下へ移動
-      top: safeTop - 500,
-      left: 0,
-      right: -280,
-      bottom: safeBottom + 92,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const SizedBox(width: 18),
-          _glassLargeButton(
-            icon: Icons.volume_up_rounded,
-            onTap: () {
-              debugPrint('[ChatScreen] 音量ボタンが押されました');
-            },
-          ),
-        ],
-      ),
-    );
-  }
+  return Positioned(
+    top: safeTop + 125,
+    right: 36,
+    child: _glassLargeButton(
+      icon: Icons.volume_up_rounded,
+      onTap: () {
+        debugPrint('[ChatScreen] 音量ボタンが押されました');
+      },
+    ),
+  );
+}
 
   /// 小さいガラス風ボタン
   Widget _glassSmallButton({
@@ -387,6 +382,9 @@ Widget _glassMenuButton(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final safeTop = mediaQuery.padding.top;
     final safeBottom = mediaQuery.padding.bottom;
+    // キーボードの高さを取得する。
+    // キーボード非表示時は 0、表示時はキーボード分の高さになる。
+    final keyboardBottom = mediaQuery.viewInsets.bottom;
     
     return Stack(
       children: [
@@ -459,7 +457,7 @@ Widget _glassMenuButton(BuildContext context) {
         
         // 入力欄(最下部、半透明グラデーション)
         Positioned(
-          bottom: 0,
+          bottom: keyboardBottom,
           left: 0,
           right: 0,
           child: Container(
@@ -486,7 +484,7 @@ Widget _glassMenuButton(BuildContext context) {
         _buildReferenceTopBar(context),
 
         // 参考UI風の下部操作ボタン
-        _buildReferenceBottomButtons(context),
+        _buildVolumeButton(context),
       ],
     );
   }
