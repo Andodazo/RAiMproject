@@ -21,10 +21,10 @@ import 'package:raim_prototype/screens/chat_screen.dart';
 // RAiM サーバー接続先URL（用途に応じて1つだけ有効に）
 // ====================================================
 // [自宅で同一PC開発時] localhost
-const String _raimServerUrl = 'ws://127.0.0.1:8080';
+//const String _raimServerUrl = 'ws://127.0.0.1:8080';
 //
 // [Tailscale経由 / 学校から / 別デバイスから]
-//const String _raimServerUrl = 'ws://100.x.y.z:8080';
+const String _raimServerUrl = 'ws://100.81.35.109:8080';
 //
 // ↑ 100.x.y.z は自宅PCのTailscale IPに置き換える
 //   サーバー側で `tailscale ip -4` で確認可能
