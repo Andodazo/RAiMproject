@@ -1,0 +1,22 @@
+PODS:
+  - Flutter (1.0.0)
+  - flutter_embed_unity_2022_3_ios (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - flutter_embed_unity_2022_3_ios (from `.symlinks/plugins/flutter_embed_unity_2022_3_ios/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  flutter_embed_unity_2022_3_ios:
+    :path: ".symlinks/plugins/flutter_embed_unity_2022_3_ios/ios"
+
+SPEC CHECKSUMS:
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_embed_unity_2022_3_ios: f3e973dfc7288e9fd60c884822456e47ba527cf7
+
+PODFILE CHECKSUM: 251cb053df7158f337c0712f2ab29f4e0fa474ce
+
+COCOAPODS: 1.16.2
