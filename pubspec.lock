@@ -190,6 +190,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
+  flutter_embed_unity_6000_0_android:
+    dependency: "direct main"
+    description:
+      name: flutter_embed_unity_6000_0_android
+      sha256: "30b42c54ddb189cf40a59af1f79d8a836d5287b8f41bc3a80938ca0adddb58b1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.3"
   flutter_embed_unity_platform_interface:
     dependency: transitive
     description:
