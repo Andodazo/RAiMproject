@@ -122,6 +122,17 @@ class ChatScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(18),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
+                child: Material(
+                  // CAPTUREボタンと同じように Material の中に InkWell を入れる。
+                color: Colors.transparent,
+                child: InkWell(
+                splashColor: Colors.white.withValues(alpha: 0.18),
+                highlightColor: Colors.white.withValues(alpha: 0.10),
+                onTap: () {
+                // 新しい会話ボタンが押された時の処理。
+                // 今は画面遷移せず、押されたことだけを確認する。
+                  debugPrint('[ChatScreen] 新しい会話ボタンが押されました');
+                },
                 child: Container(
                   height: 48,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -156,8 +167,10 @@ class ChatScreen extends StatelessWidget {
                         Icons.keyboard_arrow_down_rounded,
                         color: Colors.white70,
                         size: 22,
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -167,43 +180,50 @@ class ChatScreen extends StatelessWidget {
           const SizedBox(width: 12),
 
           ClipRRect(
+  borderRadius: BorderRadius.circular(18),
+  child: BackdropFilter(
+    filter: ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
+    child: Material(
+      // 音量ボタンと同じ仕組みにして、CAPTUREボタンにもタップ反応を出す。
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        splashColor: Colors.white.withValues(alpha: 0.18),
+        highlightColor: Colors.white.withValues(alpha: 0.10),
+        onTap: () {
+          debugPrint('[ChatScreen] CAPTUREボタンが押されました');
+        },
+        child: Container(
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(18),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: () {
-                  debugPrint('[ChatScreen] CAPTUREボタンが押されました');
-                },
-                child: Container(
-                  height: 48,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.18),
-                      width: 1,
-                    ),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        Icons.camera_alt_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        'CAPTURE',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.2,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.18),
+              width: 1,
+            ),
+          ),
+          child: const Row(
+            children: [
+              Icon(
+                Icons.camera_alt_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'CAPTURE',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -219,8 +239,25 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
     tooltip: 'メニュー',
     color: Colors.black.withValues(alpha: 0.88),
     offset: const Offset(0, 56),
+
+    onOpened: () {
+    // ハンバーガーメニューを開いた時点で入力欄のフォーカスを外す。
+    // メニュー表示中に入力欄が反応しないようにする。
+    FocusManager.instance.primaryFocus?.unfocus();
+    },
+
+    onCanceled: () {
+    // 設定を押さず、何もない空間を押してメニューを閉じた時の処理。
+    // 入力欄にカーソルやキーボードが戻らないようにする。
+    FocusManager.instance.primaryFocus?.unfocus();
+    },
+
     onSelected: (value) {
+      // 設定メニューを押したあと、入力欄にフォーカスが戻らないようにする。
+      // これでキーボードやカーソルが入力欄へ移動するのを防ぐ。
+      FocusManager.instance.primaryFocus?.unfocus();
       if (value == 'settings') {
+        // 今は設定画面を開かず、押されたことだけを確認して終わる。
         debugPrint('[ChatScreen] 設定が押されました');
       }
     },
@@ -288,8 +325,8 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
   );
 }
 
-  /// 小さいガラス風ボタン
-  Widget _glassSmallButton({
+  /*小さいガラス風ボタン
+    Widget _glassSmallButton({
     required IconData icon,
     required VoidCallback onTap,
   }) {
@@ -323,7 +360,7 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
         ),
       ),
     );
-  }
+  }*/
 
   /// 少し大きいガラス風ボタン
   Widget _glassLargeButton({
