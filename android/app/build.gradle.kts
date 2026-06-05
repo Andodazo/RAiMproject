@@ -8,7 +8,10 @@ plugins {
 android {
     namespace = "com.example.raim_prototype"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+
+       // === flutter_embed_unity: NDK バージョン上書き ===
+    ndkVersion = "28.2.13676358"  // Unity 2022.3 用
+    // ndkVersion = flutter.ndkVersion デフォルトの値
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -24,7 +27,8 @@ android {
         applicationId = "com.example.raim_prototype"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // minSdk = flutter.minSdkVersion
+        minSdk = 25
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -37,6 +41,11 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+
+// === flutter_embed_unity 追加 ===
+dependencies {
+    implementation(project(":unityLibrary"))
 }
 
 flutter {

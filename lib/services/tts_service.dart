@@ -41,8 +41,8 @@ class TTSService {
   final AudioPlayer _audioPlayer = AudioPlayer();
   
   TTSService({
-    this.baseUrl = 'http://localhost:50021',
-    // this.baseUrl = 'http://100.x.x.x:50021',    // 自宅PCのVOICEVOX
+    //this.baseUrl = 'http://localhost:50021',
+    this.baseUrl = 'http://100.81.35.109:50021',    // 自宅PCのVOICEVOX
     this.speakerId = 8,  // ← 別の声にしたい時は、ここ数値を上のリストのIDに変えてね！
   });
   

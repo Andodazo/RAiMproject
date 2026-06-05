@@ -40,6 +40,17 @@ class _ChatInputState extends State<ChatInput> {
               cursorColor: Colors.white,
               decoration: InputDecoration(
                 hintText: '何でも話してね',
+
+                // ★ここに追加
+              suffixIcon: IconButton(
+                icon: const Icon(
+                  Icons.mic_rounded,
+                  color: Colors.white70,
+                ),
+                onPressed: () {
+                  debugPrint('[ChatInput] 音声入力ボタンが押されました');
+                },
+              ),
                 // ★ ヒント色を薄い白に
                 hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
                 // ★ 背景を半透明白で塗る
