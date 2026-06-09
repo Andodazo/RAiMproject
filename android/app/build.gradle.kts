@@ -10,7 +10,7 @@ android {
     compileSdk = flutter.compileSdkVersion
 
        // === flutter_embed_unity: NDK バージョン上書き ===
-    ndkVersion = "28.2.13676358"  // Unity 2022.3 用
+    ndkVersion = "27.2.12479018" // Unity 2022.3 用
     // ndkVersion = flutter.ndkVersion デフォルトの値
 
     compileOptions {
