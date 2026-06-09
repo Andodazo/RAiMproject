@@ -212,3 +212,38 @@ ios/UnityLibrary/
 
 # Unity Export の生成ログ
 unity/**/*Build*.log
+# ============================================
+# 追加調整(2026/06/05、Linux/Windows対応・抜け補完)
+# ============================================
+
+# iOS Unity Export(ケース両対応、班員のOS差吸収)
+ios/unityLibrary/
+ios/unityframework/
+
+# Android Unity Export(ケース両対応、将来用)
+android/unityLibrary/
+
+# Unity 追加カバー
+unity/**/[Aa]ssetStoreTools*/
+unity/**/.consulo/
+
+# JetBrains Rider(Unity 開発で使われる)
+unity/**/.idea/
+
+# macOS 隠しファイル(Unity 内も対象)
+unity/**/.DS_Store
+unity/**/._*
+
+# Xcode userdata(各PCの個人状態、念のため強化)
+ios/Runner.xcodeproj/project.xcworkspace/xcuserdata/
+ios/Runner.xcodeproj/xcuserdata/
+ios/Runner.xcworkspace/xcuserdata/
+**/xcuserdata/
+
+# Flutter のローカル設定ファイル
+**/local.properties
+.fvm/
+
+# テスト用一時ファイル
+**/test_temp/
+**/*.tmp
