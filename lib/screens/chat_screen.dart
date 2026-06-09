@@ -6,6 +6,7 @@ import 'package:flutter_embed_unity/flutter_embed_unity.dart';
 import 'package:raim_prototype/widgets/character_display.dart';
 import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
+import 'package:raim_prototype/services/camera.service.dart';
 
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
@@ -191,8 +192,19 @@ class ChatScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         splashColor: Colors.white.withValues(alpha: 0.18),
         highlightColor: Colors.white.withValues(alpha: 0.10),
-        onTap: () {
-          debugPrint('[ChatScreen] CAPTUREボタンが押されました');
+        onTap: () async {
+          debugPrint('[ChatScreen] CAPTUREボタンが押されました（アルバムを起動します）');
+          
+          // CameraService を呼び出して画像を選択してもらう
+          final cameraService = CameraService();
+          final String? imagePath = await cameraService.captureImage();
+          
+          if (imagePath != null) {
+            debugPrint('[ChatScreen] 画像が選択されました。パス: $imagePath');
+            // TODO: ここで選択された画像(imagePath)を使ってプレビュー表示やLLM送信の処理をチームの仕様に合わせて行います
+          } else {
+            debugPrint('[ChatScreen] 画像選択がキャンセルされました');
+          }
         },
         child: Container(
           height: 48,

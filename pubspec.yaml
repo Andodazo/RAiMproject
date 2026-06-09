@@ -30,13 +30,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  file_picker: ^8.1.7
   http: ^1.2.0
   provider: ^6.1.0
   audioplayers: ^6.0.0  # 2026年現在の最新安定版
   
   flutter_embed_unity: ^2.0.0  # (replace this version with the latest available)
   # Add this for Unity 6000.0 / 6000.3 support on Android:
-  flutter_embed_unity_6000_0_android: ^2.0.0  # (replace this version with the latest available)
+  #flutter_embed_unity_6000_0_android: ^2.0.0  # (replace this version with the latest available)
+  flutter_embed_unity_2022_3_android: ^2.0.0 #2022unity
   
   # Windows用 WebSocket通信（残す）
   shelf: ^1.4.1
