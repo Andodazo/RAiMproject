@@ -296,6 +296,7 @@ class RaimServerService implements LLMService {
   Stream<LLMResponse> sendMessage(
     String userInput, {
     List<Message> history = const [],
+    List<String>? images, //画像配列型に
   }) async* {
     // offline / disconnected なら起こす（再接続試行）
     if (_state == RaimConnectionState.offline ||
@@ -312,11 +313,19 @@ class RaimServerService implements LLMService {
 
     // 送信ペイロードを組み立て
     // session_id を含めることで、サーバー側が過去の履歴を引ける
-    final payload = <String, dynamic>{
+    final Map<String, dynamic> payload = {
       'text': userInput,
+      'images': images ?? [], //画像がなければ配列[]にする
     };
+    //セッションIDがあれば含める
     if (_sessionId != null) {
       payload['session_id'] = _sessionId;
+    }
+
+    // デバッグログ
+    if (images != null && images.isNotEmpty) {
+      // ignore: avoid_print
+      print('[RaimServerService] 画像(${images.length}件)・セッション付きで送信データを組み立てました');
     }
     _channel!.sink.add(jsonEncode(payload));
 

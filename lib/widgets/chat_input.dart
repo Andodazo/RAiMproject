@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
+import 'package:raim_prototype/providers/camera_provider.dart';
 
 class ChatInput extends StatefulWidget {
   const ChatInput({super.key});
@@ -20,10 +21,23 @@ class _ChatInputState extends State<ChatInput> {
   
   void _sendMessage() {
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
-    
+    //CameraProviderの状態を取得
+    final cameraProvider = context.read<CameraProvider>();
+    final hasImage = cameraProvider.hasImage;
+    final imagePath = cameraProvider.selectedImagePath;
+    final imageBase64 = cameraProvider.selectedImageBase64;
+    //テキストも画像も両方空っぽなら何もせず終了
+    if (text.isEmpty && !hasImage) return;
+
+    //[検証用ログ]送信ボタンが押されたときのデータをログに出す
+    debugPrint('[ChatInput]メッセージを送信します: text="$text", hasImage=$hasImage');
+    if (hasImage) {
+      debugPrint('[ChatInput]連動する画像パス: $imagePath');
+    }
+
     context.read<ChatProvider>().sendUserMessage(text);
     _controller.clear();
+    cameraProvider.clearImage(); //キープされていた画像とプレビューをクリア
   }
   
   @override

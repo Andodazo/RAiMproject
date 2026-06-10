@@ -56,12 +56,16 @@ class ChatProvider extends ChangeNotifier {
     _stateSubscription?.cancel();
     super.dispose();
   }
+//{List<String>? images}の追加
+  Future<void> sendUserMessage(String text, {List<String>? images}) async {
+    //サーバーが受け取るための画像配列を準備（中身がnullならからの配列に）
+    final List<String> targetImages = images ??[];
 
-  Future<void> sendUserMessage(String text) async {
     _messages.add(Message(
       text: text,
       role: MessageRole.user,
-      timestamp: DateTime.now(),
+      timestamp: DateTime.now(),// 💡 もし将来、画面上の吹き出し（Messageモデル）にも画像を表示したくなったら
+                                // ここに imagePath: ... などを渡せるようMessageモデル側を拡張してください。
     ));
     notifyListeners();
 
@@ -74,9 +78,11 @@ class ChatProvider extends ChangeNotifier {
           : _messages.sublist(0, _messages.length - 1);
 
       bool chatReceived = false;
+      // ★ _llmService.sendMessage の引数に images を追加して受け渡します
       await for (final response in _llmService.sendMessage(
         text,
         history: recentHistory,
+        images: targetImages,
       )) {
         _handleResponse(response);
         if (response.isChat) chatReceived = true;

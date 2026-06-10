@@ -1,11 +1,15 @@
 import 'dart:io' show Platform;
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_embed_unity/flutter_embed_unity.dart';
+import 'package:provider/provider.dart';
+import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/widgets/character_display.dart';
 import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
+import 'package:raim_prototype/services/camera_service.dart';
 
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
@@ -87,7 +91,7 @@ class ChatScreen extends StatelessWidget {
       return Positioned(
         left: 0,
         right: 0,
-        top: size.height * 0.15,
+        top: 0,
         bottom: 0,
         child: const EmbedUnity(
           onMessageFromUnity: _handleUnityMessage,
@@ -191,8 +195,20 @@ class ChatScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         splashColor: Colors.white.withValues(alpha: 0.18),
         highlightColor: Colors.white.withValues(alpha: 0.10),
-        onTap: () {
-          debugPrint('[ChatScreen] CAPTUREボタンが押されました');
+        onTap: () async {
+          debugPrint('[ChatScreen] CAPTUREボタンが押されました（アルバムを起動します）');
+          
+          //画面の状態を管理する Providerを取得(listen: falseにする)
+          final cameraProvider = Provider.of<CameraProvider>(context, listen: false);
+
+          //ギャラリーを開いて、選択された画像(PathとBase64)をProviderにキープ
+          await cameraProvider.pickAndStoreImage();
+
+          if (cameraProvider.hasImage) {
+            debugPrint('[ChatScreen]画像が選択され、キープされました。パス: ${cameraProvider.selectedImagePath}');
+          } else {
+            debugPrint('[ChatScreen]画像選択がキャンセルされました');
+          }
         },
         child: Container(
           height: 48,
@@ -514,7 +530,60 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
               bottom: safeBottom,
               top: 20,
             ),
-            child: const ChatInput(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                //選択された画像があれば、入力欄の上にプレビューを表示
+                Consumer<CameraProvider>(
+                  builder: (context, provider, child) {
+                    if (!provider.hasImage) return const SizedBox.shrink();
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12, left:24, right: 24),
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            //ガラス風の枠線で囲まれた画像のプレビュー
+                            Container(
+                              width: 70,
+                              height: 70,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.white30, width: 1.5),
+                                image: DecorationImage(
+                                  image: FileImage(File(provider.selectedImagePath!)),
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                            //画像をキャンセルする小さな×ボタン
+                            Positioned(
+                              top: -6,
+                              right: -6,
+                              child: GestureDetector(
+                                onTap: () => provider.clearImage(),
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.black87,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.close, color: Colors.white, size: 14),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                //既存の入力値
+                const ChatInput(),
+              ],
+            ),
           ),
         ),
         // 参考UI風の上部ヘッダー
