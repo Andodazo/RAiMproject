@@ -87,7 +87,7 @@ class ChatScreen extends StatelessWidget {
       return Positioned(
         left: 0,
         right: 0,
-        top: size.height * 0.15,
+        top: 0,
         bottom: 0,
         child: const EmbedUnity(
           onMessageFromUnity: _handleUnityMessage,
@@ -514,9 +514,16 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
               bottom: safeBottom,
               top: 20,
             ),
+            // 入力欄の外側をタップしたらフォーカスを外し、キーボードを閉じる。
+            // 入力欄タップ直後の誤反応を避けるため、画面全体の GestureDetector ではなく TapRegion を使う。
+                  child: TapRegion(
+            onTapOutside: (_) {
+              FocusManager.instance.primaryFocus?.unfocus();
+            },
             child: const ChatInput(),
           ),
         ),
+      ),
         // 参考UI風の上部ヘッダー
         _buildReferenceTopBar(context),
 
