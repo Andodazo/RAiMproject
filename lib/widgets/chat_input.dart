@@ -34,8 +34,14 @@ class _ChatInputState extends State<ChatInput> {
         children: [
           Expanded(
             child: TextField(
-              controller: _controller,
               // ★ テキスト色を白に
+              controller: _controller,
+              // Enterキーで送信せず、入力欄内で改行できるようにする。
+              // メッセージ送信は右側の送信ボタンで行う。
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              minLines: 1,
+              maxLines: 4,
               style: const TextStyle(color: Colors.white, fontSize: 15),
               cursorColor: Colors.white,
               decoration: InputDecoration(
@@ -76,7 +82,7 @@ class _ChatInputState extends State<ChatInput> {
                   vertical: 12,
                 ),
               ),
-              onSubmitted: (_) => _sendMessage(),
+              //onSubmitted: (_) => _sendMessage(),
             ),
           ),
           const SizedBox(width: 8),
