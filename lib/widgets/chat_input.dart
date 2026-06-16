@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
+import 'package:raim_prototype/providers/camera_provider.dart';
 
 class ChatInput extends StatefulWidget {
   const ChatInput({super.key});
@@ -20,10 +21,33 @@ class _ChatInputState extends State<ChatInput> {
   
   void _sendMessage() {
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
-    
-    context.read<ChatProvider>().sendUserMessage(text);
+    //CameraProviderの状態を取得
+    final cameraProvider = context.read<CameraProvider>();
+    final hasImage = cameraProvider.hasImage;
+    // リスト型のゲッターをそのまま取得
+    final imagePaths = cameraProvider.selectedImagePaths;
+    final base64List = cameraProvider.selectedImagesBase64;
+    //テキストも画像も両方空っぽなら何もせず終了
+    if (text.isEmpty && !hasImage) return;
+
+    //[検証用ログ]送信ボタンが押されたときのデータをログに出す
+    debugPrint('[ChatInput]メッセージを送信します: text="$text", hasImage=$hasImage');
+    if (hasImage && base64List != null) {
+      debugPrint('[ChatInput]連動する画像パス: $imagePaths');
+      // すべての画像のBase64の頭15文字をインデックス付きでログ出力
+      for (int i = 0; i < base64List.length; i++) {
+        final base64str = base64List[i];
+        final preview = base64str.length > 15 ? '${base64str.substring(0, 15)}...' : base64str;
+        debugPrint('[ChatInput] 画像[$i] Base64(部分): $preview');
+      }
+    }
+    // サーバーへ送信
+    context.read<ChatProvider>().sendUserMessage(
+      text,
+      images: base64List,
+      );
     _controller.clear();
+    cameraProvider.clearImage(); //キープされていた画像とプレビューをクリア
   }
   
   @override

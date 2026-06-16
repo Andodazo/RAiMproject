@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
+import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/services/llm_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
@@ -98,8 +99,19 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => ChatProvider(widget.raimService, widget.unityBridge),
+    //MultiProviderに書き換えて、複数のプロバイダーを登録できるようにする
+    return MultiProvider(
+      providers: [
+        //既存のChatProvider
+        ChangeNotifierProvider(
+          create: (_) => ChatProvider(widget.raimService, widget.unityBridge),
+        ),
+        //新しく追加するCameraProvider
+        ChangeNotifierProvider(
+          create: (_) => CameraProvider(),
+        ),
+      ],
+      
 
       // [旧] Ollama 直接接続（HTTP）に戻したい時は ↓
       // create: (_) => ChatProvider(OllamaService(), widget.unityBridge),
