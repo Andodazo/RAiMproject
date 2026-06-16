@@ -82,7 +82,6 @@ class _ChatInputState extends State<ChatInput> {
                   vertical: 12,
                 ),
               ),
-              //onSubmitted: (_) => _sendMessage(),
             ),
           ),
           const SizedBox(width: 8),
