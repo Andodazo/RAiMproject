@@ -18,7 +18,7 @@ abstract class LLMService {
   Stream<LLMResponse> sendMessage(
     String userInput, {
     List<Message> history = const [],
-    List<String>? images, // ★ オプション引数に画像配列を追加
+    List<Map<String, dynamic>>? images, // ★ オプション引数に画像配列を追加
   });
 }
 
@@ -30,7 +30,7 @@ class MockLLMService implements LLMService {
   Stream<LLMResponse> sendMessage(
     String userInput, {
     List<Message> history = const [],
-    List<String>? images, // ★ 型を合わせるために追加
+    List<Map<String, dynamic>>? images, // ★ 型を合わせるために追加
   }) async* {
     await Future.delayed(const Duration(seconds: 1));
     yield LLMResponse(
@@ -123,7 +123,7 @@ class OllamaService implements LLMService {
   Stream<LLMResponse> sendMessage(
     String userInput, {
     List<Message> history = const [],
-    List<String>? images, // ★ 型を合わせるために追加
+    List<Map<String, dynamic>>? images, // ★ 型を合わせるために追加
   }) async* {
     const personality = _personalityB;
     final systemPrompt = '$_commonProfile\n\n$personality\n\n$_outputFormat';

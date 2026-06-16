@@ -296,7 +296,8 @@ class RaimServerService implements LLMService {
   Stream<LLMResponse> sendMessage(
     String userInput, {
     List<Message> history = const [],
-    List<String>? images, //画像配列型に
+    // 型を List<String>? から List<Map<String, dynamic>>? に変更
+    List<Map<String, dynamic>>? images, //画像配列型に
   }) async* {
     // offline / disconnected なら起こす（再接続試行）
     if (_state == RaimConnectionState.offline ||
@@ -315,8 +316,13 @@ class RaimServerService implements LLMService {
     // session_id を含めることで、サーバー側が過去の履歴を引ける
     final Map<String, dynamic> payload = {
       'text': userInput,
-      'images': images ?? [], //画像がなければ配列[]にする
     };
+
+    // 画像があれば payload に追加する（画像なしの時は images フィールド自体を省略）
+    if (images != null && images.isNotEmpty) {
+      payload['images'] = images;
+    }
+    
     //セッションIDがあれば含める
     if (_sessionId != null) {
       payload['session_id'] = _sessionId;

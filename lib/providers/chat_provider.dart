@@ -59,7 +59,16 @@ class ChatProvider extends ChangeNotifier {
 //{List<String>? images}の追加
   Future<void> sendUserMessage(String text, {List<String>? images}) async {
     //サーバーが受け取るための画像配列を準備（中身がnullならからの配列に）
-    final List<String> targetImages = images ??[];
+    //  修正：サーバーの仕様に合わせ、Base64文字列を [ { "data": "...", "media_type": "image/jpeg" } ] の構造に変換
+    final List<Map<String, String>> targetImages = [];
+    if (images != null) {
+      for (final base64Data in images) {
+        targetImages.add({
+          'data': base64Data,
+          'media_type': 'image/jpeg',//JPEG指定（一般的なカメラ・ギャラリー画像はこれで通る）
+        });
+      }
+    }
 
     _messages.add(Message(
       text: text,
@@ -78,7 +87,7 @@ class ChatProvider extends ChangeNotifier {
           : _messages.sublist(0, _messages.length - 1);
 
       bool chatReceived = false;
-      // ★ _llmService.sendMessage の引数に images を追加して受け渡します
+      // 引数の images にtargetImages を渡します
       await for (final response in _llmService.sendMessage(
         text,
         history: recentHistory,

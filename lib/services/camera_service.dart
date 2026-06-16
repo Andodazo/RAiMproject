@@ -1,40 +1,61 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
+import 'dart:typed_data';
 
 class CameraService {
-  // file_picker は事前の初期化インスタンスが不要なため、非常にシンプルになる
+  final ImagePicker _picker = ImagePicker();
+  /// 画像を取得してパスとBase64データを返す
+  /// [source] に ImageSource.camera または ImageSource.gallery を指定する
+  Future<List<Map<String, String>>?> selectAndProcessImages(ImageSource source) async {
+    List<XFile> pickedFiles = [];
 
-  Future<Map<String, String>?> selectAndProcessImage() async {
-    try {
-      print('[CameraService] アルバム（ファイルピッカー）を起動します');
-      
-      // 端末のギャラリーから画像ファイル（jpg, png等）を1枚だけ選択させる
-      final FilePickerResult? result = await FilePicker.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
-      );
-
-      // ユーザーが画像を選んだ場合、そのファイルのパスを返す
-      if (result != null && result.files.single.path != null) {
-        final String path = result.files.single.path!;
-        final File file = File(path);
-
-        print('[CameraService]画像ファイルをバイトデータに変換中...');
-        List<int> imageBytes = await file.readAsBytes();
-        
-        //Base64に変換
-        String base64String = base64Encode(imageBytes);
-        print('[CameraService]Base64変換完了（文字数: ${base64String.length}）');
-
-        return {
-          'path': path,
-          'base64': base64String,
-        };
+    if (source == ImageSource.gallery) {
+      //ギャラリーの場合は複数選択メソッドを呼ぶ
+      pickedFiles = await _picker.pickMultiImage();
+    } else {
+      //カメラの場合は今まで通り一枚だけ撮影
+      final file = await _picker.pickImage(source: source);
+      if (file != null) {
+        pickedFiles.add(file);
       }
-    } catch (e) {
-      print('[CameraService] 画像選択・変換エラー: $e');
     }
-    return null; // キャンセルされた場合など
+
+    if (pickedFiles.isEmpty) return null;
+
+    final List<Map<String, String>> resultList = [];
+
+    for (final xFile in pickedFiles) {
+      final file = File(xFile.path);
+
+      // 1. 画像ファイルをバイトデータとして読み込み、デコードする
+      final imageBytes = await file.readAsBytes();
+      final originalImage = img.decodeImage(imageBytes);
+
+      if (originalImage == null) continue;
+
+      // 2. 長辺が 1024px を超えている場合はリサイズ（仕様書 4.3 のロジック）
+      img.Image resizedImage = originalImage;
+      if (originalImage.width > 1024 || originalImage.height > 1024) {
+        if (originalImage.width > originalImage.height) {
+          resizedImage = img.copyResize(originalImage, width: 1024);
+        } else {
+          resizedImage = img.copyResize(originalImage, height: 1024);
+        }
+      }
+
+      // 3. JPEG quality 85 で圧縮してバイト配列に変換
+      final compressedBytes = Uint8List.fromList(img.encodeJpg(resizedImage, quality: 85));
+
+      // 4. 圧縮後のバイトデータを Base64 にエンコード
+      final base64str = base64Encode(compressedBytes);
+
+      resultList.add({
+        'path': xFile.path,
+        'base64': base64str,
+      });
+    }
+    return resultList;
   }
 }

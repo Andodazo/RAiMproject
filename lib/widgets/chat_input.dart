@@ -24,18 +24,28 @@ class _ChatInputState extends State<ChatInput> {
     //CameraProviderの状態を取得
     final cameraProvider = context.read<CameraProvider>();
     final hasImage = cameraProvider.hasImage;
-    final imagePath = cameraProvider.selectedImagePath;
-    final imageBase64 = cameraProvider.selectedImageBase64;
+    // リスト型のゲッターをそのまま取得
+    final imagePaths = cameraProvider.selectedImagePaths;
+    final base64List = cameraProvider.selectedImagesBase64;
     //テキストも画像も両方空っぽなら何もせず終了
     if (text.isEmpty && !hasImage) return;
 
     //[検証用ログ]送信ボタンが押されたときのデータをログに出す
     debugPrint('[ChatInput]メッセージを送信します: text="$text", hasImage=$hasImage');
-    if (hasImage) {
-      debugPrint('[ChatInput]連動する画像パス: $imagePath');
+    if (hasImage && base64List != null) {
+      debugPrint('[ChatInput]連動する画像パス: $imagePaths');
+      // すべての画像のBase64の頭15文字をインデックス付きでログ出力
+      for (int i = 0; i < base64List.length; i++) {
+        final base64str = base64List[i];
+        final preview = base64str.length > 15 ? '${base64str.substring(0, 15)}...' : base64str;
+        debugPrint('[ChatInput] 画像[$i] Base64(部分): $preview');
+      }
     }
-
-    context.read<ChatProvider>().sendUserMessage(text);
+    // サーバーへ送信
+    context.read<ChatProvider>().sendUserMessage(
+      text,
+      images: base64List,
+      );
     _controller.clear();
     cameraProvider.clearImage(); //キープされていた画像とプレビューをクリア
   }
