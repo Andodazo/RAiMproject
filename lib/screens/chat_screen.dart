@@ -80,15 +80,11 @@ class ChatScreen extends StatelessWidget {
   /// Q3.C の方針: 下寄せ・縦長で配置、頭が見切れないよう上に余白
   Widget _buildCharacterLayer(BuildContext context) {
         /// ガラス風のカメラ・マイクボタン
-        ///
-        /// 内部処理はまだ入れない。
         /// EmbedUnity方式は変更せず、UIボタンだけを重ねる。
     final size = MediaQuery.of(context).size;
     
     if (_isMobile) {
       // モバイル: Unity 埋め込み
-      // 画面の上 15% は余白(タイトル + 頭の上の空間)
-      // 画面の下 85% を Unity 領域として使う
       return Positioned(
         left: 0,
         right: 0,
@@ -108,8 +104,8 @@ class ChatScreen extends StatelessWidget {
 
    
     /// 参考UI風の上部ヘッダー
-  ///
-  /// EmbedUnity方式は変更せず、FlutterのUIとして上に重ねる。
+    ///
+    /// EmbedUnity方式は変更せず、FlutterのUIとして上に重ねる。
   Widget _buildReferenceTopBar(BuildContext context) {
     final safeTop = MediaQuery.of(context).padding.top;
 
@@ -381,43 +377,6 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
   );
 }
 
-  /*小さいガラス風ボタン
-    Widget _glassSmallButton({
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 1.4, sigmaY: 1.4),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(24),
-            onTap: onTap,
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.16),
-                  width: 1,
-                ),
-              ),
-              child: Icon(
-                icon,
-                color: Colors.white.withValues(alpha: 0.82),
-                size: 24,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }*/
-
   /// 少し大きいガラス風ボタン
   Widget _glassLargeButton({
     required IconData icon,
@@ -467,7 +426,7 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
   // スマホ・縦長レイアウト(参考UI 風)
   // ====================================================
   // 
-  // Q4 の方針: 参考UI(しずく)風
+  // 
   // - キャラを全画面で見せる
   // - メッセージは画面中央〜下に透明背景でオーバーレイ
   // - 入力欄は最下部、半透明グラデーション
@@ -570,73 +529,81 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
               bottom: safeBottom,
               top: 20,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                //選択された画像があれば、入力欄の上にプレビューを表示
-                Consumer<CameraProvider>(
-                  builder: (context, provider, child) {
-                    if (!provider.hasImage) return const SizedBox.shrink();
+            // 入力欄の外側をタップしたらフォーカスを外し、キーボードを閉じる。
+            // 入力欄タップ直後の誤反応を避けるため、画面全体の GestureDetector ではなく TapRegion を使う。
+            child: TapRegion(
+              onTapOutside: (_) {
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  //選択された画像があれば、入力欄の上にプレビューを表示
+                  Consumer<CameraProvider>(
+                    builder: (context, provider, child) {
+                      if (!provider.hasImage) return const SizedBox.shrink();
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12, left: 24, right: 24),
-                      child: SizedBox(
-                        height: 76, // 枠線やバツボタンが見切れないよう少し高さを確保
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal, // 横スクロール
-                          itemCount: provider.selectedImagePaths.length,
-                          itemBuilder: (context, index) {
-                            final imagePath = provider.selectedImagePaths[index];
-                            
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 12, top: 6), // 画像同士の間隔
-                              child: Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  // ガラス風の枠線で囲まれた画像のプレビュー
-                                  Container(
-                                    width: 70,
-                                    height: 70,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: Colors.white30, width: 1.5),
-                                      image: DecorationImage(
-                                        image: FileImage(File(imagePath)),
-                                        fit: BoxFit.cover,
-                                      ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    top: -6,
-                                    right: -6,
-                                    child: GestureDetector(
-                                      // 全体のクリアから、このインデックス（index）の画像だけを消す処理
-                                      onTap: () => provider.removeImageAt(index),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: const BoxDecoration(
-                                          color: Colors.black87,
-                                          shape: BoxShape.circle,
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12, left: 24, right: 24),
+                        child: SizedBox(
+                          height: 76, // 枠線やバツボタンが見切れないよう少し高さを確保
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal, // 横スクロール
+                            itemCount: provider.selectedImagePaths.length,
+                            itemBuilder: (context, index) {
+                              final imagePath = provider.selectedImagePaths[index];
+                              
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 12, top: 6), // 画像同士の間隔
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    // ガラス風の枠線で囲まれた画像のプレビュー
+                                    Container(
+                                      width: 70,
+                                      height: 70,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: Colors.white30, width: 1.5),
+                                        image: DecorationImage(
+                                          image: FileImage(File(imagePath)),
+                                          fit: BoxFit.cover,
                                         ),
-                                        child: const Icon(Icons.close, color: Colors.white, size: 14),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
+                                    Positioned(
+                                      top: -6,
+                                      right: -6,
+                                      child: GestureDetector(
+                                        // 全体のクリアから、このインデックス（index）の画像だけを消す処理
+                                        onTap: () => provider.removeImageAt(index),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.black87,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(Icons.close, color: Colors.white, size: 14),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-                //既存の入力値
-                const ChatInput(),
-              ],
+                      );
+                    },
+                  ),
+                  //既存の入力値
+                  const ChatInput(),
+                ],
+              ),
             ),
           ),
         ),
+        
         // 参考UI風の上部ヘッダー
         _buildReferenceTopBar(context),
 
