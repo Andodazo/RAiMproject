@@ -98,8 +98,11 @@ class ChatScreen extends StatelessWidget {
       // Windows: CharacterDisplay の位置を調整する
       return Positioned.fill(
         child: Transform.translate(
-          offset: const Offset(-120, 0),
-          child: const CharacterDisplay(),
+          offset: const Offset(-40, 40),
+          child: Transform.scale(
+            scale: 0.85,//Windowsのキャラクターの大きさ変更
+            child: const CharacterDisplay(),
+          ),
         ),
       );
     }
@@ -625,7 +628,6 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
   
 // ====================================================
 // PC・全画面用 操作ボタン
-// 赤線で指定した位置に合わせて、ボタンを個別に配置する
 // ====================================================
 Widget _buildWideControlBar(BuildContext context) {
   final safeTop = MediaQuery.of(context).padding.top;
