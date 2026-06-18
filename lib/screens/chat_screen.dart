@@ -95,9 +95,12 @@ class ChatScreen extends StatelessWidget {
         ),
       );
     } else {
-      // Windows: 既存の CharacterDisplay(立ち絵画像)
-      return const Positioned.fill(
-        child: CharacterDisplay(),
+      // Windows: CharacterDisplay の位置を調整する
+      return Positioned.fill(
+        child: Transform.translate(
+          offset: const Offset(-120, 0),
+          child: const CharacterDisplay(),
+        ),
       );
     }
   }
@@ -138,10 +141,10 @@ class ChatScreen extends StatelessWidget {
                   height: 48,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: const Color(0xFF172433).withValues(alpha: 0.72),
                     borderRadius: BorderRadius.circular(18),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.16),
+                    color: const Color(0xFFD6ECFF).withValues(alpha: 0.18),
                       width: 1,
                     ),
                   ),
@@ -200,10 +203,10 @@ class ChatScreen extends StatelessWidget {
           height: 48,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.10),
+            color: const Color(0xFF172433).withValues(alpha: 0.72),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.18),
+              color: const Color(0xFFD6ECFF).withValues(alpha: 0.18),
               width: 1,
             ),
           ),
@@ -340,10 +343,10 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.08),
+            color: const Color(0xFF172433).withValues(alpha: 0.72),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.16),
+              color: const Color(0xFFD6ECFF).withValues(alpha: 0.18),
               width: 1,
             ),
           ),
@@ -395,12 +398,19 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
               width: 64,
               height: 54,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(28),
+                color: const Color(0xFF2C475F).withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(18),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  width: 1,
+                  color: const Color(0xFFB7F35A).withValues(alpha: 0.58),
+                  width: 1.2,
                 ),
+                boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFB7F35A).withValues(alpha: 0.16),
+                  blurRadius: 14,
+                  spreadRadius: 1,
+                ),
+              ],
               ),
               child: Icon(
                 icon,
@@ -519,8 +529,8 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
                 end: Alignment.bottomCenter,
                 colors: [
                   Colors.black.withOpacity(0.0),
-                  Colors.black.withOpacity(0.6),
-                  Colors.black.withOpacity(0.8),
+                  Colors.black.withOpacity(0.16),
+                  Colors.black.withOpacity(0.28),
                 ],
                 stops: const [0.0, 0.4, 1.0],
               ),
@@ -613,6 +623,183 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
     );
   }
   
+// ====================================================
+// PC・全画面用 操作ボタン
+// 赤線で指定した位置に合わせて、ボタンを個別に配置する
+// ====================================================
+Widget _buildWideControlBar(BuildContext context) {
+  final safeTop = MediaQuery.of(context).padding.top;
+
+  return Stack(
+    children: [
+      // 左側にメニューボタンを配置
+      Positioned(
+        top: safeTop + 20,
+        left: 130,
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: const Color(0xFFB7F35A).withValues(alpha: 0.42),
+              width: 2,
+            ),
+          ),
+          child: FittedBox(
+            fit: BoxFit.contain,
+            child: _glassMenuButton(context),
+          ),
+        ),
+      ),
+
+      // 右上に「新しい会話」ボタンを配置
+      Positioned(
+        top: safeTop + 30,
+        right: 100,
+        child: _wideGlassButton(
+          width: 390,
+          onTap: () {
+            debugPrint('[ChatScreen] 新しい会話ボタンが押されました');
+          },
+          child: const Row(
+            children: [
+              Icon(Icons.chat_bubble_outline_rounded, color: Colors.white, size: 20),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '新しい会話',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 24),
+            ],
+          ),
+        ),
+      ),
+
+      // 左下に CAPTURE ボタンを配置
+      Positioned(
+        bottom: 10,
+        height: 50,
+        right: 520,
+        child: _wideGlassButton(
+          width: 150,
+          onTap: () {
+            _showImageSourceSelector(context);
+          },
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.camera_alt_rounded, color: Colors.white, size: 20),
+              SizedBox(width: 10),
+              Text(
+                'CAPTURE',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+
+      // 右上端に音量ボタンを配置
+      Positioned(
+        top: safeTop + 30,
+        right: 32,
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            splashColor: const Color(0xFFB7F35A).withValues(alpha: 0.18),
+            onTap: () {
+              debugPrint('[ChatScreen] 音量ボタンが押されました');
+            },
+            child: Container(
+              width: 52,
+              height: 47,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF2C475F).withValues(alpha: 0.72),
+                border: Border.all(
+                  color: const Color(0xFFB7F35A).withValues(alpha: 0.42),
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFB7F35A).withValues(alpha: 0.12),
+                    blurRadius: 14,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.volume_up_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+// PC・全画面用の横長ボタンの見た目をまとめる
+Widget _wideGlassButton({
+  required double width,
+  required VoidCallback onTap,
+  required Widget child,
+}) {
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(18),
+    child: BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 1.6, sigmaY: 1.6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          splashColor: const Color(0xFFB7F35A).withValues(alpha: 0.18),
+          highlightColor: Colors.white.withValues(alpha: 0.08),
+          onTap: onTap,
+          child: Container(
+            width: width,
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2C475F).withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: const Color(0xFFB7F35A).withValues(alpha: 0.42),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFB7F35A).withValues(alpha: 0.12),
+                  blurRadius: 14,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
   // ====================================================
   // PC・横長レイアウト(現状維持 + プラットフォーム分岐対応)
   // ====================================================
@@ -661,7 +848,7 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
             ),
             child: Column(
               children: [
-                SizedBox(height: MediaQuery.of(context).padding.top + 20),
+                SizedBox(height: MediaQuery.of(context).padding.top + 100),
                 const Expanded(child: MessageList()),
                 Container(
                   decoration: BoxDecoration(
@@ -679,6 +866,10 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
             ),
           ),
         ),
+        
+
+      // PC・全画面でも音量ボタンを表示する
+      _buildWideControlBar(context),
       ],
     );
   }
