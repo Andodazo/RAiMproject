@@ -1,5 +1,5 @@
+//全体メッセージの管理と必要な情報をファイルごとに分けている
 // lib/providers/chat_provider.dart  (v3 - 永続接続対応)
-//
 // 変更点:
 // - RaimServerService の stateStream を購読して UI に接続状態を伝える
 // - connectionState プロパティを公開（UI が状態を見て表示分岐可能）
@@ -18,7 +18,7 @@ class ChatProvider extends ChangeNotifier {
   final LLMService _llmService;
   final UnityCommunicator _unityBridge;
   final TTSService _ttsService = TTSService();
-
+  //messagesとは描画する会話をまとめたもの
   final List<Message> _messages = [];
   bool _isLoading = false;
 
@@ -26,21 +26,21 @@ class ChatProvider extends ChangeNotifier {
   /// OllamaService / MockLLMService の場合は常に connected 扱い
   RaimConnectionState _connectionState = RaimConnectionState.connected;
   StreamSubscription<RaimConnectionState>? _stateSubscription;
-
+  //ここは使わない
   ChatProvider(this._llmService, this._unityBridge) {
     _ttsService.initialize();
     _bindConnectionState();
   }
-
+  //メッセージの中身を編集されないようにするため。(読み取り専用)
   List<Message> get messages => List.unmodifiable(_messages);
   bool get isLoading => _isLoading;
   RaimConnectionState get connectionState => _connectionState;
 
   /// 「寝てる」状態か（UI で立ち絵切替などに使用予定）
   bool get isOffline => _connectionState == RaimConnectionState.offline;
-
   void _bindConnectionState() {
     // RaimServerService の場合のみ接続状態を購読
+    //websocketだから変更箇所をリアルタイムで確認するため
     if (_llmService is RaimServerService) {
       final service = _llmService;
       _connectionState = service.state;
@@ -50,7 +50,7 @@ class ChatProvider extends ChangeNotifier {
       });
     }
   }
-
+  //メモリ圧迫の対策
   @override
   void dispose() {
     _stateSubscription?.cancel();
@@ -60,6 +60,7 @@ class ChatProvider extends ChangeNotifier {
   Future<void> sendUserMessage(String text, {List<String>? images}) async {
     //サーバーが受け取るための画像配列を準備（中身がnullならからの配列に）
     //  修正：サーバーの仕様に合わせ、Base64文字列を [ { "data": "...", "media_type": "image/jpeg" } ] の構造に変換
+    //image
     final List<Map<String, String>> targetImages = [];
     if (images != null) {
       for (final base64Data in images) {
@@ -70,33 +71,42 @@ class ChatProvider extends ChangeNotifier {
       }
     }
 
+    //メッセージ本文
+    //Messageへの追加
     _messages.add(Message(
       text: text,
-      role: MessageRole.user,
-      timestamp: DateTime.now(),// 💡 もし将来、画面上の吹き出し（Messageモデル）にも画像を表示したくなったら
+      role: MessageRole.user,//誰のメッセージか(今回はuser)
+      timestamp: DateTime.now(),//messageと一緒に日時を送っている
+                                //もし将来、画面上の吹き出し（Messageモデル）にも画像を表示したくなったら
                                 // ここに imagePath: ... などを渡せるようMessageモデル側を拡張してください。
     ));
+    // userからのメッセージが追加されたことを画面側に知らせて、再描画させる
     notifyListeners();
-
+    // ロード中状態に切り替える
     _isLoading = true;
+    // ロード中状態に変わったことを画面側に知らせて、再描画させる
     notifyListeners();
-
+    //直近の会話履歴を送る
     try {
+      //20のmessageまで履歴に残す
       final recentHistory = _messages.length > 21
           ? _messages.sublist(_messages.length - 21, _messages.length - 1)
           : _messages.sublist(0, _messages.length - 1);
-
+      //chatがかえってきているかの有無
       bool chatReceived = false;
       // 引数の images にtargetImages を渡します
+      // AIに text・履歴・画像を送る
       await for (final response in _llmService.sendMessage(
         text,
         history: recentHistory,
         images: targetImages,
       )) {
+
         _handleResponse(response);
+        // チャット返答が来たか記録する
         if (response.isChat) chatReceived = true;
       }
-
+      //もしfalseだったら
       if (!chatReceived) {
         _messages.add(Message(
           text: 'えっと……ごめん、上手く言葉が出なかったみたい。もう一度話しかけて？',
@@ -114,6 +124,7 @@ class ChatProvider extends ChangeNotifier {
         emotion: 'sad',
         intensity: 0.5,
       ));
+      //成功・失敗に関わらず必ず実行される後処理
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -121,13 +132,14 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void _handleResponse(LLMResponse response) {
-    if (response.isFillerAudio) {
-      _unityBridge.sendEmotion(
+    if (response.isFillerAudio) {//返答がつなぎ言葉(検索する際に待ってもらうための定型文)の場合の処理
+      _unityBridge.sendEmotion(//感情送信
         text: response.text,
         emotion: response.emotion,
         intensity: response.intensity,
       );
       _ttsService.speak(response.text);
+      //Fillerがない場合
     } else if (response.isChat) {
       _messages.add(Message(
         text: response.text,
@@ -136,10 +148,11 @@ class ChatProvider extends ChangeNotifier {
         emotion: response.emotion,
         intensity: response.intensity,
       ));
+      //Unityに感情送信するときの処理
       _unityBridge.sendEmotion(
         text: response.text,
         emotion: response.emotion,
-        intensity: response.intensity,
+        intensity: response.intensity,//intensityは感情の強さ
       );
       _ttsService.speak(response.text);
       notifyListeners();

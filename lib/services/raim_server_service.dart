@@ -60,7 +60,7 @@ enum RaimConnectionState {
 
 class RaimServerService implements LLMService {
   // ─── 設定値（コンストラクタで受け取る） ───
-
+  
   /// サーバーの URL
   /// 例: "ws://127.0.0.1:8080"（同一PC）
   /// 例: "ws://100.x.y.z:8080"（Tailscale経由）
@@ -130,6 +130,7 @@ class RaimServerService implements LLMService {
   }
 
   /// 状態変更とログ出力をまとめて行う
+  /// どういう動作かわかるようにするため
   void _setState(RaimConnectionState newState) {
     if (_state == newState) return;
     _state = newState;
@@ -145,6 +146,7 @@ class RaimServerService implements LLMService {
   /// サーバーに接続する
   /// main.dart の起動時に呼ぶ
   /// 既に接続中なら何もしない
+  /// 繋がってる時にやりたくない処理(つながってたらreturnで終わる)
   Future<void> connect() async {
     if (_state == RaimConnectionState.connected) return;
     _intentionalClose = false;
@@ -157,7 +159,7 @@ class RaimServerService implements LLMService {
       // 接続完了を待つ（web_socket_channel v3 から ready が使える）
       await _channel!.ready;
 
-      // ブロードキャスト用 StreamController を準備
+      // ブロードキャスト用 StreamController を準備 messageを入れる部分の初期定義
       _broadcaster ??= StreamController<LLMResponse>.broadcast();
 
       // 受信開始
@@ -199,7 +201,7 @@ class RaimServerService implements LLMService {
 
   /// メッセージ受信時の処理
   ///
-  /// 1. JSON パース
+  /// 1. JSON パース(JSONをプログラムに使えるように変換)
   /// 2. session_start なら sessionID を保持（broadcaster には流さない）
   /// 3. それ以外は broadcaster に流す（sendMessage や incomingStream が拾う）
   void _onMessage(dynamic rawMessage) {

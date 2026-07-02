@@ -4,7 +4,7 @@ import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/models/message.dart';
 
 /// キャラクター（立ち絵）を表示するウィジェット
-/// 
+/// windows用のfile(windows unity)
 /// ChatProvider の最新メッセージから emotion を取得して、
 /// 対応する立ち絵画像を表示する
 class CharacterDisplay extends StatelessWidget {
@@ -17,7 +17,7 @@ class CharacterDisplay extends StatelessWidget {
         // 最新のAIメッセージから emotion を取得
         final emotion = _getCurrentEmotion(chatProvider.messages);
         final imagePath = _getImagePath(emotion);
-        
+        //画像の配置
         return Container(
           alignment: Alignment.bottomCenter,
           child: Image.asset(
@@ -29,7 +29,8 @@ class CharacterDisplay extends StatelessWidget {
     );
   }
   
-  /// 最新のAIメッセージから emotion を取り出す
+  /// 最新のAIメッセージから emotion を取り出す（AIのメッセージかつ感情が設定されているもの）
+  /// メッセージがないまたは感情が入ってない場合はdefault
   /// なければ default
   String _getCurrentEmotion(List<Message> messages) {
     for (var i = messages.length - 1; i >= 0; i--) {
