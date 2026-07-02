@@ -1,3 +1,7 @@
+//送信処理・画像添付状態の取得・送信後のリセット・ボタンのデザイン
+import 'dart:io';
+import 'dart:ui';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
@@ -52,79 +56,346 @@ class _ChatInputState extends State<ChatInput> {
   
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(12),
+  return TapRegion(
+    // 追加：入力欄の外を押したときにキーボードを閉じる
+    onTapOutside: (_) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    },
+
+    // 追加：画像と入力欄を縦に並べる
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 追加：選択した画像を入力欄の上に表示
+        const _SelectedImagePreview(),
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                  minLines: 1,
+                  maxLines: 4,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                  ),
+                  cursorColor: Colors.white,
+                  decoration: InputDecoration(
+                    hintText: '何でも話してね',
+
+                    // マイクボタン
+                    suffixIcon: IconButton(
+                      icon: const Icon(
+                        Icons.mic_rounded,
+                        color: Colors.white70,
+                      ),
+                      onPressed: () {
+                        debugPrint(
+                          '[ChatInput] 音声入力ボタンが押されました',
+                        );
+                      },
+                    ),
+
+                    hintStyle: TextStyle(
+                      color: Colors.white.withOpacity(0.5),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.15),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide(
+                        color: Colors.white.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(
+                        color: Colors.white,
+                        width: 1.5,
+                      ),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              // 送信ボタン
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8BC34A),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.send,
+                    color: Colors.white,
+                  ),
+                  onPressed: _sendMessage,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+}
+//選択した画像を送信前にプレビュー表示し、不要な画像を削除
+class _SelectedImagePreview extends StatelessWidget {
+  const _SelectedImagePreview();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<CameraProvider>(
+      builder: (context, provider, child) {
+        if (!provider.hasImage) {
+          return const SizedBox.shrink();
+        }
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 6, 24, 6),
+          child: SizedBox(
+            height: 76,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: provider.selectedImagePaths.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final imagePath = provider.selectedImagePaths[index];
+
+                return Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 70,
+                        height: 70,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.white30,
+                            width: 1.5,
+                          ),
+                          image: DecorationImage(
+                            image: FileImage(File(imagePath)),
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: -6,
+                        right: -6,
+                        child: GestureDetector(
+                          onTap: () => provider.removeImageAt(index),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Colors.black87,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+
+/// ハンバーガーメニューボタン
+class ChatMenuButton extends StatelessWidget {
+  const ChatMenuButton({
+    super.key,
+    required this.onSettings,
+    this.isWide = false,
+  });
+
+  final VoidCallback onSettings;
+  final bool isWide;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: 'メニュー',
+      color: Colors.black.withValues(alpha: 0.88),
+      offset: const Offset(0, 56),
+      onOpened: _removeFocus,
+      onCanceled: _removeFocus,
+      onSelected: (value) {
+        _removeFocus();
+
+        if (value == 'settings') {
+          onSettings();
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: 'settings',
+          child: Row(
+            children: [
+              Icon(
+                Icons.settings_rounded,
+                color: Colors.white70,
+              ),
+              SizedBox(width: 12),
+              Text(
+                '設定',
+                style: TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+      ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: 1.4,
+            sigmaY: 1.4,
+          ),
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: const Color(0xFF172433)
+                  .withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color:const Color(0xFFB7F35A)
+                        .withValues(alpha: 0.42),
+                width: 2,
+              ),
+            ),
+            child: const Icon(
+              Icons.menu_rounded,
+              color: Colors.white70,
+              size: 24,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _removeFocus() {
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
+}
+
+/// 「新しい会話」ボタン
+class ChatNewConversationButton extends StatelessWidget {
+  const ChatNewConversationButton({
+    super.key,
+    required this.onTap,
+    this.isWide = false,
+  });
+
+  final VoidCallback onTap;
+  final bool isWide;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ChatGlassButton(
+      width: isWide ? 390 : null,
+      height: isWide ? 44 : 48,
+      isAccent: isWide,
+      onTap: onTap,
       child: Row(
         children: [
+          Icon(
+            Icons.chat_bubble_outline_rounded,
+            color: Colors.white,
+            size: isWide ? 20 : 18,
+          ),
+          const SizedBox(width: 10),
           Expanded(
-            child: TextField(
-              // ★ テキスト色を白に
-              controller: _controller,
-              // Enterキーで送信せず、入力欄内で改行できるようにする。
-              // メッセージ送信は右側の送信ボタンで行う。
-              keyboardType: TextInputType.multiline,
-              textInputAction: TextInputAction.newline,
-              minLines: 1,
-              maxLines: 4,
-              style: const TextStyle(color: Colors.white, fontSize: 15),
-              cursorColor: Colors.white,
-              decoration: InputDecoration(
-                hintText: '何でも話してね',
-
-                // ★ここに追加
-              suffixIcon: IconButton(
-                icon: const Icon(
-                  Icons.mic_rounded,
-                  color: Colors.white70,
-                ),
-                onPressed: () {
-                  debugPrint('[ChatInput] 音声入力ボタンが押されました');
-                },
-              ),
-                // ★ ヒント色を薄い白に
-                hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
-                // ★ 背景を半透明白で塗る
-                filled: true,
-                fillColor: Colors.white.withOpacity(0.15),
-                // ★ 枠線を白系に
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide(
-                    color: Colors.white.withOpacity(0.3),
-                    width: 1,
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: const BorderSide(
-                    color: Colors.white,
-                    width: 1.5,
-                  ),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
+            child: Text(
+              '新しい会話',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: isWide ? 15 : 14,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
+          Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: Colors.white70,
+            size: isWide ? 24 : 22,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// CAPTUREボタン
+class ChatCaptureButton extends StatelessWidget {
+  const ChatCaptureButton({
+    super.key,
+    required this.onTap,
+    this.isWide = false,
+  });
+
+  final VoidCallback onTap;
+  final bool isWide;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ChatGlassButton(
+      width: isWide ? 150 : null,
+      height: isWide ? 44 : 48,
+      isAccent: isWide,
+      onTap: onTap,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.camera_alt_rounded,
+            color: Colors.white,
+            size: isWide ? 20 : 18,
+          ),
           const SizedBox(width: 8),
-          // ★ 送信ボタンを目立つように
-          Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF8BC34A),  // ライムグリーン
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.send, color: Colors.white),
-              onPressed: _sendMessage,
+          Text(
+            'CAPTURE',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: isWide ? 13 : 12,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.1,
             ),
           ),
         ],
@@ -132,3 +403,159 @@ class _ChatInputState extends State<ChatInput> {
     );
   }
 }
+
+/// 音量ボタン
+class ChatVolumeButton extends StatelessWidget {
+  const ChatVolumeButton({
+    super.key,
+    required this.onTap,
+    this.isWide = false,
+  });
+
+  final VoidCallback onTap;
+  final bool isWide;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ChatGlassButton(
+      width: isWide ? 52 : 64,
+      height: isWide ? 47 : 54,
+      borderRadius: isWide ? 26 : 18,
+      isAccent: true,
+      padding: EdgeInsets.zero,
+      onTap: onTap,
+      child: Icon(
+        Icons.volume_up_rounded,
+        color: Colors.white,
+        size: 28,
+      ),
+    );
+  }
+}
+
+/// 共通のガラス風ボタン
+class _ChatGlassButton extends StatelessWidget {
+  const _ChatGlassButton({
+    required this.height,
+    required this.onTap,
+    required this.child,
+    this.width,
+    this.padding =
+        const EdgeInsets.symmetric(horizontal: 14),
+    this.borderRadius = 18,
+    this.isAccent = false,
+  });
+
+  final double? width;
+  final double height;
+  final EdgeInsetsGeometry padding;
+  final double borderRadius;
+  final bool isAccent;
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = const Color(0xFFB7F35A).withValues(alpha: 0.42);
+
+    final backgroundColor = const Color(0xFF2C475F).withValues(alpha: 0.72);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: 1.6,
+          sigmaY: 1.6,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius:
+                BorderRadius.circular(borderRadius),
+            splashColor: Colors.white.withValues(alpha: 0.18),
+            highlightColor:
+                Colors.white.withValues(alpha: 0.10),
+            onTap: onTap,
+            child: Container(
+              width: width,
+              height: height,
+              padding: padding,
+              decoration: BoxDecoration(
+                color: backgroundColor,
+                borderRadius:
+                    BorderRadius.circular(borderRadius),
+                border: Border.all(
+                  color: borderColor,
+                  width: 2,
+                ),
+                boxShadow: isAccent
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFFB7F35A)
+                              .withValues(alpha: 0.12),
+                          blurRadius: 14,
+                          spreadRadius: 1,
+                        ),
+                      ]
+                    : null,
+              ),
+              child: child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> showImageSourceSelector(
+  BuildContext context,
+) async {
+  // 現在のshowModalBottomSheet処理
+  showModalBottomSheet(
+      context: context,
+      // 背景を少し暗くしつつ、上の角を丸くする
+      backgroundColor: const Color(0xFF1A1A2E), 
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext bc) {
+        return SafeArea(
+          child: Wrap(
+            children: <Widget>[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
+                child: Text(
+                  '画像の追加方法を選択',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera_rounded, color: Colors.white70),
+                title: const Text('カメラで撮影', style: TextStyle(color: Colors.white)),
+                onTap: () async {
+                  Navigator.of(bc).pop(); // シートを閉じる
+                  final provider = Provider.of<CameraProvider>(context, listen: false);
+                  await provider.pickAndStoreImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_rounded, color: Colors.white70),
+                title: const Text('ギャラリーから選択', style: TextStyle(color: Colors.white)),
+                onTap: () async {
+                  Navigator.of(bc).pop(); // シートを閉じる
+                  final provider = Provider.of<CameraProvider>(context, listen: false);
+                  await provider.pickAndStoreImage(ImageSource.gallery);
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }

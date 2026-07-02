@@ -1,3 +1,4 @@
+//画像の「選択・撮影」と「送信用の軽量化・変換」の処理
 import 'dart:convert';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
@@ -21,11 +22,12 @@ class CameraService {
         pickedFiles.add(file);
       }
     }
-
+    //何もない場合は明確にnullになるように定義している
     if (pickedFiles.isEmpty) return null;
 
+    //配列にすると複数画像送信可能。変数にすると一枚のみ
     final List<Map<String, String>> resultList = [];
-
+    //全部の画像に対して処理を行うためのループ
     for (final xFile in pickedFiles) {
       final file = File(xFile.path);
 
@@ -50,7 +52,7 @@ class CameraService {
 
       // 4. 圧縮後のバイトデータを Base64 にエンコード
       final base64str = base64Encode(compressedBytes);
-
+      //pathはクライアントサイドで画像を保持するため。base64をサーバー側に送信する
       resultList.add({
         'path': xFile.path,
         'base64': base64str,

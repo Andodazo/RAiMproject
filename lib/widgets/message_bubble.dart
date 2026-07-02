@@ -1,3 +1,4 @@
+//chat画面の一件分のメッセージを吹き出しとして表示する
 import 'package:flutter/material.dart';
 import 'package:raim_prototype/models/message.dart';
 
@@ -8,8 +9,8 @@ class MessageBubble extends StatelessWidget {
   
   @override
   Widget build(BuildContext context) {
+    //メッセージがユーザーの発言かどうかを判定
     final isUser = message.role == MessageRole.user;
-    
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(

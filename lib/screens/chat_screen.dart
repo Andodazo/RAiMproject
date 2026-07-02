@@ -1,16 +1,13 @@
+//画面にUIの配置や位置調整
 import 'dart:io' show Platform;
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_embed_unity/flutter_embed_unity.dart';
-import 'package:provider/provider.dart';
-import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/widgets/character_display.dart';
 import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
-import 'package:raim_prototype/services/camera_service.dart';
-import 'package:image_picker/image_picker.dart'; 
 
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
@@ -114,258 +111,43 @@ class ChatScreen extends StatelessWidget {
     /// EmbedUnity方式は変更せず、FlutterのUIとして上に重ねる。
   Widget _buildReferenceTopBar(BuildContext context) {
     final safeTop = MediaQuery.of(context).padding.top;
-
+    //ハンバーガーメニュー
     return Positioned(
       top: safeTop + 60,//上部三つのボタンの位置を変える
       left: 24,
       right: 24,
       child: Row(
         children: [
-          _glassMenuButton(context),
+          ChatMenuButton(
+          onSettings: () {
+            debugPrint('[ChatScreen] 設定が押されました');
+          },
+          ),
           const SizedBox(width: 12),
-
+          //新しい会話ボタン
           Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
-                child: Material(
-                  // CAPTUREボタンと同じように Material の中に InkWell を入れる。
-                color: Colors.transparent,
-                child: InkWell(
-                splashColor: Colors.white.withValues(alpha: 0.18),
-                highlightColor: Colors.white.withValues(alpha: 0.10),
-                onTap: () {
-                // 新しい会話ボタンが押された時の処理。
-                // 今は画面遷移せず、押されたことだけを確認する。
-                  debugPrint('[ChatScreen] 新しい会話ボタンが押されました');
-                },
-                child: Container(
-                  height: 48,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF172433).withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                    color: const Color(0xFFD6ECFF).withValues(alpha: 0.18),
-                      width: 1,
-                    ),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        Icons.chat_bubble_outline_rounded,
-                        color: Colors.white70,
-                        size: 18,
-                      ),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          '新しい会話',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        color: Colors.white70,
-                        size: 22,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          child: ChatNewConversationButton(
+            onTap: () {
+              debugPrint(
+                '[ChatScreen] 新しい会話ボタンが押されました',
+              );
+            },
           ),
-
-          const SizedBox(width: 12),
-
-          ClipRRect(
-  borderRadius: BorderRadius.circular(18),
-  child: BackdropFilter(
-    filter: ImageFilter.blur(sigmaX: 1.5, sigmaY: 1.5),
-    child: Material(
-      // 音量ボタンと同じ仕組みにして、CAPTUREボタンにもタップ反応を出す。
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        splashColor: Colors.white.withValues(alpha: 0.18),
-        highlightColor: Colors.white.withValues(alpha: 0.10),
-        onTap: () {
-          // ★ ここを書き換え：直接ギャラリーを開くのではなく、選択ボトムシートを起動
-          _showImageSourceSelector(context);
-        },
-        child: Container(
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF172433).withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: const Color(0xFFD6ECFF).withValues(alpha: 0.18),
-              width: 1,
-            ),
-          ),
-          child: const Row(
-            children: [
-              Icon(
-                Icons.camera_alt_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-              SizedBox(width: 8),
-              Text(
-                'CAPTURE',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+        ),
+        const SizedBox(width: 12),
+          //キャプチャーボタン
+          ChatCaptureButton(
+          onTap: () {
+            showImageSourceSelector(context);
+          },
           ),
         ],
       ),
     );
   }
 
-  // 💡 追加：カメラ・ギャラリーの選択ボトムシート
-  void _showImageSourceSelector(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      // 背景を少し暗くしつつ、上の角を丸くする
-      backgroundColor: const Color(0xFF1A1A2E), 
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (BuildContext bc) {
-        return SafeArea(
-          child: Wrap(
-            children: <Widget>[
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
-                child: Text(
-                  '画像の追加方法を選択',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_camera_rounded, color: Colors.white70),
-                title: const Text('カメラで撮影', style: TextStyle(color: Colors.white)),
-                onTap: () async {
-                  Navigator.of(bc).pop(); // シートを閉じる
-                  final provider = Provider.of<CameraProvider>(context, listen: false);
-                  await provider.pickAndStoreImage(ImageSource.camera);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library_rounded, color: Colors.white70),
-                title: const Text('ギャラリーから選択', style: TextStyle(color: Colors.white)),
-                onTap: () async {
-                  Navigator.of(bc).pop(); // シートを閉じる
-                  final provider = Provider.of<CameraProvider>(context, listen: false);
-                  await provider.pickAndStoreImage(ImageSource.gallery);
-                },
-              ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュー
-  return PopupMenuButton<String>(
-    tooltip: 'メニュー',
-    color: Colors.black.withValues(alpha: 0.88),
-    offset: const Offset(0, 56),
-
-    onOpened: () {
-    // ハンバーガーメニューを開いた時点で入力欄のフォーカスを外す。
-    // メニュー表示中に入力欄が反応しないようにする。
-    FocusManager.instance.primaryFocus?.unfocus();
-    },
-
-    onCanceled: () {
-    // 設定を押さず、何もない空間を押してメニューを閉じた時の処理。
-    // 入力欄にカーソルやキーボードが戻らないようにする。
-    FocusManager.instance.primaryFocus?.unfocus();
-    },
-
-    onSelected: (value) {
-      // 設定メニューを押したあと、入力欄にフォーカスが戻らないようにする。
-      // これでキーボードやカーソルが入力欄へ移動するのを防ぐ。
-      FocusManager.instance.primaryFocus?.unfocus();
-      if (value == 'settings') {
-        // 今は設定画面を開かず、押されたことだけを確認して終わる。
-        debugPrint('[ChatScreen] 設定が押されました');
-      }
-    },
-    itemBuilder: (context) => const [ //設定変更
-      PopupMenuItem(
-        value: 'settings',
-        child: Row(
-          children: [
-            Icon(Icons.settings_rounded, color: Colors.white70),
-            SizedBox(width: 12),
-            Text('設定', style: TextStyle(color: Colors.white)),
-          ],
-        ),
-      ),
-    ],
-    child: _glassSmallButtonVisual(icon: Icons.menu_rounded),
-  );
-}
-
-  Widget _glassSmallButtonVisual({
-    required IconData icon,
-  }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 1.4, sigmaY: 1.4),
-        child: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: const Color(0xFF172433).withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: const Color(0xFFD6ECFF).withValues(alpha: 0.18),
-              width: 1,
-            ),
-          ),
-          child: Icon(
-            icon,
-            color: Colors.white.withValues(alpha: 0.82),
-            size: 24,
-          ),
-        ),
-      ),
-    );
-  }
-
   /// 下部の丸い操作ボタン
-  ///
-  /// 設定・音量・マイクを表示する。
+  /// 音量を表示する。
   // 音量ボタンは画面右上寄りに固定する。
   // bottom を指定するとキーボード表示時に位置がずれるため、top と right のみ使う。
   Widget _buildVolumeButton(BuildContext context) {
@@ -374,59 +156,16 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
   return Positioned(
     top: safeTop + 125,
     right: 36,
-    child: _glassLargeButton(
-      icon: Icons.volume_up_rounded,
+    child: ChatVolumeButton(
       onTap: () {
-        debugPrint('[ChatScreen] 音量ボタンが押されました');
+        debugPrint(
+          '[ChatScreen] 音量ボタンが押されました',
+        );
       },
     ),
   );
 }
 
-  /// 少し大きいガラス風ボタン
-  Widget _glassLargeButton({
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(28),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 1.6, sigmaY: 1.6),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(28),
-            onTap: onTap,
-            child: Container(
-              width: 64,
-              height: 54,
-              decoration: BoxDecoration(
-                color: const Color(0xFF2C475F).withValues(alpha: 0.72),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: const Color(0xFFB7F35A).withValues(alpha: 0.58),
-                  width: 1.2,
-                ),
-                boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFB7F35A).withValues(alpha: 0.16),
-                  blurRadius: 14,
-                  spreadRadius: 1,
-                ),
-              ],
-              ),
-              child: Icon(
-                icon,
-                color: Colors.white.withValues(alpha: 0.88),
-                size: 28,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-  
   /// Unity からのメッセージハンドラ
   /// 
   /// 現状は Flutter → Unity の一方通行なので空実装。
@@ -548,71 +287,7 @@ Widget _glassMenuButton(BuildContext context) {  // ハンバーガーメニュ�
               onTapOutside: (_) {
                 FocusManager.instance.primaryFocus?.unfocus();
               },
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  //選択された画像があれば、入力欄の上にプレビューを表示
-                  Consumer<CameraProvider>(
-                    builder: (context, provider, child) {
-                      if (!provider.hasImage) return const SizedBox.shrink();
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12, left: 24, right: 24),
-                        child: SizedBox(
-                          height: 76, // 枠線やバツボタンが見切れないよう少し高さを確保
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal, // 横スクロール
-                            itemCount: provider.selectedImagePaths.length,
-                            itemBuilder: (context, index) {
-                              final imagePath = provider.selectedImagePaths[index];
-                              
-                              return Padding(
-                                padding: const EdgeInsets.only(right: 12, top: 6), // 画像同士の間隔
-                                child: Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    // ガラス風の枠線で囲まれた画像のプレビュー
-                                    Container(
-                                      width: 70,
-                                      height: 70,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(color: Colors.white30, width: 1.5),
-                                        image: DecorationImage(
-                                          image: FileImage(File(imagePath)),
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: -6,
-                                      right: -6,
-                                      child: GestureDetector(
-                                        // 全体のクリアから、このインデックス（index）の画像だけを消す処理
-                                        onTap: () => provider.removeImageAt(index),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.black87,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(Icons.close, color: Colors.white, size: 14),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  //既存の入力値
-                  const ChatInput(),
-                ],
-              ),
+              child: const ChatInput(),
             ),
           ),
         ),
@@ -634,176 +309,63 @@ Widget _buildWideControlBar(BuildContext context) {
 
   return Stack(
     children: [
-      // 左側にメニューボタンを配置
+      // メニューボタン
       Positioned(
         top: safeTop + 20,
         left: 130,
-        child: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: const Color(0xFFB7F35A).withValues(alpha: 0.42),
-              width: 2,
-            ),
-          ),
-          child: FittedBox(
-            fit: BoxFit.contain,
-            child: _glassMenuButton(context),
-          ),
+        child: ChatMenuButton(
+          isWide: true,
+          onSettings: () {
+            debugPrint('[ChatScreen] 設定が押されました');
+          },
         ),
       ),
 
-      // 右上に「新しい会話」ボタンを配置
+       // 新しい会話ボタン
       Positioned(
         top: safeTop + 30,
         right: 100,
-        child: _wideGlassButton(
-          width: 390,
+        child: ChatNewConversationButton(
+          isWide: true,
           onTap: () {
-            debugPrint('[ChatScreen] 新しい会話ボタンが押されました');
+            debugPrint(
+              '[ChatScreen] 新しい会話ボタンが押されました',
+            );
           },
-          child: const Row(
-            children: [
-              Icon(Icons.chat_bubble_outline_rounded, color: Colors.white, size: 20),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  '新しい会話',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 24),
-            ],
-          ),
         ),
       ),
 
-      // 左下に CAPTURE ボタンを配置
+       // CAPTUREボタン
       Positioned(
         bottom: 10,
-        height: 50,
         right: 520,
-        child: _wideGlassButton(
-          width: 150,
+        child: ChatCaptureButton(
+          isWide: true,
           onTap: () {
-            _showImageSourceSelector(context);
+            showImageSourceSelector(context);
           },
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.camera_alt_rounded, color: Colors.white, size: 20),
-              SizedBox(width: 10),
-              Text(
-                'CAPTURE',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.1,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
 
-      // 右上端に音量ボタンを配置
+      // 音量ボタン
       Positioned(
         top: safeTop + 30,
         right: 32,
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            splashColor: const Color(0xFFB7F35A).withValues(alpha: 0.18),
-            onTap: () {
-              debugPrint('[ChatScreen] 音量ボタンが押されました');
-            },
-            child: Container(
-              width: 52,
-              height: 47,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF2C475F).withValues(alpha: 0.72),
-                border: Border.all(
-                  color: const Color(0xFFB7F35A).withValues(alpha: 0.42),
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFB7F35A).withValues(alpha: 0.12),
-                    blurRadius: 14,
-                    spreadRadius: 1,
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.volume_up_rounded,
-                color: Colors.white,
-                size: 28,
-              ),
-            ),
-          ),
+        child: ChatVolumeButton(
+          isWide: true,
+          onTap: () {
+            debugPrint(
+              '[ChatScreen] 音量ボタンが押されました',
+            );
+          },
         ),
       ),
     ],
   );
 }
-
-// PC・全画面用の横長ボタンの見た目をまとめる
-Widget _wideGlassButton({
-  required double width,
-  required VoidCallback onTap,
-  required Widget child,
-}) {
-  return ClipRRect(
-    borderRadius: BorderRadius.circular(18),
-    child: BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 1.6, sigmaY: 1.6),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          splashColor: const Color(0xFFB7F35A).withValues(alpha: 0.18),
-          highlightColor: Colors.white.withValues(alpha: 0.08),
-          onTap: onTap,
-          child: Container(
-            width: width,
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF2C475F).withValues(alpha: 0.72),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(
-                color: const Color(0xFFB7F35A).withValues(alpha: 0.42),
-                width: 2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFB7F35A).withValues(alpha: 0.12),
-                  blurRadius: 14,
-                  spreadRadius: 1,
-                ),
-              ],
-            ),
-            child: child,
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
   // ====================================================
   // PC・横長レイアウト(現状維持 + プラットフォーム分岐対応)
+  // PC画面全体の配置を決める処理
   // ====================================================
   Widget _buildWideLayout(BuildContext context) {
     return Stack(
@@ -875,7 +437,7 @@ Widget _wideGlassButton({
       ],
     );
   }
-  
+  //チャットパネルの横幅計算
   double screenWidthRatio(BuildContext context, double ratio) {
     final width = MediaQuery.of(context).size.width * ratio;
     return width.clamp(300.0, 500.0);  
