@@ -57,7 +57,18 @@ class ChatProvider extends ChangeNotifier {
     super.dispose();
   }
 //{List<String>? images}の追加
-  Future<void> sendUserMessage(String text, {List<String>? images}) async {
+  Future<void> sendUserMessage(String text, {List<String>? images, List<String>? filePaths}) async {
+    // ─── 履歴への追加処理を追加 ───
+    final userMessage = Message(
+      text: text,
+      role: MessageRole.user,
+      timestamp: DateTime.now(),
+      selectedImagePaths: filePaths, //受け取ったファイルパスをメッセージに記憶
+    );
+    _messages.add(userMessage);
+    notifyListeners();
+    // ────────────────────────────
+
     //サーバーが受け取るための画像配列を準備（中身がnullならからの配列に）
     //  修正：サーバーの仕様に合わせ、Base64文字列を [ { "data": "...", "media_type": "image/jpeg" } ] の構造に変換
     //image
@@ -70,18 +81,6 @@ class ChatProvider extends ChangeNotifier {
         });
       }
     }
-
-    //メッセージ本文
-    //Messageへの追加
-    _messages.add(Message(
-      text: text,
-      role: MessageRole.user,//誰のメッセージか(今回はuser)
-      timestamp: DateTime.now(),//messageと一緒に日時を送っている
-                                //もし将来、画面上の吹き出し（Messageモデル）にも画像を表示したくなったら
-                                // ここに imagePath: ... などを渡せるようMessageモデル側を拡張してください。
-    ));
-    // userからのメッセージが追加されたことを画面側に知らせて、再描画させる
-    notifyListeners();
     // ロード中状態に切り替える
     _isLoading = true;
     // ロード中状態に変わったことを画面側に知らせて、再描画させる

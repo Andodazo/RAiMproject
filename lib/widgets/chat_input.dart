@@ -45,10 +45,13 @@ class _ChatInputState extends State<ChatInput> {
         debugPrint('[ChatInput] 画像[$i] Base64(部分): $preview');
       }
     }
+    //クリアされる前に、現在の画像パスのコピーを作成しておく（安全のため）
+    final pathsToSend = imagePaths != null ? List<String>.from(imagePaths) : null;
     // サーバーへ送信
     context.read<ChatProvider>().sendUserMessage(
       text,
       images: base64List,
+      filePaths: pathsToSend, //画面表示用のファイルパスをChatProviderに渡す
       );
     _controller.clear();
     cameraProvider.clearImage(); //キープされていた画像とプレビューをクリア
