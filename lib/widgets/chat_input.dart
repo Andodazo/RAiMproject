@@ -1,6 +1,7 @@
 //送信処理・画像添付状態の取得・送信後のリセット・ボタンのデザイン
 import 'dart:io';
 import 'dart:ui';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -16,9 +17,47 @@ class ChatInput extends StatefulWidget {
 
 class _ChatInputState extends State<ChatInput> {
   final TextEditingController _controller = TextEditingController();
-  
+  // Windows版で Enter / Shift + Enter を判定するためのフォーカス管理
+  final FocusNode _inputFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+
+  // 入力欄にフォーカスがあるときのキー入力を監視する
+    _inputFocusNode.onKeyEvent = _handleInputKeyEvent;
+  }
+
+  // Windows版のみ:
+ // Shift + Enter は改行、Enterのみは送信にする
+  KeyEventResult _handleInputKeyEvent(FocusNode node, KeyEvent event) {
+    if (!Platform.isWindows || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+
+    final isEnter = event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+
+    if (!isEnter) {
+      return KeyEventResult.ignored;
+    }
+
+    // Shift + Enter の場合は TextField に任せて改行する
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+
+    // Enterのみの場合は送信する
+    _sendMessage();
+    return KeyEventResult.handled;
+  }
+
   @override
   void dispose() {
+    // 使い終わった FocusNode を破棄する
+    _inputFocusNode.dispose();
+
+    // 使い終わった TextEditingController を破棄する
     _controller.dispose();
     super.dispose();
   }
@@ -74,6 +113,8 @@ class _ChatInputState extends State<ChatInput> {
             children: [
               Expanded(
                 child: TextField(
+                  // Enterキーの処理を受け取るために FocusNode を設定する
+                  focusNode: _inputFocusNode,
                   controller: _controller,
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
