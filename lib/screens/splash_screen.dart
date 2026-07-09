@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/screens/chat_screen.dart';
 import 'package:raim_prototype/screens/login_screen.dart';
-import 'package:raim_prototype/services/raim_server_service.dart';
 
 /// アプリ起動直後に表示する認証振り分け画面です。
 ///
@@ -31,7 +30,7 @@ class _SplashScreenState extends State<SplashScreen> {
       builder: (context, auth, _) {
         switch (auth.status) {
           case AuthStatus.authenticated:
-            return const _AuthenticatedChatScreen();
+            return const ChatScreen();
           case AuthStatus.unauthenticated:
           case AuthStatus.authenticating:
           case AuthStatus.error:
@@ -41,35 +40,6 @@ class _SplashScreenState extends State<SplashScreen> {
         }
       },
     );
-  }
-}
-
-class _AuthenticatedChatScreen extends StatefulWidget {
-  const _AuthenticatedChatScreen();
-
-  @override
-  State<_AuthenticatedChatScreen> createState() =>
-      _AuthenticatedChatScreenState();
-}
-
-class _AuthenticatedChatScreenState extends State<_AuthenticatedChatScreen> {
-  bool _startedConnection = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_startedConnection) return;
-    _startedConnection = true;
-
-    // 認証済みになってから RAiM WebSocket へ接続します。
-    final raimService = context.read<RaimServerService>();
-    // ignore: unawaited_futures
-    raimService.connect();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return const ChatScreen();
   }
 }
 

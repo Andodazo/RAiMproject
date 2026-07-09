@@ -22,7 +22,7 @@ import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
-import 'package:raim_prototype/screens/chat_screen.dart';
+import 'package:raim_prototype/screens/splash_screen.dart';
 import 'package:raim_prototype/services/auth_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
@@ -151,7 +151,7 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
           useMaterial3: true,
         ),
-        home: const ChatScreen(),
+        home: const SplashScreen(),
       ),
     );
   }

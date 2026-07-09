@@ -456,11 +456,17 @@ class ChatScreen extends StatelessWidget {
     final authProvider = context.read<AuthProvider>();
 
     try {
-      // 通信を残したままアプリを閉じないように、まずWebSocketを明示的に切断する。
-      await raimService.disconnect();
       // Access Token / Refresh Token を削除する。次回起動時は未認証として扱われる。
       await authProvider.logoutForExit();
     } finally {
+      // 通信を残したままアプリを閉じないように WebSocket も閉じる。
+      // ただし終了操作では「切断完了待ち」でアプリ終了が止まる方が困るため、
+      // 短いタイムアウトを設け、失敗しても終了処理へ進む。
+      try {
+        await raimService.disconnect().timeout(const Duration(seconds: 1));
+      } catch (error) {
+        debugPrint('[ChatScreen] WebSocket切断待ちをスキップ: $error');
+      }
       await AppExitService.exitAfterLogout();
     }
   }
