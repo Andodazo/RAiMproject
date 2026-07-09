@@ -120,7 +120,7 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
     // 戻ってきた時に必要なら再接続が走る（RaimServerService 内部で）
     if (state == AppLifecycleState.detached) {
       //アプリ終了時に通信を残さないように
-      widget.raimService.disconnect();
+      unawaited(widget.raimService.disconnect());
     }
   }
 

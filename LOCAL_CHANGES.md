@@ -247,7 +247,6 @@ Windows版RAiMアプリ本体を、タイトルバーなし・枠なし・モニ
 - `crypto`
 - `flutter_secure_storage`
 - `url_launcher`
-- `uuid`
 - `web_socket_channel`
 
 ## 作成・更新したドキュメント
