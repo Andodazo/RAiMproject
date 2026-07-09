@@ -104,6 +104,10 @@ class RaimServerService implements LLMService {
   /// true なら自動再接続を抑止する
   bool _intentionalClose = false;
 
+  /// サービス自体を破棄済みかどうか
+  /// disconnect() はログアウトなどでも呼ぶため、StreamController は dispose() でだけ閉じる。
+  bool _disposed = false;
+
   /// 現在のセッションID
   /// サーバーから session_start で受信して保持する
   String? _sessionId;
@@ -134,7 +138,9 @@ class RaimServerService implements LLMService {
   void _setState(RaimConnectionState newState) {
     if (_state == newState) return;
     _state = newState;
-    _stateController.add(newState);
+    if (!_stateController.isClosed) {
+      _stateController.add(newState);
+    }
     // ignore: avoid_print
     print('[RaimServerService] State: $newState');
   }
@@ -148,6 +154,7 @@ class RaimServerService implements LLMService {
   /// 既に接続中なら何もしない
   /// 繋がってる時にやりたくない処理(つながってたらreturnで終わる)
   Future<void> connect() async {
+    if (_disposed) return;
     if (_state == RaimConnectionState.connected) return;
     _intentionalClose = false;
     _setState(RaimConnectionState.connecting);
@@ -181,10 +188,13 @@ class RaimServerService implements LLMService {
   }
 
   /// サーバーから切断する
-  /// アプリ終了時 or dispose 時に呼ぶ
+  /// ログアウトやアプリ終了前に呼ぶ。
+  /// 再ログインや終了処理で二重呼び出しされる可能性があるため、
+  /// StreamController はここでは閉じず、dispose() でだけ閉じる。
   Future<void> disconnect() async {
     _intentionalClose = true;  // 自動再接続を抑止
     _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     await _subscription?.cancel();
     await _channel?.sink.close(ws_status.normalClosure);
     _channel = null;
@@ -192,7 +202,19 @@ class RaimServerService implements LLMService {
     _sessionId = null;  // セッションIDもクリア
     await _broadcaster?.close();
     _broadcaster = null;
-    await _stateController.close();
+    _setState(RaimConnectionState.disconnected);
+  }
+
+  /// サービスを完全に破棄する。
+  /// アプリ終了時だけ呼び、通常の logout では disconnect() に留める。
+  Future<void> dispose() async {
+    if (_disposed) return;
+    await disconnect();
+    _disposed = true;
+
+    if (!_stateController.isClosed) {
+      await _stateController.close();
+    }
   }
 
   // ─────────────────────────────────────────────

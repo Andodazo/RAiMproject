@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/screens/chat_screen.dart';
 import 'package:raim_prototype/screens/login_screen.dart';
+import 'package:raim_prototype/services/raim_server_service.dart';
 
 /// アプリ起動直後に表示する認証振り分け画面です。
 ///
@@ -30,7 +31,7 @@ class _SplashScreenState extends State<SplashScreen> {
       builder: (context, auth, _) {
         switch (auth.status) {
           case AuthStatus.authenticated:
-            return const ChatScreen();
+            return const _AuthenticatedChatScreen();
           case AuthStatus.unauthenticated:
           case AuthStatus.authenticating:
           case AuthStatus.error:
@@ -40,6 +41,38 @@ class _SplashScreenState extends State<SplashScreen> {
         }
       },
     );
+  }
+}
+
+class _AuthenticatedChatScreen extends StatefulWidget {
+  const _AuthenticatedChatScreen();
+
+  @override
+  State<_AuthenticatedChatScreen> createState() =>
+      _AuthenticatedChatScreenState();
+}
+
+class _AuthenticatedChatScreenState extends State<_AuthenticatedChatScreen> {
+  bool _startedConnection = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (_startedConnection) return;
+    _startedConnection = true;
+
+    final raimService = context.read<RaimServerService>();
+
+    // Cognito 認証済みになってから、既存の WebSocket 接続を開始する。
+    // CloudFront/JWT 連携は今回の対象外なので、既存の connect() をそのまま呼ぶ。
+    // ignore: unawaited_futures
+    raimService.connect();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const ChatScreen();
   }
 }
 

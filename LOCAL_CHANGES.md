@@ -187,7 +187,9 @@ Windows検証が主対象ですが、Android / iOS側にも `raim://callback` �
 ## WebSocket接続
 
 現時点では CloudFront WebSocket 版の変更は未適用です。
-LLM 接続は既存の RAiM WebSocket 実装を維持しており、アプリ起動時に `RaimServerService.connect()` を開始します。
+LLM 接続は既存の RAiM WebSocket 実装を維持しています。
+ただし Cognito 認証導入後は、未認証状態で WebSocket 接続しないよう、アプリ起動時の `main()` では `RaimServerService.connect()` を開始しません。
+`SplashScreen` で Cognito 認証状態を確認し、認証済みになった後に既存の `RaimServerService.connect()` を呼び出します。
 
 主な対象ファイル:
 
@@ -197,14 +199,19 @@ LLM 接続は既存の RAiM WebSocket 実装を維持しており、アプリ起
 
 現在の処理概要:
 
-1. アプリ起動時に `RaimServerService.connect()` を実行
-2. `RaimServerService` は既存の WebSocket 接続先へ接続する
-3. 接続失敗時は既存実装どおり自動再接続する
+1. アプリ起動時に `SplashScreen` を表示
+2. `AuthProvider.initialize()` で Cognito 認証状態と保存済み Token を確認
+3. 未認証なら `LoginScreen` を表示し、WebSocket 接続は行わない
+4. 認証済みなら既存の `RaimServerService.connect()` を呼び出して WebSocket 接続を開始
+5. `RaimServerService` は既存の WebSocket 接続先へ接続する
+6. 接続失敗時は既存実装どおり自動再接続する
 
 補足:
 
 - CloudFront WebSocket 版は後で方針を決めてから別変更として対応する
 - 現時点では `Authorization: Bearer <access_token>` 付与や CloudFront 用 `requestId` 追加は行っていない
+- `RaimServerService.connect()` の引数追加や JWT 連携は今回未適用
+- ログアウト終了や再認証で `disconnect()` が複数回呼ばれても安全なように、StreamController は `disconnect()` では閉じず、アプリ終了時の `dispose()` で閉じる
 
 ## Windows表示・起動体験
 

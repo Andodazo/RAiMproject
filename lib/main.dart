@@ -1,20 +1,23 @@
 //プラットフォーム判定と起動 アプリ全体の土台を作る
-// lib/main.dart  (v3 - 永続接続対応)
+// lib/main.dart  (v3 - 認証後接続対応)
 // 変更点:
-// - main() で RaimServerService.connect() を起動時に呼ぶ
-// - WidgetsBindingObserver でアプリのライフサイクルを監視し、終了時に disconnect()
-// - 接続失敗してもアプリは起動する（裏で自動再接続が走る）
+// - main() では Unity Bridge と Provider の準備だけを行う
+// - WebSocket 接続は Cognito 認証済みになってから SplashScreen 側で開始する
+// - WidgetsBindingObserver でアプリのライフサイクルを監視し、終了時に RaimServerService を破棄する
 
 /*アプリ起動
 ↓
 Unity連携準備
 ↓
-RAiMサーバー接続開始
-↓
 Provider登録
 ↓
-ChatScreenを表示*/
+SplashScreen表示
+↓
+Cognito認証状態を確認
+↓
+認証済みなら既存WebSocket接続を開始してChatScreenを表示*/
 
+import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -50,12 +53,10 @@ void main() async {
   final UnityCommunicator unityBridge = _createUnityBridge();
   await unityBridge.start();
 
-  // RAiM サーバー接続（非同期、接続失敗してもアプリは起動）
-  // 起動を待つとアプリ表示が遅れるので、裏で接続させる
+  // RAiM サーバー接続用のサービスを作成する。
+  // 未認証状態で WebSocket 接続しないよう、connect() は SplashScreen で認証済みを確認してから呼ぶ。
   final authProvider = AuthProvider(AuthService());
   final raimService = RaimServerService(serverUrl: _raimServerUrl);
-  // ignore: unawaited_futures
-  raimService.connect(); // 失敗しても自動リトライ + offline 遷移
   //RaimAppにraimServiceとunityBridgeを入れている
   runApp(
     RaimApp(
@@ -108,7 +109,7 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.authProvider.disposeService();
-    widget.raimService.disconnect();
+    unawaited(widget.raimService.dispose());
     super.dispose();
   }
 
