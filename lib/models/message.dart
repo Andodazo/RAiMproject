@@ -6,6 +6,7 @@ class Message {
   final DateTime timestamp;
   final String? emotion;
   final double? intensity;
+  final List<String>? selectedImagePaths;
 //Messageの戻り値
   Message({
     required this.text,
@@ -13,6 +14,7 @@ class Message {
     required this.timestamp,
     this.emotion,
     this.intensity,
+    this.selectedImagePaths,
   });
 }
 
