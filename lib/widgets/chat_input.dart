@@ -9,20 +9,20 @@ import 'package:raim_prototype/providers/camera_provider.dart';
 
 class ChatInput extends StatefulWidget {
   const ChatInput({super.key});
-  
+
   @override
   State<ChatInput> createState() => _ChatInputState();
 }
 
 class _ChatInputState extends State<ChatInput> {
   final TextEditingController _controller = TextEditingController();
-  
+
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
-  
+
   void _sendMessage() {
     final text = _controller.text.trim();
     //CameraProviderの状態を取得
@@ -41,123 +41,115 @@ class _ChatInputState extends State<ChatInput> {
       // すべての画像のBase64の頭15文字をインデックス付きでログ出力
       for (int i = 0; i < base64List.length; i++) {
         final base64str = base64List[i];
-        final preview = base64str.length > 15 ? '${base64str.substring(0, 15)}...' : base64str;
+        final preview = base64str.length > 15
+            ? '${base64str.substring(0, 15)}...'
+            : base64str;
         debugPrint('[ChatInput] 画像[$i] Base64(部分): $preview');
       }
     }
     // サーバーへ送信
-    context.read<ChatProvider>().sendUserMessage(
-      text,
-      images: base64List,
-      );
+    context.read<ChatProvider>().sendUserMessage(text, images: base64List);
     _controller.clear();
     cameraProvider.clearImage(); //キープされていた画像とプレビューをクリア
   }
-  
+
   @override
   Widget build(BuildContext context) {
-  return TapRegion(
-    // 追加：入力欄の外を押したときにキーボードを閉じる
-    onTapOutside: (_) {
-      FocusManager.instance.primaryFocus?.unfocus();
-    },
+    return TapRegion(
+      // 追加：入力欄の外を押したときにキーボードを閉じる
+      onTapOutside: (_) {
+        FocusManager.instance.primaryFocus?.unfocus();
+      },
 
-    // 追加：画像と入力欄を縦に並べる
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 追加：選択した画像を入力欄の上に表示
-        const _SelectedImagePreview(),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                  minLines: 1,
-                  maxLines: 4,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                  ),
-                  cursorColor: Colors.white,
-                  decoration: InputDecoration(
-                    hintText: '何でも話してね',
+      // 追加：画像と入力欄を縦に並べる
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 追加：選択した画像を入力欄の上に表示
+          const _SelectedImagePreview(),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
+                    minLines: 1,
+                    maxLines: 4,
+                    style: const TextStyle(color: Colors.white, fontSize: 15),
+                    cursorColor: Colors.white,
+                    decoration: InputDecoration(
+                      hintText: '何でも話してね',
 
-                    // マイクボタン
-                    suffixIcon: IconButton(
-                      icon: const Icon(
-                        Icons.mic_rounded,
-                        color: Colors.white70,
+                      // マイクボタン
+                      suffixIcon: IconButton(
+                        icon: const Icon(
+                          Icons.mic_rounded,
+                          color: Colors.white70,
+                        ),
+                        onPressed: () {
+                          debugPrint('[ChatInput] 音声入力ボタンが押されました');
+                        },
                       ),
-                      onPressed: () {
-                        debugPrint(
-                          '[ChatInput] 音声入力ボタンが押されました',
-                        );
-                      },
-                    ),
 
-                    hintStyle: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
-                    ),
-                    filled: true,
-                    fillColor: Colors.white.withOpacity(0.15),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide(
-                        color: Colors.white.withOpacity(0.3),
-                        width: 1,
+                      hintStyle: TextStyle(
+                        color: Colors.white.withOpacity(0.5),
                       ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: const BorderSide(
-                        color: Colors.white,
-                        width: 1.5,
+                      filled: true,
+                      fillColor: Colors.white.withOpacity(0.15),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide(
+                          color: Colors.white.withOpacity(0.3),
+                          width: 1,
+                        ),
                       ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: const BorderSide(
+                          color: Colors.white,
+                          width: 1.5,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
                     ),
                   ),
                 ),
-              ),
 
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
 
-              // 送信ボタン
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF8BC34A),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: IconButton(
-                  icon: const Icon(
-                    Icons.send,
-                    color: Colors.white,
+                // 送信ボタン
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8BC34A),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  onPressed: _sendMessage,
+                  child: IconButton(
+                    icon: const Icon(Icons.send, color: Colors.white),
+                    onPressed: _sendMessage,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
-}
+
 //選択した画像を送信前にプレビュー表示し、不要な画像を削除
 class _SelectedImagePreview extends StatelessWidget {
   const _SelectedImagePreview();
@@ -191,10 +183,7 @@ class _SelectedImagePreview extends StatelessWidget {
                         height: 70,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.white30,
-                            width: 1.5,
-                          ),
+                          border: Border.all(color: Colors.white30, width: 1.5),
                           image: DecorationImage(
                             image: FileImage(File(imagePath)),
                             fit: BoxFit.cover,
@@ -232,16 +221,17 @@ class _SelectedImagePreview extends StatelessWidget {
   }
 }
 
-
 /// ハンバーガーメニューボタン
 class ChatMenuButton extends StatelessWidget {
   const ChatMenuButton({
     super.key,
     required this.onSettings,
+    required this.onLogout,
     this.isWide = false,
   });
 
   final VoidCallback onSettings;
+  final VoidCallback onLogout;
   final bool isWide;
 
   @override
@@ -257,6 +247,8 @@ class ChatMenuButton extends StatelessWidget {
 
         if (value == 'settings') {
           onSettings();
+        } else if (value == 'logout') {
+          onLogout();
         }
       },
       itemBuilder: (context) => const [
@@ -264,15 +256,20 @@ class ChatMenuButton extends StatelessWidget {
           value: 'settings',
           child: Row(
             children: [
-              Icon(
-                Icons.settings_rounded,
-                color: Colors.white70,
-              ),
+              Icon(Icons.settings_rounded, color: Colors.white70),
               SizedBox(width: 12),
-              Text(
-                '設定',
-                style: TextStyle(color: Colors.white),
-              ),
+              Text('設定', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
+        PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'logout',
+          child: Row(
+            children: [
+              Icon(Icons.logout_rounded, color: Colors.redAccent),
+              SizedBox(width: 12),
+              Text('ログアウトして終了', style: TextStyle(color: Colors.white)),
             ],
           ),
         ),
@@ -280,20 +277,15 @@ class ChatMenuButton extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: 1.4,
-            sigmaY: 1.4,
-          ),
+          filter: ImageFilter.blur(sigmaX: 1.4, sigmaY: 1.4),
           child: Container(
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: const Color(0xFF172433)
-                  .withValues(alpha: 0.72),
+              color: const Color(0xFF172433).withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color:const Color(0xFFB7F35A)
-                        .withValues(alpha: 0.42),
+                color: const Color(0xFFB7F35A).withValues(alpha: 0.42),
                 width: 2,
               ),
             ),
@@ -406,11 +398,7 @@ class ChatCaptureButton extends StatelessWidget {
 
 /// 音量ボタン
 class ChatVolumeButton extends StatelessWidget {
-  const ChatVolumeButton({
-    super.key,
-    required this.onTap,
-    this.isWide = false,
-  });
+  const ChatVolumeButton({super.key, required this.onTap, this.isWide = false});
 
   final VoidCallback onTap;
   final bool isWide;
@@ -424,11 +412,7 @@ class ChatVolumeButton extends StatelessWidget {
       isAccent: true,
       padding: EdgeInsets.zero,
       onTap: onTap,
-      child: Icon(
-        Icons.volume_up_rounded,
-        color: Colors.white,
-        size: 28,
-      ),
+      child: Icon(Icons.volume_up_rounded, color: Colors.white, size: 28),
     );
   }
 }
@@ -440,8 +424,7 @@ class _ChatGlassButton extends StatelessWidget {
     required this.onTap,
     required this.child,
     this.width,
-    this.padding =
-        const EdgeInsets.symmetric(horizontal: 14),
+    this.padding = const EdgeInsets.symmetric(horizontal: 14),
     this.borderRadius = 18,
     this.isAccent = false,
   });
@@ -463,18 +446,13 @@ class _ChatGlassButton extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: 1.6,
-          sigmaY: 1.6,
-        ),
+        filter: ImageFilter.blur(sigmaX: 1.6, sigmaY: 1.6),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius:
-                BorderRadius.circular(borderRadius),
+            borderRadius: BorderRadius.circular(borderRadius),
             splashColor: Colors.white.withValues(alpha: 0.18),
-            highlightColor:
-                Colors.white.withValues(alpha: 0.10),
+            highlightColor: Colors.white.withValues(alpha: 0.10),
             onTap: onTap,
             child: Container(
               width: width,
@@ -482,17 +460,14 @@ class _ChatGlassButton extends StatelessWidget {
               padding: padding,
               decoration: BoxDecoration(
                 color: backgroundColor,
-                borderRadius:
-                    BorderRadius.circular(borderRadius),
-                border: Border.all(
-                  color: borderColor,
-                  width: 2,
-                ),
+                borderRadius: BorderRadius.circular(borderRadius),
+                border: Border.all(color: borderColor, width: 2),
                 boxShadow: isAccent
                     ? [
                         BoxShadow(
-                          color: const Color(0xFFB7F35A)
-                              .withValues(alpha: 0.12),
+                          color: const Color(
+                            0xFFB7F35A,
+                          ).withValues(alpha: 0.12),
                           blurRadius: 14,
                           spreadRadius: 1,
                         ),
@@ -508,54 +483,70 @@ class _ChatGlassButton extends StatelessWidget {
   }
 }
 
-Future<void> showImageSourceSelector(
-  BuildContext context,
-) async {
+Future<void> showImageSourceSelector(BuildContext context) async {
   // 現在のshowModalBottomSheet処理
   showModalBottomSheet(
-      context: context,
-      // 背景を少し暗くしつつ、上の角を丸くする
-      backgroundColor: const Color(0xFF1A1A2E), 
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (BuildContext bc) {
-        return SafeArea(
-          child: Wrap(
-            children: <Widget>[
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
-                child: Text(
-                  '画像の追加方法を選択',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+    context: context,
+    // 背景を少し暗くしつつ、上の角を丸くする
+    backgroundColor: const Color(0xFF1A1A2E),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (BuildContext bc) {
+      return SafeArea(
+        child: Wrap(
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
+              child: Text(
+                '画像の追加方法を選択',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.photo_camera_rounded, color: Colors.white70),
-                title: const Text('カメラで撮影', style: TextStyle(color: Colors.white)),
-                onTap: () async {
-                  Navigator.of(bc).pop(); // シートを閉じる
-                  final provider = Provider.of<CameraProvider>(context, listen: false);
-                  await provider.pickAndStoreImage(ImageSource.camera);
-                },
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.photo_camera_rounded,
+                color: Colors.white70,
               ),
-              ListTile(
-                leading: const Icon(Icons.photo_library_rounded, color: Colors.white70),
-                title: const Text('ギャラリーから選択', style: TextStyle(color: Colors.white)),
-                onTap: () async {
-                  Navigator.of(bc).pop(); // シートを閉じる
-                  final provider = Provider.of<CameraProvider>(context, listen: false);
-                  await provider.pickAndStoreImage(ImageSource.gallery);
-                },
+              title: const Text(
+                'カメラで撮影',
+                style: TextStyle(color: Colors.white),
               ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        );
-      },
-    );
-  }
+              onTap: () async {
+                Navigator.of(bc).pop(); // シートを閉じる
+                final provider = Provider.of<CameraProvider>(
+                  context,
+                  listen: false,
+                );
+                await provider.pickAndStoreImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.photo_library_rounded,
+                color: Colors.white70,
+              ),
+              title: const Text(
+                'ギャラリーから選択',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () async {
+                Navigator.of(bc).pop(); // シートを閉じる
+                final provider = Provider.of<CameraProvider>(
+                  context,
+                  listen: false,
+                );
+                await provider.pickAndStoreImage(ImageSource.gallery);
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      );
+    },
+  );
+}

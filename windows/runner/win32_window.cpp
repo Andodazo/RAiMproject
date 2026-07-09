@@ -153,6 +153,29 @@ bool Win32Window::Show() {
   return ShowWindow(window_handle_, SW_SHOWNORMAL);
 }
 
+bool Win32Window::EnterBorderlessFullscreen() {
+  if (!window_handle_) {
+    return false;
+  }
+
+  HMONITOR monitor = MonitorFromWindow(window_handle_, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO monitor_info{};
+  monitor_info.cbSize = sizeof(monitor_info);
+  if (!GetMonitorInfo(monitor, &monitor_info)) {
+    return false;
+  }
+
+  const RECT monitor_rect = monitor_info.rcMonitor;
+  SetWindowLongPtr(window_handle_, GWL_STYLE, WS_POPUP);
+  SetWindowLongPtr(window_handle_, GWL_EXSTYLE, WS_EX_APPWINDOW);
+
+  return SetWindowPos(
+             window_handle_, HWND_TOP, monitor_rect.left, monitor_rect.top,
+             monitor_rect.right - monitor_rect.left,
+             monitor_rect.bottom - monitor_rect.top,
+             SWP_NOOWNERZORDER | SWP_FRAMECHANGED) != 0;
+}
+
 // static
 LRESULT CALLBACK Win32Window::WndProc(HWND const window,
                                       UINT const message,
