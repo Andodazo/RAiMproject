@@ -8,7 +8,7 @@
 
 ## 変更方針
 
-- このワークスペースの変更は、基本的に main へ push しないローカル検証変更として扱う。
+- main へ直接 push せず、feature ブランチで変更し、レビュー後に取り込む。
 - クライアント側に Cognito 連携の検証処理を追加する。
 - 秘密情報はクライアントに持たせず、公開可能な Cognito App Client ID のみを設定する。
 - Windows デスクトップでの検証を主対象にする。
@@ -32,11 +32,13 @@
 
 処理概要:
 
-1. `SplashScreen` 起動
+1. `SplashScreen` を表示
 2. `AuthProvider.initialize()` を実行
-3. `AuthService.loadValidTokens()` で保存済みTokenを確認
-4. Tokenが有効なら `ChatScreen` へ進む
-5. Tokenがない、またはRefresh不可なら `LoginScreen` へ進む
+3. `AuthService.loadValidTokens()` で保存済み Token を確認
+4. Token が有効なら `_AuthenticatedChatScreen` へ進む
+5. `_AuthenticatedChatScreen` で既存の `RaimServerService.connect()` を呼び出す
+6. `ChatScreen` を表示
+7. Token がない、または Refresh 不可なら `LoginScreen` へ進む
 
 ### Cognito / PKCE 認証
 
@@ -234,19 +236,22 @@ Windows版RAiMアプリ本体を、タイトルバーなし・枠なし・モニ
 
 ## 依存関係追加
 
-認証・Token保存・WebSocket用に依存関係を追加しています。
+認証・Token保存・外部ブラウザ起動のために依存関係を追加・利用しています。
 
 主な対象ファイル:
 
 - `pubspec.yaml`
 - `pubspec.lock`
 
-追加・利用している主な依存:
+今回追加・利用開始した依存:
 
 - `app_links`
 - `crypto`
 - `flutter_secure_storage`
 - `url_launcher`
+
+既存利用している依存:
+
 - `web_socket_channel`
 
 ## 作成・更新したドキュメント
@@ -269,13 +274,16 @@ Android / iOS では Unity 埋め込み、Windows では Flutter の立ち絵表
 - `android/build.gradle.kts`
 - `android/settings.gradle.kts`
 - `android/app/build.gradle.kts`
-- `android/unityLibrary/build.gradle`
 - `lib/screens/login_screen.dart`
 - `lib/screens/chat_screen.dart`
 - `lib/services/embed_unity_bridge.dart`
 - `lib/services/app_exit_service.dart`
 - `lib/services/browser_login_launcher_io.dart`
 - `android/app/src/main/kotlin/com/example/raim_prototype/MainActivity.kt`
+
+関連する前提ファイル:
+
+- `android/unityLibrary/build.gradle`
 
 変更内容:
 
@@ -310,7 +318,7 @@ Android / iOS では Unity 埋め込み、Windows では Flutter の立ち絵表
 
 過去の方針:
 
-- `RAiMproject` の変更は基本的にpushしない
+- `RAiMproject` の変更は feature ブランチで管理し、main へ直接 push しない
 - 通常の `git status` に出にくいよう、ローカルのexclude / skip-worktree運用を行っている
 
 push する場合の注意:
