@@ -39,6 +39,13 @@ class Win32Window {
   // Show the current window. Returns true if the window was successfully shown.
   bool Show();
 
+  // Makes the current window a borderless fullscreen window on its monitor.
+  //
+  // This removes the normal Windows title bar / frame and stretches the window
+  // to the full monitor bounds. RAiM is used as a kiosk-like local verification
+  // app, so we prefer this lightweight native setup over adding a Dart package.
+  bool EnterBorderlessFullscreen();
+
   // Release OS resources associated with window.
   void Destroy();
 

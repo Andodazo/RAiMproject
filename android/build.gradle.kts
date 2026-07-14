@@ -2,7 +2,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        // === flutter_embed_unity 追加 ===
+        // unityLibrary/libs に含まれる Unity の jar / aar を Gradle から解決できるようにします。
         flatDir {
             dirs(file("${project(":unityLibrary").projectDir}/libs"))
         }
