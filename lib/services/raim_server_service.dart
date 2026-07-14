@@ -162,7 +162,7 @@ class RaimServerService implements LLMService {
       // ブロードキャスト用 StreamController を準備 messageを入れる部分の初期定義
       _broadcaster ??= StreamController<LLMResponse>.broadcast();
 
-      // 受信開始
+      // 受信開始F
       _subscription = _channel!.stream.listen(
         _onMessage,
         onError: _onError,
@@ -203,12 +203,23 @@ class RaimServerService implements LLMService {
   ///
   /// 1. JSON パース(JSONをプログラムに使えるように変換)
   /// 2. session_start なら sessionID を保持（broadcaster には流さない）
-  /// 3. それ以外は broadcaster に流す（sendMessage や incomingStream が拾う）
+  /// 3.それ以外の metadata / text_chunk / audio_chunk / tool_call / chat_end は
+  /// 4._broadcaster に流して ChatProvider 側で処理する。
   void _onMessage(dynamic rawMessage) {
     try {
+      print('[RaimServerService] raw message: $rawMessage');
+       // JSON文字列をDartのMapに変換する
       final data = jsonDecode(rawMessage as String) as Map<String, dynamic>;
+      // MapからLLMResponseモデルを作る
       final response = LLMResponse.fromJson(data);
-
+      print('[RaimServerService] response type: ${response.type}');
+      // text_chunk の is_filler が正しく読めているか確認する
+      if (response.isTextChunk) {
+        print(
+          '[RaimServerService] text_chunk text=${response.text}, '
+          'isFiller=${response.isFiller}',
+        );
+      }
       // session_start は内部処理だけして broadcaster には流さない
       // → sendMessage の chat 待ちループに混入させないため
       if (response.isSessionStart && response.sessionId != null) {
@@ -216,6 +227,15 @@ class RaimServerService implements LLMService {
         // ignore: avoid_print
         print('[RaimServerService] Session started: $_sessionId');
         return;
+      }
+      //audioのログ出力サーバー側
+      if (response.isAudioChunk) {
+        print(
+          '[RaimServerService] audio_chunk '
+          'chunkId=${response.chunkId}, '
+          'format=${response.format}, '
+          'audioLength=${response.audioBase64?.length ?? 0}',
+        );
       }
 
       // それ以外のメッセージは broadcaster に流す
@@ -294,89 +314,88 @@ class RaimServerService implements LLMService {
   /// 1リクエストに対してサーバーから複数メッセージが返ってくる可能性がある
   /// （filler_audio → chat の順など）。
   /// chat メッセージを受信した時点で Stream を閉じる。
-  @override
+  // ============================================================
+  // 返答完了判定
+  // ============================================================
+  // v2.2では text_chunk / audio_chunk などが複数回届く。
+  // chat_end が来たら1回分の返答完了。
+  // 旧形式の chat と error も完了扱いにする。
+  bool _isTerminalResponse(LLMResponse response) {
+    return response.isChatEnd || response.isChat || response.isError;
+  }
+ @override
   Stream<LLMResponse> sendMessage(
     String userInput, {
     List<Message> history = const [],
-    // 型を List<String>? から List<Map<String, dynamic>>? に変更
-    List<Map<String, dynamic>>? images, //画像配列型に
+    List<Map<String, dynamic>>? images,
+    
   }) async* {
-    // offline / disconnected なら起こす（再接続試行）
+    // オフラインまたは切断中なら、送信前に再接続を試す
     if (_state == RaimConnectionState.offline ||
         _state == RaimConnectionState.disconnected) {
-      // ignore: avoid_print
       print('[RaimServerService] Waking up RAiM...');
       await _wakeUp();
     }
-
-    // 起こしても繋がらなければエラー
+    // 再接続しても接続できていなければ送信できない
     if (_state != RaimConnectionState.connected) {
-      throw Exception('ライムに繋がらないみたい……（state=$_state）');
+      throw Exception('RAiMに接続できていません: state=$_state');
     }
-
-    // 送信ペイロードを組み立て
-    // session_id を含めることで、サーバー側が過去の履歴を引ける
-    final Map<String, dynamic> payload = {
+    // 受信メッセージを流すStreamを用意する
+    _broadcaster ??= StreamController<LLMResponse>.broadcast();
+    // サーバーへ送る基本データ
+    final payload = <String, dynamic>{
       'text': userInput,
     };
-
-    // 画像があれば payload に追加する（画像なしの時は images フィールド自体を省略）
+     // 画像がある場合は payload に追加する
     if (images != null && images.isNotEmpty) {
       payload['images'] = images;
     }
-    
-    //セッションIDがあれば含める
+    // session_id がある場合は送信に含める
     if (_sessionId != null) {
       payload['session_id'] = _sessionId;
     }
+    // 送信後に返ってくる複数メッセージを順番に受け取るためのIterator
+    final iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
 
-    // デバッグログ
-    if (images != null && images.isNotEmpty) {
-      // ignore: avoid_print
-      print('[RaimServerService] 画像(${images.length}件)・セッション付きで送信データを組み立てました');
-    }
-    _channel!.sink.add(jsonEncode(payload));
-
-    // 受信ループの準備
-    // - 来たメッセージは responses に蓄積
-    // - chat を受信したら completer を complete して終了
-    // - タイムアウトで強制終了する保険も入れる
-    final completer = Completer<void>();
-    final responses = <LLMResponse>[];
-    StreamSubscription? sub;
-    Timer? timeoutTimer;
-
-    // 全体タイムアウト
-    // この時間内に chat が来なければエラー扱い
-    timeoutTimer = Timer(requestTimeout, () {
-      if (!completer.isCompleted) {
-        completer.completeError(
-          TimeoutException('ライムからの応答が遅すぎます', requestTimeout),
+    try {
+      // 先に受信待ちを開始してから送信する
+      // 送信直後に返答が来ても取り逃がさないため
+      final firstResponse = iterator.moveNext();
+      // WebSocketでサーバーへ送信する
+      _channel!.sink.add(jsonEncode(payload));
+      // 最初の応答を待つ
+      var hasResponse = await firstResponse.timeout(
+        requestTimeout,
+        onTimeout: () {
+          throw TimeoutException(
+            'RAiMからの最初の応答が遅すぎます',
+            requestTimeout,
+          );
+        },
+      );
+      // text_chunk / audio_chunk / tool_call などを順番に返す
+      while (hasResponse) {
+        final response = iterator.current;
+        // ChatProvider 側へ1件ずつ渡す
+        yield response;
+        // chat_end / chat / error が来たら1回分の応答完了
+        if (response.isChatEnd || response.isChat || response.isError) {
+          break;
+        }
+        // 次の応答を待つ
+        hasResponse = await iterator.moveNext().timeout(
+          requestTimeout,
+          onTimeout: () {
+            throw TimeoutException(
+              'RAiMからの次の応答が遅すぎます',
+              requestTimeout,
+            );
+          },
         );
       }
-    });
-
-    // broadcaster を購読して、chat が来るまで待つ
-    sub = _broadcaster!.stream.listen((response) {
-      responses.add(response);
-      if (response.isChat) {
-        if (!completer.isCompleted) completer.complete();
-      }
-    });
-
-    // 待機
-    try {
-      await completer.future;
     } finally {
-      // クリーンアップ（タイムアウト、購読解除）
-      timeoutTimer.cancel();
-      await sub.cancel();
-    }
-
-    // 受信したメッセージを順番に yield
-    // 受信側（ChatProvider）が await for で受け取る
-    for (final r in responses) {
-      yield r;
+      // このsendMessage専用の受信待ちを終了する
+      await iterator.cancel();
     }
   }
 }

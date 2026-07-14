@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_embed_unity/flutter_embed_unity.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 
@@ -13,6 +14,12 @@ class EmbedUnityBridge implements UnityCommunicator {
   /// Unity 側で呼ばれるメソッド名
   /// （RAiMCharacterController.ReceiveEmotion）
   static const String emotionMethodName = "ReceiveEmotion";
+
+  /// 旧形式: 単一感情を送る Unity 側メソッド名
+  ///
+  /// emotion / intensity だけを見る既存Unity処理との互換性を保つために残す。
+  /// Unity 側の RAiMCharacterController.ReceiveEmotion に対応する。
+  static const String emotionsMethodName = "ReceiveEmotions";
   
   @override
   Future<void> start() async {
@@ -39,5 +46,28 @@ class EmbedUnityBridge implements UnityCommunicator {
   @override
   Future<void> stop() async {
     // flutter_embed_unity は自動管理なので明示的な停止不要
+  }
+
+  // ============================================================
+  // v2.2: 複数感情送信
+  // ============================================================
+  // 新仕様では happy / curious など複数の感情比率が届く。
+  // Flutter側で JSON に変換し、Unity側の ReceiveEmotions に送る。
+  @override
+  void sendEmotions({
+    required Map<String, double> emotions,
+    required double overallIntensity,
+  }) {
+     // Unity に渡しやすいように、複数感情情報を JSON 文字列へ変換する
+    final json = jsonEncode({
+      'emotions': emotions,
+      'overall_intensity': overallIntensity,
+    });
+    // Unity 側の ReceiveEmotions を呼び出し、複数感情を反映する
+    sendToUnity(
+      gameObjectName,
+      emotionsMethodName,
+      json,
+    );
   }
 }
