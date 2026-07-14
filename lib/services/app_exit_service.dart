@@ -12,8 +12,11 @@ import 'package:flutter/services.dart';
 /// Windows では Flutter desktop が `SystemNavigator.pop()` だけで終了しないことがあるため、
 /// 既存どおり最後に `exit(0)` まで行います。
 ///
-/// iOSではAppleの制約により、プロセス終了はDebugビルドに限って
-/// ネイティブMethodChannel経由で実行します。
+/// iOSではAppleの制約により、Debugビルドに限って
+/// ネイティブMethodChannel経由のプロセス終了を試行します。
+/// ただし、iPhone実機では `flutter run --debug -d ...` で実行しても
+/// 強制終了できないことを確認済みです。ログアウト時のToken削除は成功するため、
+/// 現状はアプリを終了できなくても開発を継続します。
 class AppExitService {
   static const MethodChannel _appControlChannel = MethodChannel(
     'raim_app_control',
@@ -37,6 +40,8 @@ class AppExitService {
     }
 
     if (Platform.isIOS && kDebugMode) {
+      // iPhone実機ではDebugビルドでも終了できない既知の制限があります。
+      // Token削除は完了しているため、終了できなくても処理を継続します。
       try {
         await _appControlChannel.invokeMethod<void>('debugExitProcess');
         return;
