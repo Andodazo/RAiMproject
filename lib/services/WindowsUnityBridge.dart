@@ -9,6 +9,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 /// Windows 版での Unity 通信実装
 /// 
 /// FlutterはWebSocketサーバーとして動作し、Unityがクライアントとして接続する
+/// Unityが接続している場合、FlutterからUnityへJSONメッセージを送信する。
 class WindowsUnityBridge implements UnityCommunicator {
   final int port;
   
@@ -64,6 +65,18 @@ class WindowsUnityBridge implements UnityCommunicator {
     }
     
     print('送信: $message (${_clients.length}台に配信)');
+  }
+  // ============================================================
+  // v2.2: 複数感情送信
+  // ============================================================
+  // 新仕様では emotions / overallIntensity をUnityへ送る。
+  // Windows版ではWebSocket経由で、接続中のUnityクライアント全てに送信する。
+  @override
+  void sendEmotions({
+    required Map<String, double> emotions,
+    required double overallIntensity,
+  }) {
+    // Unity がない環境では何もしない
   }
   
   @override

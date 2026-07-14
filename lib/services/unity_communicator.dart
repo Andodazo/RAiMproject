@@ -13,6 +13,21 @@ abstract class UnityCommunicator {
     required String emotion,
     required double intensity,
   });
+
+  /// v2.2: 複数感情を Unity に送信
+  /// 新しいRAiMサーバーでは、単一の emotion / intensity だけでなく、
+  /// emotions と overallIntensity が返ってくる。
+  /// emotions:
+  ///   例: {'happy': 0.6, 'curious': 0.4}
+  /// overallIntensity:
+  ///   感情全体の強さ。Unity側で表情や動きの強さ調整に使う。
+  /// このメソッドを interface に追加したため、
+  /// WindowsUnityBridge / EmbedUnityBridge など全ての実装クラスで
+  /// sendEmotions() を実装する必要がある。
+  void sendEmotions({
+    required Map<String, double> emotions,
+    required double overallIntensity,
+  });
   
   /// 通信を停止
   Future<void> stop();

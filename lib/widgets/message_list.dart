@@ -17,13 +17,49 @@ class MessageList extends StatelessWidget {
       builder: (context, provider, child) {
         //会話履歴の取得(ユーザー・AIどちらとも)
         final messages = provider.messages;
+
+        // ============================================================
+        // tool_call 表示用の状態
+        // ============================================================
+        // RAiM v2.2 では、検索などの外部ツール実行中に tool_call が届く。
+        // ChatProvider 側で _toolStatus に入れた文を、ここで一時表示する。
+        //
+        // 例: 「ラーメンの歴史を検索しています」
+        //
+        // toolStatus は通常の Message ではないため、
+        // ListView の itemCount と index を手動で調整する。
+        final hasToolStatus = provider.toolStatus != null && provider.toolStatus!.isNotEmpty;
+        // toolStatus は通常メッセージの直後に表示する
+        final toolStatusIndex = messages.length;
+        // loading 表示は toolStatus のさらに後ろに表示する
+        final loadingIndex = messages.length + (hasToolStatus ? 1 : 0);
         
         return ListView.builder(
           padding: const EdgeInsets.all(8),
-          itemCount: messages.length + (provider.isLoading ? 1 : 0),
+          itemCount: messages.length + (hasToolStatus ? 1 : 0) + (provider.isLoading ? 1 : 0),
           itemBuilder: (context, index) {
+            // ============================================================
+            // tool_call の状態表示
+            // ============================================================
+            // 検索などの外部処理中だけ表示する。
+            // chat_end が来て ChatProvider 側で toolStatus が null になると消える。
+            if (hasToolStatus && index == toolStatusIndex) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    provider.toolStatus!,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              );
+            }
             // ローディング中なら最後にローディング表示
-            if (provider.isLoading && index == messages.length) {
+            if (provider.isLoading && index == loadingIndex) {
               return const Padding(
                 padding: EdgeInsets.all(8),
                 child: Text('考え中...'),
