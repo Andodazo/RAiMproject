@@ -24,6 +24,8 @@ class AuthService {
 
   StreamSubscription<Uri>? _linkSubscription;
   Future<void> Function(Uri uri)? _onCallback;
+  bool _callbackInFlight = false;
+  String? _lastHandledCallbackUri;
 
   AuthService({
     TokenStorage? storage,
@@ -233,10 +235,23 @@ class AuthService {
   Future<void> _handleIncomingUri(Uri uri) async {
     final callback = _onCallback;
     if (callback == null) return;
-    if (_isExpectedCallbackUri(uri)) {
+
+    if (!_isExpectedCallbackUri(uri)) return;
+
+    final callbackUri = uri.toString();
+    if (_callbackInFlight || _lastHandledCallbackUri == callbackUri) {
+      debugPrint('[AuthService] Ignoring duplicate callback: $uri');
+      return;
+    }
+
+    _callbackInFlight = true;
+    try {
       // Token交換を待たず、callbackを受け取った時点で認証画面を閉じる。
       await _browserLoginLauncher.closeLaunchedBrowser();
       await callback(uri);
+      _lastHandledCallbackUri = callbackUri;
+    } finally {
+      _callbackInFlight = false;
     }
   }
 
