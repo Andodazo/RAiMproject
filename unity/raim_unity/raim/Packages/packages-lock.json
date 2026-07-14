@@ -325,6 +325,13 @@
       },
       "url": "https://packages.unity.com"
     },
+    "jp.lilxyzw.liltoon": {
+      "version": "https://github.com/lilxyzw/lilToon.git?path=Assets/lilToon#master",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {},
+      "hash": "252fd8cfc46106d4967e95b3f2c788418502f227"
+    },
     "com.unity.modules.accessibility": {
       "version": "1.0.0",
       "depth": 0,
