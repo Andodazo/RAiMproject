@@ -30,6 +30,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   if (!window.Create(L"raim_prototype", origin, size)) {
     return EXIT_FAILURE;
   }
+  window.EnterBorderlessFullscreen();
   window.SetQuitOnClose(true);
 
   ::MSG msg;

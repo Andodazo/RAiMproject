@@ -282,10 +282,12 @@ class ChatMenuButton extends StatelessWidget {
   const ChatMenuButton({
     super.key,
     required this.onSettings,
+    required this.onLogout,
     this.isWide = false,
   });
 
   final VoidCallback onSettings;
+  final VoidCallback onLogout;
   final bool isWide;
 
   @override
@@ -299,8 +301,13 @@ class ChatMenuButton extends StatelessWidget {
       onSelected: (value) {
         _removeFocus();
 
-        if (value == 'settings') {
-          onSettings();
+        switch (value) {
+          case 'settings':
+            onSettings();
+            break;
+          case 'logout':
+            onLogout();
+            break;
         }
       },
       itemBuilder: (context) => const [
@@ -315,6 +322,23 @@ class ChatMenuButton extends StatelessWidget {
               SizedBox(width: 12),
               Text(
                 '設定',
+                style: TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+        PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'logout',
+          child: Row(
+            children: [
+              Icon(
+                Icons.logout_rounded,
+                color: Colors.white70,
+              ),
+              SizedBox(width: 12),
+              Text(
+                'ログアウトして終了',
                 style: TextStyle(color: Colors.white),
               ),
             ],

@@ -24,6 +24,6 @@ plugins {
 }
 
 include(":app")
-// === flutter_embed_unity 追加 ===
+// Unity から export された Android Library を Flutter の Android ビルドに組み込みます。
 include(":unityLibrary")
 project(":unityLibrary").projectDir = file("./unityLibrary")

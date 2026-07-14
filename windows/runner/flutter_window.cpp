@@ -25,6 +25,37 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+
+  window_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "raim_window",
+          &flutter::StandardMethodCodec::GetInstance());
+  window_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() != "activate") {
+          result->NotImplemented();
+          return;
+        }
+
+        HWND window = GetHandle();
+        if (window == nullptr) {
+          result->Error("window_unavailable", "Windows window handle is null.");
+          return;
+        }
+
+        // Restore the app if it is minimized, then ask Windows to make it the
+        // foreground window. This is intentionally small and only used after
+        // the user completed browser-based authentication.
+        ::ShowWindow(window, SW_RESTORE);
+        ::BringWindowToTop(window);
+        ::SetForegroundWindow(window);
+        ::SetFocus(window);
+
+        result->Success();
+      });
+
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -40,6 +71,11 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  if (window_channel_) {
+    window_channel_->SetMethodCallHandler(nullptr);
+    window_channel_ = nullptr;
+  }
+
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
