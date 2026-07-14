@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Cognito認証用ブラウザを起動するサービス。
@@ -9,6 +10,8 @@ import 'package:url_launcher/url_launcher.dart';
 /// ファイルに集約しています。WindowsではChromeをkioskモードで起動し、
 /// Android/iOSではOSまたはアプリ内ブラウザへ認証URLを渡します。
 class BrowserLoginLauncher {
+  static const _iosBrowserChannel = MethodChannel('raim_ios_auth_browser');
+
   Process? _launchedProcess;
 
   Future<bool> launch(Uri uri) async {
@@ -34,7 +37,23 @@ class BrowserLoginLauncher {
       }
     }
 
+    if (!kIsWeb && Platform.isIOS) {
+      try {
+        final opened = await _iosBrowserChannel.invokeMethod<bool>(
+          'openAuthBrowser',
+          {'url': uri.toString()},
+        );
+        if (opened == true) return true;
+      } on MissingPluginException {
+        // iOSネイティブ側が未更新の場合はurl_launcherへフォールバックする。
+      } on PlatformException catch (error) {
+        debugPrint('[BrowserLoginLauncher] iOS browser failed: ${error.message}');
+      }
+      return launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+    }
+
     if (!kIsWeb && Platform.isAndroid) {
+      // AndroidのCustom Tabsを使用する。認証完了時はraim://callbackで戻る。
       return launchUrl(uri, mode: LaunchMode.inAppBrowserView);
     }
 
@@ -45,6 +64,16 @@ class BrowserLoginLauncher {
     final process = _launchedProcess;
     _launchedProcess = null;
     process?.kill();
+
+    if (!kIsWeb && Platform.isIOS) {
+      try {
+        await _iosBrowserChannel.invokeMethod<void>('closeAuthBrowser');
+      } on MissingPluginException {
+        // フォールバック起動時など、閉じる対象がない場合は何もしない。
+      } on PlatformException catch (error) {
+        debugPrint('[BrowserLoginLauncher] iOS browser close failed: ${error.message}');
+      }
+    }
   }
 
   String? _findChromePath() {

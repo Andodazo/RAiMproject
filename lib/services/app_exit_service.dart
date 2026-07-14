@@ -11,8 +11,11 @@ import 'package:flutter/services.dart';
 ///
 /// Windows では Flutter desktop が `SystemNavigator.pop()` だけで終了しないことがあるため、
 /// 既存どおり最後に `exit(0)` まで行います。
+///
+/// iOSではAppleの制約により、プロセス終了はDebugビルドに限って
+/// ネイティブMethodChannel経由で実行します。
 class AppExitService {
-  static const MethodChannel _androidChannel = MethodChannel(
+  static const MethodChannel _appControlChannel = MethodChannel(
     'raim_app_control',
   );
 
@@ -24,12 +27,23 @@ class AppExitService {
 
     if (Platform.isAndroid) {
       try {
-        await _androidChannel.invokeMethod<void>('exitToHomeAndRemoveTask');
+        await _appControlChannel.invokeMethod<void>('exitToHomeAndRemoveTask');
         return;
       } on MissingPluginException {
         // 古いビルドや未対応プラットフォームでは通常の終了へフォールバックします。
       } on PlatformException catch (error) {
         debugPrint('[AppExitService] Android exit failed: ${error.message}');
+      }
+    }
+
+    if (Platform.isIOS && kDebugMode) {
+      try {
+        await _appControlChannel.invokeMethod<void>('debugExitProcess');
+        return;
+      } on MissingPluginException {
+        debugPrint('[AppExitService] iOS debug exit is unavailable');
+      } on PlatformException catch (error) {
+        debugPrint('[AppExitService] iOS debug exit failed: ${error.message}');
       }
     }
 

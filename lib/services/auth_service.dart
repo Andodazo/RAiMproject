@@ -234,6 +234,8 @@ class AuthService {
     final callback = _onCallback;
     if (callback == null) return;
     if (_isExpectedCallbackUri(uri)) {
+      // Token交換を待たず、callbackを受け取った時点で認証画面を閉じる。
+      await _browserLoginLauncher.closeLaunchedBrowser();
       await callback(uri);
     }
   }
