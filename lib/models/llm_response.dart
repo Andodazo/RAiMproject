@@ -176,7 +176,7 @@ class LLMResponse {
   bool get isAudioChunk => type == 'audio_chunk';
   bool get isToolCall => type == 'tool_call';
   bool get isChatEnd => type == 'chat_end';
-
+  bool get isBubbleBreak => type == 'bubble_break';
 
   /// 通常応答か（UI に吹き出し追加するべきか）
   bool get isChat => type == 'chat';

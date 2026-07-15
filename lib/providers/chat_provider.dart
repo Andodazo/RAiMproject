@@ -152,6 +152,20 @@ class ChatProvider extends ChangeNotifier {
 
     notifyListeners();
   }
+
+  // ============================================================
+  // bubble_break 処理
+  // ============================================================
+  // サーバーから「ここで吹き出しを分ける」という通知が来たときの処理。
+  // 現在追記中のAIメッセージを終了扱いにして、
+  // 次の text_chunk が来たら新しい吹き出しを作らせる。
+
+  void _handleBubbleBreak(LLMResponse response) {
+    print('[ChatProvider] bubble_break 受信: 次の text_chunk は新規吹き出しにする');
+    // 現在のストリーミング吹き出しを区切る
+    _currentStreamingMessage = null;
+    // notifyListeners は不要（UI 変化なし）
+  }
   //分割された文章を吹き出しに追加していく処理
   void _handleTextChunk(LLMResponse response) {
   // 本来の is_filler 判定
@@ -339,6 +353,8 @@ class ChatProvider extends ChangeNotifier {
     } else if (response.isToolCall) {
       _handleToolCall(response);
     // chat_end: 1回分のAI返答が完了した通知
+    }  else if (response.isBubbleBreak) {   // ← v2.3 追加
+      _handleBubbleBreak(response); 
     } else if (response.isChatEnd) {
       _handleChatEnd(response);
     // chat: 古い形式の通常返答
