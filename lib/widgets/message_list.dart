@@ -33,6 +33,13 @@ class MessageList extends StatelessWidget {
         final toolStatusIndex = messages.length;
         // loading 表示は toolStatus のさらに後ろに表示する
         final loadingIndex = messages.length + (hasToolStatus ? 1 : 0);
+        // Hot Restart やアプリ再起動後は、ChatProvider の会話履歴が空になる。
+        // 会話履歴・検索中表示・ローディング表示がすべて無い場合は、
+        // チャット欄に何も表示せず、入力欄のプレースホルダーだけを見せる。
+        if (messages.isEmpty && !hasToolStatus && !provider.isLoading) {
+          return const Center(
+          );
+        }
         
         return ListView.builder(
           padding: const EdgeInsets.all(8),
