@@ -13,8 +13,9 @@ import 'package:raim_prototype/services/llm_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/audio_play_queue.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
+import 'package:provider/provider.dart';
 
-class ChatProvider extends ChangeNotifier {
+class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // ============================================================
   // 外部サービス
   // ============================================================
@@ -242,6 +243,24 @@ class ChatProvider extends ChangeNotifier {
     // 前回の検索中表示が残らないように消す
     _toolStatus = null;
     // 画面側へ状態変更を通知する
+    notifyListeners();
+  }
+  // ============================================================
+  // Hot Reload 時のリセット処理
+  // ============================================================
+  // flutter run 中に r を押して Hot Reload したとき、
+  // 通常は Provider の状態が残る。
+  // 開発中は吹き出しを空にしたいため、ここで会話履歴などを初期化する。
+  @override
+  void reassemble() {
+    _messages.clear();
+    _currentStreamingMessage = null;
+    _toolStatus = null;
+    _isLoading = false;
+
+    // 再生中・待機中の音声も止める
+    unawaited(_audioQueue.reset());
+
     notifyListeners();
   }
 
