@@ -33,6 +33,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
 import 'package:raim_prototype/models/llm_response.dart';
@@ -153,15 +154,22 @@ class RaimServerService implements LLMService {
   /// Cognito 認証済みになってから SplashScreen 側で呼ぶ
   /// 既に接続中なら何もしない
   /// 繋がってる時にやりたくない処理(つながってたらreturnで終わる)
-  Future<void> connect() async {
+  Future<void> connect({String? accessToken}) async {
     if (_disposed) return;
     if (_state == RaimConnectionState.connected) return;
     _intentionalClose = false;
     _setState(RaimConnectionState.connecting);
 
     try {
-      // WebSocket 接続を確立
-      _channel = WebSocketChannel.connect(Uri.parse(serverUrl));
+      //仕様書に基づいたヘッダーの構築
+      final headers = <String, String>{
+        'User-Agent': 'RAiM-Flutter/1.0',
+      };
+      if (accessToken != null && accessToken.isNotEmpty){
+        headers['Authorization'] = 'Bearer $accessToken';
+      }
+      // ヘッダーを付与してWebSocket 接続を確立
+      _channel = IOWebSocketChannel.connect(Uri.parse(serverUrl),headers: headers);
 
       // 接続完了を待つ（web_socket_channel v3 から ready が使える）
       await _channel!.ready;
