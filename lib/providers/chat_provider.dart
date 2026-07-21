@@ -184,6 +184,14 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     print('[ChatProvider] filler text_chunk はUIに表示しません: ${response.text}');
     return;
   }
+
+  // tool_call の結果本文が届き始めたら、検索中表示を消す。
+  // chat_end を待つと、答えが表示された後も
+  // 「Tokyoの天気を調べています」が残ることがあるため。
+  if (_toolStatus != null) {
+    _toolStatus = null;
+  }
+
   // まだAIの吹き出しが作られていない場合は、
   // 最初の text_chunk で新しいAIメッセージを作る
   if (_currentStreamingMessage == null) {
