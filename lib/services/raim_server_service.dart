@@ -39,7 +39,6 @@ import 'package:web_socket_channel/status.dart' as ws_status;
 import 'package:raim_prototype/models/llm_response.dart';
 import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/services/llm_service.dart';
-
 /// 接続状態の列挙
 ///
 /// 将来 UI 側で立ち絵切替や Zzz... 表示等に使うため、enum で公開する。
@@ -65,7 +64,11 @@ class RaimServerService implements LLMService {
   /// サーバーの URL
   /// 例: "ws://127.0.0.1:8080"（同一PC）
   /// 例: "ws://100.x.y.z:8080"（Tailscale経由）
-  final String serverUrl;
+  /// final String serverUrl;
+  //-------------開発検証用---------------------
+  String _serverUrl;
+  String get serverUrl => _serverUrl;
+  //-------------------------------------------
 
   /// 自動再接続の最大試行回数
   /// これを超えると offline 状態に遷移する
@@ -77,10 +80,11 @@ class RaimServerService implements LLMService {
   final Duration requestTimeout;
 
   RaimServerService({
-    required this.serverUrl,
+    //required this.serverUrl,
+    required String serverUrl,
     this.maxReconnectAttempts = 3,
     this.requestTimeout = const Duration(seconds: 60),
-  });
+  }) : _serverUrl = serverUrl;
 
   // ─── 内部状態 ───
 
@@ -154,6 +158,37 @@ class RaimServerService implements LLMService {
   /// Cognito 認証済みになってから SplashScreen 側で呼ぶ
   /// 既に接続中なら何もしない
   /// 繋がってる時にやりたくない処理(つながってたらreturnで終わる)
+  // ★ 連打防止用のフラグを追加-----------------------------------------------
+  bool _isSwitching = false;
+
+  /// 接続先サーバーの切り替え処理
+  Future<void> switchServer(String targetUrl, {String? accessToken}) async {
+    // 1. すでに切り替え処理中なら連打を無視して終了
+    if (_isSwitching) {
+      print('[RaimServerService] 切り替え処理中のため連打を無視しました');
+      return;
+    }
+
+    _isSwitching = true; // 処理中フラグをON
+
+    try {
+      print('[RaimServerService] 接続先を切り替えます: $_serverUrl -> $targetUrl');
+      
+      // 既存の接続を切断
+      await disconnect();
+
+      // 新しい接続先に切り替えて再接続
+      _serverUrl = targetUrl;
+      await connect(accessToken: accessToken);
+
+    } catch (e) {
+      print('[RaimServerService] 切り替えエラー: $e');
+    } finally {
+      // 成功・失敗にかかわらず、終わったら必ずフラグをOFFに戻す
+      _isSwitching = false;
+    }
+  }
+  //------------------------------------------------------------------------------
   Future<void> connect({String? accessToken}) async {
     if (_disposed) return;
     if (_state == RaimConnectionState.connected) return;
@@ -169,7 +204,9 @@ class RaimServerService implements LLMService {
         headers['Authorization'] = 'Bearer $accessToken';
       }
       // ヘッダーを付与してWebSocket 接続を確立
-      _channel = IOWebSocketChannel.connect(Uri.parse(serverUrl),headers: headers);
+      //開発検証用
+      //_channel = IOWebSocketChannel.connect(Uri.parse(serverUrl),headers: headers);
+      _channel = IOWebSocketChannel.connect(Uri.parse(_serverUrl), headers: headers);
 
       // 接続完了を待つ（web_socket_channel v3 から ready が使える）
       await _channel!.ready;

@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
+// 開発検証用
+import 'package:raim_prototype/providers/auth_provider.dart';
+import 'package:raim_prototype/services/raim_server_service.dart';
 
 class ChatInput extends StatefulWidget {
   const ChatInput({super.key});
@@ -278,7 +281,8 @@ class _SelectedImagePreview extends StatelessWidget {
 
 
 /// ハンバーガーメニューボタン
-class ChatMenuButton extends StatelessWidget {
+//class ChatMenuButton extends StatelessWidget {
+class ChatMenuButton extends StatefulWidget {//開発検証用
   const ChatMenuButton({
     super.key,
     required this.onSettings,
@@ -289,28 +293,115 @@ class ChatMenuButton extends StatelessWidget {
   final VoidCallback onSettings;
   final VoidCallback onLogout;
   final bool isWide;
-
+  //開発検証用---------------------------------------------------
+  @override
+  State<ChatMenuButton> createState() => _ChatMenuButtonState();
+}
+  class _ChatMenuButtonState extends State<ChatMenuButton> {
+  bool _isSwitching = false;
+  static const String awsUrl = 'wss://d1403ont6098ah.cloudfront.net/dev';
+  static const String localUrl = 'ws://100.81.35.109:8080'; 
+  //-----------------------------------------------------------
   @override
   Widget build(BuildContext context) {
+    // --現在の RaimServerService から接続先URLを取得(開発検証用)
+    final raimService = context.read<RaimServerService>();
+    final currentUrl = raimService.serverUrl;
+    final isAws = currentUrl.contains('cloudfront.net');
+    //--------------------------------------------------------
     return PopupMenuButton<String>(
       tooltip: 'メニュー',
       color: Colors.black.withValues(alpha: 0.88),
       offset: const Offset(0, 56),
       onOpened: _removeFocus,
       onCanceled: _removeFocus,
-      onSelected: (value) {
+      onSelected: (value) async{ //asyncは開発検証を消すときに消す
         _removeFocus();
 
         switch (value) {
+          //開発検証用------------------------------
+          case 'switch_server':
+            // すでに切り替え中ならタップを無視（ロック）
+            if (_isSwitching) return;
+            _isSwitching = true;
+
+            try {
+              final currentUrl = raimService.serverUrl;
+              final isAws = currentUrl.contains('cloudfront.net');
+              final targetUrl = isAws ? localUrl : awsUrl;
+              // 古いポップアップを全て消去してから「切り替え中」を出す
+              ScaffoldMessenger.of(context).clearSnackBars();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('サーバー切り替え中...'),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+
+              final authProvider = context.read<AuthProvider>();
+              final token = await authProvider.getValidAccessToken();
+
+              // 実際の切り替え処理
+              await raimService.switchServer(targetUrl, accessToken: token);
+
+              if (context.mounted) {
+                setState(() {});
+                //古いポップアップを消去してから「完了通知」を出す
+                ScaffoldMessenger.of(context).clearSnackBars();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(isAws ? 'Tailscale に切り替えました' : 'AWS に切り替えました'),
+                  ),
+                );
+              }
+            } finally {
+              // 成功・失敗にかかわらず、処理が終わったら必ずロック解除
+              _isSwitching = false;
+            }
+            break;
+          //widgetは検証が終わったら消す
           case 'settings':
-            onSettings();
+            widget.onSettings();
             break;
           case 'logout':
-            onLogout();
+            widget.onLogout();
             break;
         }
       },
-      itemBuilder: (context) => const [
+      itemBuilder: (context) => /*const*/ [
+        // 接続先切り替えメニュー項目(開発検証用)
+        PopupMenuItem(
+          value: 'switch_server',
+          child: Row(
+            children: [
+              Icon(
+                Icons.swap_horiz_rounded,
+                color: isAws ? const Color(0xFFB7F35A) : Colors.orangeAccent,
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '接続先切り替え',
+                    style: TextStyle(color: Colors.white, fontSize: 13),
+                  ),
+                  Text(
+                    isAws ? '現在: AWS (CloudFront)' : '現在: Tailscale / Local',
+                    style: TextStyle(
+                      color: isAws ? const Color(0xFFB7F35A) : Colors.orangeAccent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        //------------------------------------
+        const PopupMenuDivider(),
         PopupMenuItem(
           value: 'settings',
           child: Row(
