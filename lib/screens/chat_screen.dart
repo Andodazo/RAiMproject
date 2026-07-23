@@ -199,18 +199,8 @@ class ChatScreen extends StatelessWidget {
           right: 0,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: const Text(
-              'RAiM',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 3,
-                shadows: [
-                  Shadow(blurRadius: 12, color: Colors.black87),
-                  Shadow(blurRadius: 4, color: Colors.black54),
-                ],
-              ),
+            child: Image.asset(
+              'assets/images/RAiM_logo_white.png',
             ),
           ),
         ),
@@ -353,17 +343,8 @@ class ChatScreen extends StatelessWidget {
         Positioned(
           top: 20,
           left: 30,
-          child: Text(
-            'RAiM',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 2,
-              shadows: [
-                Shadow(blurRadius: 12, color: Colors.black.withOpacity(0.8)),
-              ],
-            ),
+          child: Image.asset(
+            'assets/images/RAiM_logo_white.png',
           ),
         ),
 
