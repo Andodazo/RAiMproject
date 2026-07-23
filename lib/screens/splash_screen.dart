@@ -62,12 +62,19 @@ class _AuthenticatedChatScreenState extends State<_AuthenticatedChatScreen> {
     if (_startedConnection) return;
     _startedConnection = true;
 
-    final raimService = context.read<RaimServerService>();
+    // 非同期でトークンを取得して接続を開始する
+    _connectWithToken();
+  }
 
-    // Cognito 認証済みになってから、既存の WebSocket 接続を開始する。
-    // CloudFront/JWT 連携は今回の対象外なので、既存の connect() をそのまま呼ぶ。
-    // ignore: unawaited_futures
-    raimService.connect();
+  Future<void> _connectWithToken() async {
+    final raimService = context.read<RaimServerService>();
+    final authProvider = context.read<AuthProvider>();
+
+    // 有効なアクセストークンを取得
+    final accessToken = await authProvider.getValidAccessToken();
+
+    // トークンを添えて WebSocket へ接続！
+    await raimService.connect(accessToken: accessToken);
   }
 
   @override

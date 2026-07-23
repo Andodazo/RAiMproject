@@ -39,10 +39,20 @@ import 'package:raim_prototype/services/embed_unity_bridge.dart';
 // const String _raimServerUrl = 'ws://127.0.0.1:8080';
 //
 // [Tailscale経由 / 学校から / 別デバイスから]
-const String _raimServerUrl = 'ws://100.81.35.109:8080';
+//const String _raimServerUrl = 'ws://100.81.35.109:8080';
 //
 // ↑ 100.x.y.z は自宅PCのTailscale IPに置き換える
 //   サーバー側で `tailscale ip -4` で確認可能
+const String _raimServerUrl = 'wss://d1403ont6098ah.cloudfront.net/dev';
+// ⚙️ その他 Cognito 等の設定値（ドキュメントより）
+class RaimConfig {
+  static const String cognitoDomain =
+      'https://ap-northeast-1omfv9fgsg.auth.ap-northeast-1.amazoncognito.com';
+  static const String clientId = '3s1n1qe8vlsihh2j2dlcs4ecf5';
+  static const String redirectUri = 'raim://callback';
+  static const String scope = 'openid email phone';
+  static const String webSocketUserAgent = 'RAiM-Flutter/1.0';
+}
 // ====================================================
 
 void main() async {
