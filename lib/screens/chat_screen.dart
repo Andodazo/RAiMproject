@@ -201,6 +201,9 @@ class ChatScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: Image.asset(
               'assets/images/RAiM_logo_white.png',
+              width: 100, // ★横幅を指定
+              height: 40, // ★高さを指定
+              fit: BoxFit.contain, // ★アスペクト比（縦横比）の保ち方を指定
             ),
           ),
         ),
@@ -345,6 +348,9 @@ class ChatScreen extends StatelessWidget {
           left: 30,
           child: Image.asset(
             'assets/images/RAiM_logo_white.png',
+            width: 100, // ★横幅を指定
+            height: 40, // ★高さを指定
+            fit: BoxFit.contain, // ★アスペクト比（縦横比）の保ち方を指定
           ),
         ),
 
