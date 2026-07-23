@@ -13,6 +13,11 @@ abstract class UnityCommunicator {
     required String emotion,
     required double intensity,
   });
+// 追加
+  void sendToolState({
+    required bool isUsingTool,
+    String? description,
+  });
 
   /// v2.2: 複数感情を Unity に送信
   /// 新しいRAiMサーバーでは、単一の emotion / intensity だけでなく、
@@ -28,7 +33,6 @@ abstract class UnityCommunicator {
     required Map<String, double> emotions,
     required double overallIntensity,
   });
-  
   /// 通信を停止
   Future<void> stop();
 }

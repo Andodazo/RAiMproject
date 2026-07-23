@@ -20,7 +20,7 @@ class EmbedUnityBridge implements UnityCommunicator {
   /// emotion / intensity だけを見る既存Unity処理との互換性を保つために残す。
   /// Unity 側の RAiMCharacterController.ReceiveEmotion に対応する。
   static const String emotionsMethodName = "ReceiveEmotions";
-  
+  static const String toolStateMethodName = "ReceiveToolState";
   @override
   Future<void> start() async {
     // flutter_embed_unity は Unity ウィジェット描画時に初期化されるため、ここでは何もしません。
@@ -38,6 +38,28 @@ class EmbedUnityBridge implements UnityCommunicator {
 
     print('Unity 送信: $gameObjectName.$emotionMethodName($emotion)');
   }
+
+  @override
+void sendToolState({
+  required bool isUsingTool,
+  String? description,
+}) {
+  final json = jsonEncode({
+    'type': 'tool_state',
+    'is_using_tool': isUsingTool,
+    'description': description,
+  });
+
+  sendToUnity(
+    gameObjectName,
+    toolStateMethodName,
+    json,
+  );
+
+  print(
+    'Unity送信: $gameObjectName.$toolStateMethodName($json)',
+  );
+}
 
   @override
   Future<void> stop() async {

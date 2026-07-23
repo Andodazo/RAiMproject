@@ -45,16 +45,30 @@ class CharacterDisplay extends StatelessWidget {
   /// emotion → 画像パスのマッピング
   String _getImagePath(String emotion) {
     switch (emotion) {
-      case 'happy':
-        return 'assets/images/happy.png';
-      case 'sad':
-        return 'assets/images/sad.png';
+      case 'amused':
+        return 'assets/images/amused.png';
       case 'angry':
         return 'assets/images/angry.png';
+      case 'caring':
+        return 'assets/images/caring.png';
+      case 'curious':
+        return 'assets/images/curious.png';
+      case 'embarrassed':
+        return 'assets/images/embarrassed.png';
+      case 'excited':
+        return 'assets/images/excited.png';
+      case 'happy':
+        return 'assets/images/happy.png';
+      case 'playful':
+        return 'assets/images/playful.png';
+      case 'sad':
+        return 'assets/images/sad.png';
       case 'surprised':
         return 'assets/images/surprise.png';
-      case 'neutral':
-      case 'caring':
+      case 'thoughtful':
+        return 'assets/images/thoughtful.png';
+      case 'investigate':
+         return 'assets/images/investigate.png';
       default:
         return 'assets/images/default.png';
     }

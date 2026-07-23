@@ -523,35 +523,16 @@ GameObject:
   m_Component:
   - component: {fileID: 1726773439}
   - component: {fileID: 1726773438}
-  - component: {fileID: 1726773437}
   - component: {fileID: 1726773441}
   - component: {fileID: 1726773440}
+  - component: {fileID: 1726773442}
   m_Layer: 0
-  m_Name: default-removebg-preview
+  m_Name: character
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1726773437
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1726773436}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 26aeba669ae364c6cb177418eb4f5e9f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::RAiMCharacterController
-  serverUrl: ws://localhost:8765
-  useWebSocket: 1
-  defaultSprite: {fileID: 21300000, guid: 7270773433df44fa69f061a46e5f56a0, type: 3}
-  happySprite: {fileID: 21300000, guid: b3c88f98b56d14e69993f57871a461e6, type: 3}
-  sadSprite: {fileID: 21300000, guid: 1a996f0fa42d347078906a048287345f, type: 3}
-  angrySprite: {fileID: 21300000, guid: 1409d1264502d4bb3a414992093a9df8, type: 3}
-  surprisedSprite: {fileID: 21300000, guid: c547dcad3f31148f5bc360c8e53efd7d, type: 3}
 --- !u!212 &1726773438
 SpriteRenderer:
   m_ObjectHideFlags: 0
@@ -661,6 +642,33 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1726773436}
   m_CullTransparentMesh: 1
+--- !u!114 &1726773442
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1726773436}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26aeba669ae364c6cb177418eb4f5e9f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  serverUrl: ws://localhost:8765
+  useWebSocket: 1
+  defaultSprite: {fileID: 21300000, guid: 7270773433df44fa69f061a46e5f56a0, type: 3}
+  happySprite: {fileID: 21300000, guid: b3c88f98b56d14e69993f57871a461e6, type: 3}
+  sadSprite: {fileID: 21300000, guid: 1a996f0fa42d347078906a048287345f, type: 3}
+  surprisedSprite: {fileID: 21300000, guid: c547dcad3f31148f5bc360c8e53efd7d, type: 3}
+  angrySprite: {fileID: 21300000, guid: 1409d1264502d4bb3a414992093a9df8, type: 3}
+  amusedSprite: {fileID: 21300000, guid: 9364f1e4f6ca3fc4cbf8b2cf040aace2, type: 3}
+  caringSprite: {fileID: 21300000, guid: ada8c2768cf684d4392f759abd2f5449, type: 3}
+  cariousSprite: {fileID: 21300000, guid: 67c5ca9fb1905474badc9619177db21f, type: 3}
+  embarrassedSprite: {fileID: 21300000, guid: 73fa9839e5dc23a4fbef66089b3211f5, type: 3}
+  excitedSprite: {fileID: 21300000, guid: 0eea79bcfb0733f43a724f0e603b9cb1, type: 3}
+  playfulSprite: {fileID: 21300000, guid: 464d945ded6ac994cb3bd02508556237, type: 3}
+  thoughtfulSprite: {fileID: 21300000, guid: 4e841694217051b4f9b0b33c4fa8813d, type: 3}
+  investigateSprite: {fileID: 21300000, guid: 57456f0e64b846546aacd2fd58f7579c, type: 3}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

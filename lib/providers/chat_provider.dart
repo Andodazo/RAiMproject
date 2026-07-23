@@ -86,7 +86,13 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     // 会話履歴内のAIメッセージも更新する
     _messages[_messages.length - 1] = _currentStreamingMessage!;
   }
-    // chat_end で届いた最終感情を Unity にも反映する
+    // Tool使用終了をUnityへ通知
+    // currentStreamingMessage が null の場合でも必ず送信する
+    _unityBridge.sendToolState(
+      isUsingTool: false,
+    );
+
+    // chat_end で届いた最終感情をUnityへ反映する
     _unityBridge.sendEmotions(
       emotions: response.emotions,
       overallIntensity: response.overallIntensity,
@@ -101,9 +107,16 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   }
   //調べていますを表示する処理
   void _handleToolCall(LLMResponse response) {
-    // tool_call では検索などの外部処理中であることが通知される
+     debugPrint('[ChatProvider] Tool使用開始');
+     // tool_call では検索などの外部処理中であることが通知される
     // description があればそれを表示し、無ければデフォルト文を表示する
     _toolStatus = response.description ?? '調べています...';
+      // UnityへTool使用開始を通知
+    _unityBridge.sendToolState(
+      isUsingTool: true,
+      description: response.description,
+    );
+    _isLoading = true;
     notifyListeners();
   }
   //音声Base64を再生キューに入れる処理
