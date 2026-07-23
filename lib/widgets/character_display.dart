@@ -14,10 +14,13 @@ class CharacterDisplay extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<ChatProvider>(
       builder: (context, chatProvider, _) {
-        // 最新のAIメッセージから emotion を取得
         final emotion = _getCurrentEmotion(chatProvider.messages);
-        final imagePath = _getImagePath(emotion);
-        //画像の配置
+
+        // Tool使用中は調査中画像を表示
+        final imagePath = chatProvider.isUsingTool
+            ? 'assets/images/investigate.png'
+            : _getImagePath(emotion);
+
         return Container(
           alignment: Alignment.bottomCenter,
           child: Image.asset(
@@ -67,8 +70,6 @@ class CharacterDisplay extends StatelessWidget {
         return 'assets/images/surprise.png';
       case 'thoughtful':
         return 'assets/images/thoughtful.png';
-      case 'investigate':
-         return 'assets/images/investigate.png';
       default:
         return 'assets/images/default.png';
     }
