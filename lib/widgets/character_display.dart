@@ -14,10 +14,13 @@ class CharacterDisplay extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<ChatProvider>(
       builder: (context, chatProvider, _) {
-        // 最新のAIメッセージから emotion を取得
         final emotion = _getCurrentEmotion(chatProvider.messages);
-        final imagePath = _getImagePath(emotion);
-        //画像の配置
+
+        // Tool使用中は調査中画像を表示
+        final imagePath = chatProvider.isUsingTool
+            ? 'assets/images/investigate.png'
+            : _getImagePath(emotion);
+
         return Container(
           alignment: Alignment.bottomCenter,
           child: Image.asset(
@@ -45,16 +48,28 @@ class CharacterDisplay extends StatelessWidget {
   /// emotion → 画像パスのマッピング
   String _getImagePath(String emotion) {
     switch (emotion) {
-      case 'happy':
-        return 'assets/images/happy.png';
-      case 'sad':
-        return 'assets/images/sad.png';
+      case 'amused':
+        return 'assets/images/amused.png';
       case 'angry':
         return 'assets/images/angry.png';
+      case 'caring':
+        return 'assets/images/caring.png';
+      case 'curious':
+        return 'assets/images/curious.png';
+      case 'embarrassed':
+        return 'assets/images/embarrassed.png';
+      case 'excited':
+        return 'assets/images/excited.png';
+      case 'happy':
+        return 'assets/images/happy.png';
+      case 'playful':
+        return 'assets/images/playful.png';
+      case 'sad':
+        return 'assets/images/sad.png';
       case 'surprised':
         return 'assets/images/surprise.png';
-      case 'neutral':
-      case 'caring':
+      case 'thoughtful':
+        return 'assets/images/thoughtful.png';
       default:
         return 'assets/images/default.png';
     }

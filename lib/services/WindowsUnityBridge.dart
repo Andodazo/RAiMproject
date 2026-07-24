@@ -78,6 +78,31 @@ class WindowsUnityBridge implements UnityCommunicator {
   }) {
     // Unity がない環境では何もしない
   }
+
+@override
+void sendToolState({
+  required bool isUsingTool,
+  String? description,
+}) {
+  final message = jsonEncode({
+    'type': 'tool_state',
+    'is_using_tool': isUsingTool,
+    'description': description,
+  });
+
+  for (final client in _clients) {
+    try {
+      client.sink.add(message);
+    } catch (e) {
+      print('Tool状態送信エラー: $e');
+    }
+  }
+
+  print(
+    'Tool状態送信: $message '
+    '(${_clients.length}台に配信)',
+  );
+}
   
   @override
   Future<void> stop() async {

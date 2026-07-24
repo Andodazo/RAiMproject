@@ -37,7 +37,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   final List<Message> _messages = [];
   bool _isLoading = false;
   Message? _currentStreamingMessage;
-
+  bool _isUsingTool = false;
   /// 接続状態（RaimServerService 使用時のみ意味を持つ）
   /// OllamaService / MockLLMService の場合は常に connected 扱い
   // ============================================================
@@ -57,6 +57,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   bool get isLoading => _isLoading;
   String? get toolStatus => _toolStatus;
   RaimConnectionState get connectionState => _connectionState;
+  bool get isUsingTool => _isUsingTool;
 
   /// 「寝てる」状態か（UI で立ち絵切替などに使用予定）
   bool get isOffline => _connectionState == RaimConnectionState.offline;
@@ -86,7 +87,15 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     // 会話履歴内のAIメッセージも更新する
     _messages[_messages.length - 1] = _currentStreamingMessage!;
   }
-    // chat_end で届いた最終感情を Unity にも反映する
+    // Tool使用終了
+    _isUsingTool = false;
+    // Tool使用終了をUnityへ通知
+    // currentStreamingMessage が null の場合でも必ず送信する
+    _unityBridge.sendToolState(
+      isUsingTool: false,
+    );
+
+    // chat_end で届いた最終感情をUnityへ反映する
     _unityBridge.sendEmotions(
       emotions: response.emotions,
       overallIntensity: response.overallIntensity,
@@ -101,9 +110,20 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   }
   //調べていますを表示する処理
   void _handleToolCall(LLMResponse response) {
-    // tool_call では検索などの外部処理中であることが通知される
+     debugPrint('[ChatProvider] Tool使用開始');
+     // tool_call では検索などの外部処理中であることが通知される
     // description があればそれを表示し、無ければデフォルト文を表示する
+
+    // Tool使用中にする
+    _isUsingTool = true;
+
     _toolStatus = response.description ?? '調べています...';
+      // UnityへTool使用開始を通知
+    _unityBridge.sendToolState(
+      isUsingTool: true,
+      description: response.description,
+    );
+    _isLoading = true;
     notifyListeners();
   }
   //音声Base64を再生キューに入れる処理
@@ -224,6 +244,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // サーバーから error が届いた場合、エラーメッセージをチャット欄に表示する。
   // 途中のストリーミング状態や検索中表示もここで解除する。
   void _handleError(LLMResponse response) {
+    _isUsingTool = false;
     _messages.add(Message(
       text: response.text.isNotEmpty ? response.text : 'エラーが発生しました',
       role: MessageRole.assistant,
