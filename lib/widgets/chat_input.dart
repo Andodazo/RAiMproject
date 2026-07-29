@@ -89,10 +89,14 @@ class _ChatInputState extends State<ChatInput> {
     }
     //クリアされる前に、現在の画像パスのコピーを作成しておく（安全のため）
     final pathsToSend = imagePaths != null ? List<String>.from(imagePaths) : null;
+    // Base64 も同様にコピーする
+    // sendUserMessage は async で、内部の最初の await で制御が戻る。
+    // その隙に clearImage() が走るため、参照のまま渡すと空になる
+    final base64ToSend = base64List != null ? List<String>.from(base64List) : null;
     // サーバーへ送信
     context.read<ChatProvider>().sendUserMessage(
       text,
-      images: base64List,
+      images: base64ToSend,
       filePaths: pathsToSend, //画面表示用のファイルパスをChatProviderに渡す
       );
     _controller.clear();
