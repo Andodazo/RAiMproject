@@ -78,10 +78,13 @@ class RaimServerService implements LLMService {
   /// この時間内に chat が来なければエラー扱い
   /// LLM 応答に時間がかかる場合があるので、ある程度長めに（60秒）
   final Duration requestTimeout;
+  /// アクセストークンを動的に取得するコールバック関数
+  final Future<String?> Function()? accessTokenGetter;
 
   RaimServerService({
     //required this.serverUrl,
     required String serverUrl,
+    this.accessTokenGetter,
     this.maxReconnectAttempts = 3,
     this.requestTimeout = const Duration(seconds: 60),
   }) : _serverUrl = serverUrl;
@@ -200,8 +203,15 @@ class RaimServerService implements LLMService {
       final headers = <String, String>{
         'User-Agent': 'RAiM-Flutter/1.0',
       };
-      if (accessToken != null && accessToken.isNotEmpty){
-        headers['Authorization'] = 'Bearer $accessToken';
+      // AWS（cloudfront.net）接続時のみアクセストークンを付与する
+      final isAws = _serverUrl.contains('cloudfront.net');
+      if (isAws) {
+        // 引数で渡されたトークンか、無ければ accessTokenGetter から最新トークンを取得
+        final token = accessToken ?? await accessTokenGetter?.call();
+        if (token != null && token.isNotEmpty) {
+          headers['Authorization'] = 'Bearer $token';
+          // Tailscale の場合は isAws が false になるため、Authorization ヘッダーは付与されない
+        }
       }
       // ヘッダーを付与してWebSocket 接続を確立
       //開発検証用
@@ -240,12 +250,28 @@ class RaimServerService implements LLMService {
     _intentionalClose = true;  // 自動再接続を抑止
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
-    await _subscription?.cancel();
-    await _channel?.sink.close(ws_status.normalClosure);
+    try {
+      await _subscription?.cancel();
+      _channel = null;
+    } catch (_) {}
+
+    try {
+      // 壊れた接続の閉鎖処理でフリーズしないよう 500ms のタイムアウトを設定
+      await _channel?.sink.close(ws_status.normalClosure).timeout(
+        const Duration(milliseconds: 500),
+        onTimeout: () {
+          print('[RaimServerService] disconnect timeout (forced close)');
+        },
+      );
+    } catch (_) {}
+
     _channel = null;
     _subscription = null;
     _sessionId = null;  // セッションIDもクリア
-    await _broadcaster?.close();
+
+    try {
+      await _broadcaster?.close();
+    } catch (_) {}
     _broadcaster = null;
     _setState(RaimConnectionState.disconnected);
   }
