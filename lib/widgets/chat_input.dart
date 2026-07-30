@@ -363,6 +363,9 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
               _isSwitching = false;
             }
             break;
+          case 'credits':
+          _showCreditsDialog(context);
+          break;
           //widgetは検証が終わったら消す
           case 'settings':
             widget.onSettings();
@@ -405,6 +408,25 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
           ),
         ),
         //------------------------------------
+        const PopupMenuDivider(),
+        // メニューに「クレジット表記」ボタンを追加
+        PopupMenuItem<String>(
+          value: 'credits',
+          child: Row(
+            children: const [
+              Icon(
+                Icons.info_outline,
+                size: 20,
+                color: Colors.white, // ★ アイコンを白にする
+              ),
+              SizedBox(width: 8),
+              Text(
+                'クレジット表記',
+                style: TextStyle(color: Colors.white), // ★ 文字を白にする
+              ),
+            ],
+          ),
+        ),
         const PopupMenuDivider(),
         PopupMenuItem(
           value: 'settings',
@@ -468,6 +490,50 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
           ),
         ),
       ),
+    );
+  }
+// =============================================================================
+// クレジット表記
+// =============================================================================
+  void _showCreditsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF121212),
+          title: const Row(
+            children: [
+              Icon(Icons.record_voice_over, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('クレジット表記',style: TextStyle(color: Colors.white, fontSize: 18)),
+            ],
+          ),
+          content: const SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+              //クレジット表記を増やしたい場合はここに追加
+                Text(
+                  '音声合成',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white,),
+                ),
+                SizedBox(height: 4),
+                // 必要に応じて使用している音声モデルを追加
+                Text('・VOICEVOX: 春日部つむぎ',style: TextStyle(color: Colors.white70)),
+                
+                Divider(height: 24, color: Colors.white24),//区切り線
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('閉じる'),
+            ),
+          ],
+        );
+      },
     );
   }
 
