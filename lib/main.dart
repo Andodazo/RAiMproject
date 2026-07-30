@@ -66,7 +66,7 @@ void main() async {
   // RAiM サーバー接続用のサービスを作成する。
   // 未認証状態で WebSocket 接続しないよう、connect() は SplashScreen で認証済みを確認してから呼ぶ。
   final authProvider = AuthProvider(AuthService());
-  final raimService = RaimServerService(serverUrl: _raimServerUrl);
+  final raimService = RaimServerService(serverUrl: _raimServerUrl, accessTokenGetter: () => authProvider.getValidAccessToken(),);
   //RaimAppにraimServiceとunityBridgeを入れている
   runApp(
     RaimApp(
