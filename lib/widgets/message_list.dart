@@ -29,10 +29,12 @@ class MessageList extends StatelessWidget {
         // toolStatus は通常の Message ではないため、
         // ListView の itemCount と index を手動で調整する。
         final hasToolStatus = provider.toolStatus != null && provider.toolStatus!.isNotEmpty;
-        // toolStatus は通常メッセージの直後に表示する
+        // 追加: Tool状態を表示する位置
         final toolStatusIndex = messages.length;
-        // loading 表示は toolStatus のさらに後ろに表示する
-        final loadingIndex = messages.length + (hasToolStatus ? 1 : 0);
+        // metadata受信中だけ考え中表示を追加する
+        final showThinking = provider.isThinking;
+        // 考え中表示を追加する位置
+        final thinkingIndex = messages.length + (hasToolStatus ? 1 : 0);
         // Hot Restart やアプリ再起動後は、ChatProvider の会話履歴が空になる。
         // 会話履歴・検索中表示・ローディング表示がすべて無い場合は、
         // チャット欄に何も表示せず、入力欄のプレースホルダーだけを見せる。
@@ -43,7 +45,7 @@ class MessageList extends StatelessWidget {
         
         return ListView.builder(
           padding: const EdgeInsets.all(8),
-          itemCount: messages.length + (hasToolStatus ? 1 : 0) + (provider.isLoading ? 1 : 0),
+          itemCount: messages.length + (hasToolStatus ? 1 : 0) + (showThinking ? 1 : 0),
           itemBuilder: (context, index) {
             // ============================================================
             // tool_call の状態表示
@@ -66,10 +68,22 @@ class MessageList extends StatelessWidget {
               );
             }
             // ローディング中なら最後にローディング表示
-            if (provider.isLoading && index == loadingIndex) {
+            if (showThinking && index == thinkingIndex) {
               return const Padding(
                 padding: EdgeInsets.all(8),
-                child: Text('考え中...'),
+                child: Row(
+                  children: [
+                    ThinkingIndicator(),
+                    SizedBox(width: 8),
+                    Text(
+                      '考え中…',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
               );
             }
 
@@ -122,3 +136,70 @@ class MessageList extends StatelessWidget {
     );
   }
 }
+
+    // 「考え中」の3つの点を表示するウィジェット
+    class ThinkingIndicator extends StatefulWidget {
+      const ThinkingIndicator({super.key});
+
+      @override
+      State<ThinkingIndicator> createState() => _ThinkingIndicatorState();
+    }
+
+    // アニメーションの状態を管理するクラス
+    class _ThinkingIndicatorState extends State<ThinkingIndicator>
+        with SingleTickerProviderStateMixin {
+      late final AnimationController _controller;
+
+      @override
+      void initState() {
+        super.initState();
+
+        // 900ミリ秒ごとにアニメーションを繰り返す
+        _controller = AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 900),
+        )..repeat();
+      }
+
+      @override
+      void dispose() {
+        // 画面破棄時にアニメーションを停止する
+        _controller.dispose();
+        super.dispose();
+      }
+
+      @override
+      Widget build(BuildContext context) {
+        return AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            // 現在明るくする点の番号を計算する
+            final activeIndex = (_controller.value * 3).floor();
+
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(3, (index) {
+                return AnimatedOpacity(
+                  duration: const Duration(milliseconds: 150),
+
+                  // 現在の点だけ明るくする
+                  opacity: activeIndex == index ? 1.0 : 0.3,
+
+                  child: Container(
+                    width: 7,
+                    height: 7,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+
+                    // 丸い白い点を作る
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                );
+              }),
+            );
+          },
+        );
+      }
+    }

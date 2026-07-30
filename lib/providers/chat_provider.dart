@@ -38,6 +38,10 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   bool _isLoading = false;
   Message? _currentStreamingMessage;
   bool _isUsingTool = false;
+  // 追加: metadata受信中かどうかを管理する
+  bool _isThinking = false;
+  // 追加: 画面側で「考え中」状態を取得するためのGetter
+  bool get isThinking => _isThinking;
   /// 接続状態（RaimServerService 使用時のみ意味を持つ）
   /// OllamaService / MockLLMService の場合は常に connected 扱い
   // ============================================================
@@ -75,6 +79,9 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   }
   //返答完了時の後片付け
   void _handleChatEnd(LLMResponse response) {
+    // 追加: 応答終了時に全ての待機状態を解除する
+    _isThinking = false;
+    _isUsingTool = false;
     // tool_call では検索などの外部処理中であることが通知される
     // description があればそれを表示し、無ければデフォルト文を表示する
     if (_currentStreamingMessage != null) {
@@ -110,6 +117,9 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   }
   //調べていますを表示する処理
   void _handleToolCall(LLMResponse response) {
+     // Tool使用開始時は「考え中」表示を終了する
+    _isThinking = false;
+    // Toolの説明文を画面に表示する
      debugPrint('[ChatProvider] Tool使用開始');
      // tool_call では検索などの外部処理中であることが通知される
     // description があればそれを表示し、無ければデフォルト文を表示する
@@ -204,6 +214,12 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     print('[ChatProvider] filler text_chunk はUIに表示しません: ${response.text}');
     return;
   }
+  // 追加: 通常の本文が届いたら「考え中」表示を終了する
+_isThinking = false;
+// 追加: 本文が届いたためTool使用状態も終了する
+_isUsingTool = false;
+// 追加: 検索中の表示を終了する
+_toolStatus = null;
 
   // tool_call の結果本文が届き始めたら、検索中表示を消す。
   // chat_end を待つと、答えが表示された後も
@@ -244,6 +260,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // サーバーから error が届いた場合、エラーメッセージをチャット欄に表示する。
   // 途中のストリーミング状態や検索中表示もここで解除する。
   void _handleError(LLMResponse response) {
+     // 追加: エラー時も「考え中」表示を終了する
+    _isThinking = false;
     _isUsingTool = false;
     _messages.add(Message(
       text: response.text.isNotEmpty ? response.text : 'エラーが発生しました',
@@ -262,6 +280,12 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   }
  //最初に届く感情情報をUnityへ送る処理
  void _handleMetadata(LLMResponse response) {
+  // 追加: metadata受信時に「考え中」表示を開始する
+  _isThinking = true;
+  // metadata受信時点では、まだToolは使用していない
+  _isUsingTool = false;
+  // 前回のTool表示が残らないようにリセットする
+  _toolStatus = null;
   // metadata では本文はまだ来ていないため、チャット欄には何も追加しない
   // 先に届いた emotions / overallIntensity を Unity に送って表情へ反映する
     _unityBridge.sendEmotions(
@@ -286,6 +310,9 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     _currentStreamingMessage = null;
     _toolStatus = null;
     _isLoading = false;
+    // 追加: Hot Reload時に状態をリセットする
+    _isThinking = false;
+    _isUsingTool = false;
 
     // 再生中・待機中の音声も止める
     unawaited(_audioQueue.reset());
@@ -307,6 +334,9 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     await _audioQueue.reset();
     _currentStreamingMessage = null;
     _toolStatus = null;
+    // ここに追加
+    _isThinking = false;
+    _isUsingTool = false;
     // ─── 履歴への追加処理を追加 ───
     final userMessage = Message(
       text: text,
