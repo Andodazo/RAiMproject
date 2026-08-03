@@ -80,6 +80,23 @@ class LLMResponse {
   // ============================================================
   // tool_call で届く検索・外部処理の状態表示に使う。
   // UI では「調べています...」のような表示に使う。
+  /// 会話スレッドの識別子
+  ///
+  /// chat_end で返る。クライアントはこれを保持し、次回の送信で
+  /// threadId として送り返すことで同じスレッドに追記できる。
+  /// 新規作成された場合も、採番結果がここで分かる。
+  ///
+  /// metadata には入らない（サーバー側でスレッドが確定する前に
+  /// 送信されるイベントのため）。
+  final String? threadId;
+
+  /// 受信した JSON そのもの
+  ///
+  /// thread_list / thread_history のように、LLMResponse の固定フィールドでは
+  /// 表現しきれない構造（配列など）を扱うために保持する。
+  /// 通常の chat 処理では使わない。
+  final Map<String, dynamic> raw;
+
   final String? tool;
   final String? description;
   final int? estimatedSeconds;
@@ -99,6 +116,8 @@ class LLMResponse {
     this.format,
     this.fullText,
     this.sceneId,
+    this.threadId,
+    this.raw = const {},
     this.tool,
     this.description,
     this.estimatedSeconds,
@@ -163,6 +182,8 @@ class LLMResponse {
       format: json['format'] as String?,
       fullText: json['full_text'] as String?,
       sceneId: json['scene_id'] as String?,
+      threadId: json['threadId'] as String?,
+      raw: json,
       tool: json['tool'] as String?,
       description: json['description'] as String?,
       estimatedSeconds: json['estimated_seconds'] as int?,
@@ -177,6 +198,12 @@ class LLMResponse {
   bool get isToolCall => type == 'tool_call';
   bool get isChatEnd => type == 'chat_end';
   bool get isBubbleBreak => type == 'bubble_break';
+
+  /// スレッド一覧の応答か
+  bool get isThreadList => type == 'thread_list';
+
+  /// スレッド履歴の応答か
+  bool get isThreadHistory => type == 'thread_history';
 
   /// 通常応答か（UI に吹き出し追加するべきか）
   bool get isChat => type == 'chat';

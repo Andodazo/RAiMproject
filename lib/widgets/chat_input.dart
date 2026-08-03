@@ -550,16 +550,24 @@ class ChatNewConversationButton extends StatelessWidget {
     this.isWide = false,
   });
 
-  final VoidCallback onTap;
+  /// タップ時のコールバック
+  ///
+  /// 引数の BuildContext は「このボタン自身」のもの。
+  /// ボタンの真下にメニューを出すために、呼び出し側が位置を取得できるようにする。
+  final void Function(BuildContext buttonContext) onTap;
+
   final bool isWide;
 
   @override
   Widget build(BuildContext context) {
-    return _ChatGlassButton(
+    // Builder を挟むことで、ボタン自身の位置を指す BuildContext を得る。
+    // 外側の context のままだと画面全体の RenderBox になってしまう。
+    return Builder(
+      builder: (buttonContext) => _ChatGlassButton(
       width: isWide ? 390 : null,
       height: isWide ? 44 : 48,
       isAccent: isWide,
-      onTap: onTap,
+      onTap: () => onTap(buttonContext),
       child: Row(
         children: [
           Icon(
@@ -585,6 +593,7 @@ class ChatNewConversationButton extends StatelessWidget {
             size: isWide ? 24 : 22,
           ),
         ],
+      ),
       ),
     );
   }

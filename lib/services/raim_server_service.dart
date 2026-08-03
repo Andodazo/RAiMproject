@@ -37,6 +37,7 @@ import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
 import 'package:raim_prototype/models/llm_response.dart';
+import 'package:raim_prototype/models/conversation_thread.dart';
 import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/services/llm_service.dart';
 /// 接続状態の列挙
@@ -78,6 +79,13 @@ class RaimServerService implements LLMService {
   /// この時間内に chat が来なければエラー扱い
   /// LLM 応答に時間がかかる場合があるので、ある程度長めに（60秒）
   final Duration requestTimeout;
+
+  /// スレッド一覧・履歴のタイムアウト
+  ///
+  /// 会話生成（requestTimeout）と違い、Edge Lambda が DynamoDB を
+  /// 直接読むだけなので通常は数十msで返る。
+  /// 60秒待たせるとボタンが固まったように見えるため短くする。
+  static const Duration threadRequestTimeout = Duration(seconds: 10);
   /// アクセストークンを動的に取得するコールバック関数
   final Future<String?> Function()? accessTokenGetter;
 
@@ -421,7 +429,7 @@ class RaimServerService implements LLMService {
     String userInput, {
     List<Message> history = const [],
     List<Map<String, dynamic>>? images,
-    
+    String? threadId,
   }) async* {
     // オフラインまたは切断中なら、送信前に再接続を試す
     if (_state == RaimConnectionState.offline ||
@@ -446,6 +454,14 @@ class RaimServerService implements LLMService {
     // session_id がある場合は送信に含める
     if (_sessionId != null) {
       payload['session_id'] = _sessionId;
+    }
+    // 会話スレッドの指定
+    //
+    // 省略するとサーバー側が「現在アクティブなスレッド」に追記する。
+    // 過去スレッドを再開する場合や、新しい会話を始める場合は
+    // 呼び出し側が threadId を指定する。
+    if (threadId != null && threadId.isNotEmpty) {
+      payload['threadId'] = threadId;
     }
     // 送信後に返ってくる複数メッセージを順番に受け取るためのIterator
     final iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
@@ -488,6 +504,106 @@ class RaimServerService implements LLMService {
       }
     } finally {
       // このsendMessage専用の受信待ちを終了する
+      await iterator.cancel();
+    }
+  }
+
+  // ==========================================================================
+  // スレッド操作
+  // ==========================================================================
+  //
+  // 一覧と履歴は、チャット送信と経路が違う。
+  //
+  //   チャット … Edge Lambda -> SQS -> Core Lambda（生成に数秒かかるため非同期）
+  //   一覧/履歴 … Edge Lambda が DynamoDB を直接読んで即応答
+  //
+  // どちらも同じ WebSocket を使うが、応答が速い（数十ms程度）。
+
+  /// スレッド一覧を取得する
+  ///
+  /// 更新が新しい順に、最大50件返る。本文（messages）は含まれない。
+  Future<List<ThreadSummary>> fetchThreadList() async {
+    final response = await _requestOnce(
+      payload: {'type': 'thread.list'},
+      matches: (r) => r.isThreadList,
+      label: 'thread.list',
+    );
+
+    final raw = response['threads'];
+    if (raw is! List) return const [];
+
+    return raw
+        .whereType<Map>()
+        .map((item) => ThreadSummary.fromJson(
+              item.map((k, v) => MapEntry(k.toString(), v)),
+            ))
+        .toList();
+  }
+
+  /// スレッドの過去メッセージを取得する
+  ///
+  /// 直近50件が古い順（時系列）で返る。そのまま画面に並べられる。
+  /// スレッドが存在しない場合は null。
+  Future<ThreadHistory?> fetchThreadHistory(String threadId) async {
+    if (threadId.isEmpty) return null;
+
+    final response = await _requestOnce(
+      payload: {'type': 'thread.history', 'threadId': threadId},
+      matches: (r) => r.isThreadHistory,
+      label: 'thread.history',
+    );
+
+    return ThreadHistory.fromJson(response);
+  }
+
+  /// 1往復だけの要求を送り、対応する応答を待つ
+  ///
+  /// sendMessage と違い、ストリーミングではなく単発の応答を返す。
+  /// 一覧・履歴のような読み取り要求で使う。
+  Future<Map<String, dynamic>> _requestOnce({
+    required Map<String, dynamic> payload,
+    required bool Function(LLMResponse) matches,
+    required String label,
+  }) async {
+    if (_state == RaimConnectionState.offline ||
+        _state == RaimConnectionState.disconnected) {
+      await _wakeUp();
+    }
+    if (_state != RaimConnectionState.connected) {
+      throw Exception('RAiMに接続できていません: state=$_state');
+    }
+
+    _broadcaster ??= StreamController<LLMResponse>.broadcast();
+    final iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
+
+    try {
+      // 送信より先に受信待ちを始める（即答されても取り逃がさないため）
+      var hasResponse = iterator.moveNext();
+      _channel!.sink.add(jsonEncode(payload));
+
+      // 目的の応答が来るまで読み飛ばす。
+      // 会話の text_chunk などが混ざる可能性があるため。
+      while (await hasResponse.timeout(
+        threadRequestTimeout,
+        onTimeout: () => throw TimeoutException(
+          'RAiMからの$label応答が遅すぎます',
+          threadRequestTimeout,
+        ),
+      )) {
+        final response = iterator.current;
+
+        if (matches(response)) {
+          return response.raw;
+        }
+        if (response.isError) {
+          throw Exception('$label に失敗しました: ${response.text}');
+        }
+
+        hasResponse = iterator.moveNext();
+      }
+
+      throw Exception('$label の応答が得られませんでした');
+    } finally {
       await iterator.cancel();
     }
   }
