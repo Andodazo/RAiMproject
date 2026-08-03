@@ -10,6 +10,7 @@ import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/widgets/character_display.dart';
 import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
+import 'package:raim_prototype/widgets/thread_selector_menu.dart';
 
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
@@ -122,9 +123,7 @@ class ChatScreen extends StatelessWidget {
           //新しい会話ボタン
           Expanded(
             child: ChatNewConversationButton(
-              onTap: () {
-                debugPrint('[ChatScreen] 新しい会話ボタンが押されました');
-              },
+              onTap: (buttonContext) => showThreadMenu(buttonContext),
             ),
           ),
           const SizedBox(width: 12),
@@ -298,9 +297,7 @@ class ChatScreen extends StatelessWidget {
           right: 100,
           child: ChatNewConversationButton(
             isWide: true,
-            onTap: () {
-              debugPrint('[ChatScreen] 新しい会話ボタンが押されました');
-            },
+            onTap: (buttonContext) => showThreadMenu(buttonContext),
           ),
         ),
 

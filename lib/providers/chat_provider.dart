@@ -9,11 +9,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/models/llm_response.dart';
+import 'package:raim_prototype/models/conversation_thread.dart';
 import 'package:raim_prototype/services/llm_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/audio_play_queue.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // ============================================================
@@ -35,6 +37,24 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // _isLoading はAI返答待ち状態。
   // _currentStreamingMessage は text_chunk を追記中のAIメッセージ。
   final List<Message> _messages = [];
+
+  // ─── 会話スレッド ───
+  //
+  // サーバーは会話を「スレッド」単位で保存している。
+  // threadId を送ると同じスレッドに追記され、送らなければ
+  // サーバー側が「現在アクティブなスレッド」を使う。
+
+  /// 現在開いているスレッド。chat_end で受け取って保持する
+  String? _currentThreadId;
+
+  /// スレッド一覧（プルダウン表示用）
+  List<ThreadSummary> _threads = [];
+
+  /// 一覧・履歴の取得中か
+  bool _isLoadingThreads = false;
+
+  /// 一覧・履歴の取得に失敗したときの理由（UI 表示用）
+  String? _threadError;
   bool _isLoading = false;
   Message? _currentStreamingMessage;
   bool _isUsingTool = false;
@@ -58,6 +78,10 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   }
   //メッセージの中身を編集されないようにするため。(読み取り専用)
   List<Message> get messages => List.unmodifiable(_messages);
+  String? get currentThreadId => _currentThreadId;
+  List<ThreadSummary> get threads => List.unmodifiable(_threads);
+  bool get isLoadingThreads => _isLoadingThreads;
+  String? get threadError => _threadError;
   bool get isLoading => _isLoading;
   String? get toolStatus => _toolStatus;
   RaimConnectionState get connectionState => _connectionState;
@@ -82,6 +106,16 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     // 追加: 応答終了時に全ての待機状態を解除する
     _isThinking = false;
     _isUsingTool = false;
+
+    // スレッド識別子を保持する。
+    // 新規作成された場合もここで採番結果が分かるため、
+    // 次回の送信でこれを送り返すと同じスレッドに追記される。
+    if (response.threadId != null && response.threadId!.isNotEmpty) {
+      if (_currentThreadId != response.threadId) {
+        debugPrint('[ChatProvider] スレッド確定: ${response.threadId}');
+      }
+      _currentThreadId = response.threadId;
+    }
     // tool_call では検索などの外部処理中であることが通知される
     // description があればそれを表示し、無ければデフォルト文を表示する
     if (_currentStreamingMessage != null) {
@@ -304,6 +338,114 @@ _toolStatus = null;
   // flutter run 中に r を押して Hot Reload したとき、
   // 通常は Provider の状態が残る。
   // 開発中は吹き出しを空にしたいため、ここで会話履歴などを初期化する。
+
+  // ==========================================================================
+  // 会話スレッドの操作
+  // ==========================================================================
+
+  /// スレッド一覧を読み込む
+  ///
+  /// 「新しい会話」ボタンを押したときに呼ぶ。
+  /// 失敗しても例外は投げず、一覧を空のままにする（会話は続けられる）。
+  Future<void> loadThreads() async {
+    final service = _llmService;
+    if (service is! RaimServerService) {
+      debugPrint('[ChatProvider] スレッド一覧は RaimServerService でのみ利用できます');
+      return;
+    }
+
+    _isLoadingThreads = true;
+    _threadError = null;
+    notifyListeners();
+
+    try {
+      _threads = await service.fetchThreadList();
+      debugPrint('[ChatProvider] スレッド一覧: ${_threads.length}件');
+    } catch (e) {
+      debugPrint('[ChatProvider] スレッド一覧の取得に失敗: $e');
+      _threads = [];
+      _threadError = '会話一覧を読み込めませんでした';
+    } finally {
+      _isLoadingThreads = false;
+      notifyListeners();
+    }
+  }
+
+  /// 過去のスレッドを開く
+  ///
+  /// 画面のメッセージを、そのスレッドの履歴で置き換える。
+  /// サーバーは直近50件しか返さないため、それより古いやり取りは表示されない
+  /// （ライム側の文脈としては引き継がれている）。
+  Future<void> switchThread(String threadId) async {
+    final service = _llmService;
+    if (service is! RaimServerService) return;
+    if (threadId.isEmpty || threadId == _currentThreadId) return;
+
+    _isLoadingThreads = true;
+    notifyListeners();
+
+    try {
+      final history = await service.fetchThreadHistory(threadId);
+
+      _currentThreadId = threadId;
+      _messages.clear();
+      _currentStreamingMessage = null;
+
+      if (history != null) {
+        for (final m in history.messages) {
+          // 過去メッセージを画面用の Message へ変換する。
+          // createdAt はサーバー保存時刻。パースできなければ現在時刻にする。
+          final dominantEmotion = (m.emotions != null && m.emotions!.isNotEmpty)
+              ? m.emotions!.entries
+                  .reduce((a, b) => a.value >= b.value ? a : b)
+                  .key
+              : 'neutral';
+
+          _messages.add(Message(
+            text: m.displayText,
+            role: m.isUser ? MessageRole.user : MessageRole.assistant,
+            timestamp: DateTime.tryParse(m.createdAt) ?? DateTime.now(),
+            emotion: m.isUser ? null : dominantEmotion,
+            emotions: m.emotions ?? const {'neutral': 1.0},
+          ));
+        }
+        debugPrint(
+          '[ChatProvider] スレッド切替: $threadId '
+          '(${history.messages.length}/${history.totalMessages}件, '
+          'hasMore=${history.hasMore})',
+        );
+      }
+    } catch (e) {
+      debugPrint('[ChatProvider] スレッド切替に失敗: $e');
+      _threadError = '会話を開けませんでした';
+    } finally {
+      _isLoadingThreads = false;
+      notifyListeners();
+    }
+  }
+
+  /// 新しい会話を始める
+  ///
+  /// クライアント側で識別子を採番して送る。サーバーは未知の threadId を
+  /// 受け取るとその ID でスレッドを新規作成するため、専用の API は要らない。
+  void startNewThread() {
+    _currentThreadId = _generateThreadId();
+    _messages.clear();
+    _currentStreamingMessage = null;
+    _isLoading = false;
+    _isThinking = false;
+    _isUsingTool = false;
+    _toolStatus = null;
+
+    debugPrint('[ChatProvider] 新しい会話: $_currentThreadId');
+    notifyListeners();
+  }
+
+  /// スレッド識別子を作る
+  ///
+  /// サーバー側は未知の threadId を受け取るとその ID でスレッドを作るため、
+  /// クライアントが採番してよい。
+  String _generateThreadId() => 'thread-${const Uuid().v4()}';
   @override
   void reassemble() {
     _messages.clear();
@@ -379,6 +521,7 @@ _toolStatus = null;
         text,
         history: recentHistory,
         images: targetImages,
+        threadId: _currentThreadId,
       )) {
 
         _handleResponse(response);
