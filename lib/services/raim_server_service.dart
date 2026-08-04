@@ -556,6 +556,21 @@ class RaimServerService implements LLMService {
     return ThreadHistory.fromJson(response);
   }
 
+  /// スレッドを削除する
+  ///
+  /// サーバー側は削除と同時に、残っているスレッドの要約から
+  /// ユーザー記憶（userMemory）を作り直す。
+  /// これをしないと「消したのにライムが覚えている」状態になるため。
+  Future<void> deleteThread(String threadId) async {
+    if (threadId.isEmpty) return;
+
+    await _requestOnce(
+      payload: {'type': 'thread.delete', 'threadId': threadId},
+      matches: (r) => r.isThreadDeleted,
+      label: 'thread.delete',
+    );
+  }
+
   /// 1往復だけの要求を送り、対応する応答を待つ
   ///
   /// sendMessage と違い、ストリーミングではなく単発の応答を返す。

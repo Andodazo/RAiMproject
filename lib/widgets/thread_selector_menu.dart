@@ -180,10 +180,31 @@ class _NewThreadRow extends StatelessWidget {
 }
 
 /// 一覧部分（読み込み中・エラー・空・一覧を出し分ける）
-class _ThreadListSection extends StatelessWidget {
+/// 一覧部分（読み込み中・エラー・空・一覧を出し分ける）
+///
+/// 【削除の確認を Overlay の中で完結させる理由】
+///
+/// PopupMenuButton や showDialog は Navigator のルートを積む。
+/// このメニューは Overlay.insert() で手動挿入しているため、
+/// Navigator のルートより上に来てしまい、
+///   - ポップアップがメニューの裏に隠れる
+///   - 透明なバリアがタップを吸って反応しない
+/// という状態になる。
+///
+/// そのため「⋯」を押したらその行が確認表示に切り替わる、という
+/// インライン方式にしている。ルートを積まないので競合しない。
+class _ThreadListSection extends StatefulWidget {
   const _ThreadListSection({required this.onClose});
 
   final VoidCallback onClose;
+
+  @override
+  State<_ThreadListSection> createState() => _ThreadListSectionState();
+}
+
+class _ThreadListSectionState extends State<_ThreadListSection> {
+  /// 削除の確認中のスレッド。null なら通常表示
+  String? _pendingDeleteId;
 
   @override
   Widget build(BuildContext context) {
@@ -226,6 +247,24 @@ class _ThreadListSection extends StatelessWidget {
           itemCount: provider.threads.length,
           itemBuilder: (context, index) {
             final thread = provider.threads[index];
+
+            if (_pendingDeleteId == thread.threadId) {
+              return _DeleteConfirmRow(
+                title: thread.title,
+                onCancel: () => setState(() => _pendingDeleteId = null),
+                onConfirm: () async {
+                  setState(() => _pendingDeleteId = null);
+                  await provider.deleteThread(thread.threadId);
+
+                  // 今開いていたスレッドを消した場合は画面が切り替わるので閉じる
+                  if (provider.currentThreadId != thread.threadId &&
+                      provider.threads.isEmpty) {
+                    widget.onClose();
+                  }
+                },
+              );
+            }
+
             return _ThreadRow(
               thread: thread,
               isCurrent: thread.threadId == provider.currentThreadId,
@@ -233,12 +272,87 @@ class _ThreadListSection extends StatelessWidget {
                 if (thread.threadId != provider.currentThreadId) {
                   provider.switchThread(thread.threadId);
                 }
-                onClose();
+                widget.onClose();
               },
+              onRequestDelete: () =>
+                  setState(() => _pendingDeleteId = thread.threadId),
             );
           },
         );
       },
+    );
+  }
+}
+
+/// 削除の確認表示
+///
+/// 会話は復元できないうえ、ライムがその会話から覚えたことも消えるため、
+/// 必ずワンクッション置く。
+class _DeleteConfirmRow extends StatelessWidget {
+  const _DeleteConfirmRow({
+    required this.title,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  final String title;
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white10,
+      padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '「$title」を削除しますか？',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'ライムがこの会話から覚えたことも消えます',
+            style: TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: onCancel,
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  'キャンセル',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+              ),
+              TextButton(
+                onPressed: onConfirm,
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  '削除',
+                  style: TextStyle(
+                    color: Color(0xFFE06C6C),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -295,18 +409,22 @@ class _ThreadRow extends StatelessWidget {
     required this.thread,
     required this.isCurrent,
     required this.onTap,
+    required this.onRequestDelete,
   });
 
   final ThreadSummary thread;
   final bool isCurrent;
   final VoidCallback onTap;
 
+  /// 「⋯」を押したとき。行を削除確認表示へ切り替える
+  final VoidCallback onRequestDelete;
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.only(left: 14, top: 10, bottom: 10),
         child: Row(
           children: [
             Icon(
@@ -344,6 +462,16 @@ class _ThreadRow extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+            ),
+            // 行のタップ（スレッド切替）と競合しないよう、
+            // ここだけ別のタップ領域にする
+            InkWell(
+              onTap: onRequestDelete,
+              customBorder: const CircleBorder(),
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.more_horiz, color: Colors.white38, size: 18),
               ),
             ),
           ],

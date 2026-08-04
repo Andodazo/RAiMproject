@@ -424,6 +424,40 @@ _toolStatus = null;
     }
   }
 
+  /// スレッドを削除する
+  ///
+  /// 削除したのが今開いているスレッドだった場合は、
+  /// 画面をクリアして新しい会話に切り替える
+  /// （消したスレッドを開いたままにしておくと、次の発話が
+  ///  存在しない threadId へ送られて復活してしまうため）。
+  Future<void> deleteThread(String threadId) async {
+    final service = _llmService;
+    if (service is! RaimServerService) return;
+    if (threadId.isEmpty) return;
+
+    _isLoadingThreads = true;
+    _threadError = null;
+    notifyListeners();
+
+    try {
+      await service.deleteThread(threadId);
+
+      _threads = _threads.where((t) => t.threadId != threadId).toList();
+
+      if (_currentThreadId == threadId) {
+        startNewThread();
+      }
+
+      debugPrint('[ChatProvider] スレッド削除: $threadId');
+    } catch (e) {
+      debugPrint('[ChatProvider] スレッド削除に失敗: $e');
+      _threadError = '会話を削除できませんでした';
+    } finally {
+      _isLoadingThreads = false;
+      notifyListeners();
+    }
+  }
+
   /// 新しい会話を始める
   ///
   /// クライアント側で識別子を採番して送る。サーバーは未知の threadId を
