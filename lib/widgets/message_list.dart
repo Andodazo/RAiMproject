@@ -38,15 +38,64 @@ class MessageList extends StatelessWidget {
         // Hot Restart やアプリ再起動後は、ChatProvider の会話履歴が空になる。
         // 会話履歴・検索中表示・ローディング表示がすべて無い場合は、
         // チャット欄に何も表示せず、入力欄のプレースホルダーだけを見せる。
-        if (messages.isEmpty && !hasToolStatus && !provider.isLoading) {
+        // 遡れる履歴が残っている場合は、表示中のメッセージが空でも
+        // 「もっと見る」を出したいので早期リターンしない。
+        if (messages.isEmpty &&
+            !hasToolStatus &&
+            !provider.isLoading &&
+            !provider.hasMoreHistory) {
           return const Center(
           );
         }
         
+        // 過去メッセージの遡り。
+        //
+        // サーバーは1回の応答で一定量しか返さない（WebSocket の送信上限のため）。
+        // 続きがある場合は先頭に「もっと見る」を置く。
+        //
+        // スクロール位置を監視する自動読み込みにすると、
+        // 差し込み後に表示位置が飛ぶ扱いが要る。明示的なボタンの方が
+        // 挙動が読みやすいのでこちらにしている。
+        final showLoadOlder = provider.hasMoreHistory;
+        final loadOlderOffset = showLoadOlder ? 1 : 0;
+
         return ListView.builder(
           padding: const EdgeInsets.all(8),
-          itemCount: messages.length + (hasToolStatus ? 1 : 0) + (showThinking ? 1 : 0),
-          itemBuilder: (context, index) {
+          itemCount: loadOlderOffset +
+              messages.length +
+              (hasToolStatus ? 1 : 0) +
+              (showThinking ? 1 : 0),
+          itemBuilder: (context, rawIndex) {
+            // 先頭の「もっと見る」
+            if (showLoadOlder && rawIndex == 0) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Center(
+                  child: provider.isLoadingOlder
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Color(0xFFB4E61D),
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : TextButton(
+                          onPressed: () => provider.loadOlderMessages(),
+                          child: const Text(
+                            'もっと見る',
+                            style: TextStyle(
+                              color: Color(0xFFB4E61D),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                ),
+              );
+            }
+
+            // 以降は「もっと見る」の分だけ添字をずらす
+            final index = rawIndex - loadOlderOffset;
             // ============================================================
             // tool_call の状態表示
             // ============================================================

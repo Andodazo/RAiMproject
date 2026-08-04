@@ -205,6 +205,9 @@ class LLMResponse {
   /// スレッド履歴の応答か
   bool get isThreadHistory => type == 'thread_history';
 
+  /// スレッド削除の応答か
+  bool get isThreadDeleted => type == 'thread_deleted';
+
   /// 通常応答か（UI に吹き出し追加するべきか）
   bool get isChat => type == 'chat';
 

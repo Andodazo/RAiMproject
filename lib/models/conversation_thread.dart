@@ -135,11 +135,15 @@ class ThreadHistory {
   final String title;
   final List<ThreadMessage> messages;
 
+  /// 返した中で最も古いメッセージの位置
+  ///
+  /// さらに古い分を取るとき、これを beforeIndex として送り返す。
+  final int startIndex;
+
   /// さらに古いメッセージが存在するか
   ///
-  /// サーバーは直近50件（かつ24KB以内）しか返さない。
-  /// true の場合、それより前のやり取りは画面に出ない。
-  /// 遡って取得する API は未実装。
+  /// サーバーは1回の応答で一定量しか返さない。
+  /// true の場合は startIndex を beforeIndex として送ると続きが取れる。
   final bool hasMore;
 
   /// スレッドの全メッセージ数
@@ -149,6 +153,7 @@ class ThreadHistory {
     required this.threadId,
     required this.title,
     required this.messages,
+    required this.startIndex,
     required this.hasMore,
     required this.totalMessages,
   });
@@ -173,6 +178,7 @@ class ThreadHistory {
       threadId: (json['threadId'] as String?) ?? '',
       title: (json['title'] as String?) ?? '',
       messages: messages,
+      startIndex: (json['startIndex'] as num?)?.toInt() ?? 0,
       hasMore: (json['hasMore'] as bool?) ?? false,
       totalMessages: (json['totalMessages'] as num?)?.toInt() ?? messages.length,
     );

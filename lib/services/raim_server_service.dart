@@ -544,16 +544,40 @@ class RaimServerService implements LLMService {
   ///
   /// 直近50件が古い順（時系列）で返る。そのまま画面に並べられる。
   /// スレッドが存在しない場合は null。
-  Future<ThreadHistory?> fetchThreadHistory(String threadId) async {
+  /// [beforeIndex] を渡すと、その位置より古いメッセージを取得する。
+  /// 上スクロールで遡るときに、前回の startIndex を渡す。
+  Future<ThreadHistory?> fetchThreadHistory(
+    String threadId, {
+    int? beforeIndex,
+  }) async {
     if (threadId.isEmpty) return null;
 
     final response = await _requestOnce(
-      payload: {'type': 'thread.history', 'threadId': threadId},
+      payload: {
+        'type': 'thread.history',
+        'threadId': threadId,
+        if (beforeIndex != null) 'beforeIndex': beforeIndex,
+      },
       matches: (r) => r.isThreadHistory,
       label: 'thread.history',
     );
 
     return ThreadHistory.fromJson(response);
+  }
+
+  /// スレッドを削除する
+  ///
+  /// サーバー側は削除と同時に、残っているスレッドの要約から
+  /// ユーザー記憶（userMemory）を作り直す。
+  /// これをしないと「消したのにライムが覚えている」状態になるため。
+  Future<void> deleteThread(String threadId) async {
+    if (threadId.isEmpty) return;
+
+    await _requestOnce(
+      payload: {'type': 'thread.delete', 'threadId': threadId},
+      matches: (r) => r.isThreadDeleted,
+      label: 'thread.delete',
+    );
   }
 
   /// 1往復だけの要求を送り、対応する応答を待つ

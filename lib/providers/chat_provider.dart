@@ -55,6 +55,20 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
 
   /// 一覧・履歴の取得に失敗したときの理由（UI 表示用）
   String? _threadError;
+
+  // ─── 履歴の遡り ───
+  //
+  // サーバーは1回の応答で一定量しか返さない（WebSocket の送信上限のため）。
+  // 続きを取るには、前回返ってきた startIndex を beforeIndex として送る。
+
+  /// 次に遡るときの位置。null なら遡る先が無い
+  int? _historyCursor;
+
+  /// さらに古いメッセージが残っているか
+  bool _hasMoreHistory = false;
+
+  /// 遡り読み込み中か（重複実行の防止も兼ねる）
+  bool _isLoadingOlder = false;
   bool _isLoading = false;
   Message? _currentStreamingMessage;
   bool _isUsingTool = false;
@@ -82,6 +96,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   List<ThreadSummary> get threads => List.unmodifiable(_threads);
   bool get isLoadingThreads => _isLoadingThreads;
   String? get threadError => _threadError;
+  bool get hasMoreHistory => _hasMoreHistory;
+  bool get isLoadingOlder => _isLoadingOlder;
   bool get isLoading => _isLoading;
   String? get toolStatus => _toolStatus;
   RaimConnectionState get connectionState => _connectionState;
@@ -392,23 +408,10 @@ _toolStatus = null;
       _currentStreamingMessage = null;
 
       if (history != null) {
-        for (final m in history.messages) {
-          // 過去メッセージを画面用の Message へ変換する。
-          // createdAt はサーバー保存時刻。パースできなければ現在時刻にする。
-          final dominantEmotion = (m.emotions != null && m.emotions!.isNotEmpty)
-              ? m.emotions!.entries
-                  .reduce((a, b) => a.value >= b.value ? a : b)
-                  .key
-              : 'neutral';
+        _historyCursor = history.hasMore ? history.startIndex : null;
+        _hasMoreHistory = history.hasMore;
 
-          _messages.add(Message(
-            text: m.displayText,
-            role: m.isUser ? MessageRole.user : MessageRole.assistant,
-            timestamp: DateTime.tryParse(m.createdAt) ?? DateTime.now(),
-            emotion: m.isUser ? null : dominantEmotion,
-            emotions: m.emotions ?? const {'neutral': 1.0},
-          ));
-        }
+        _messages.addAll(history.messages.map(_toMessage));
         debugPrint(
           '[ChatProvider] スレッド切替: $threadId '
           '(${history.messages.length}/${history.totalMessages}件, '
@@ -424,12 +427,114 @@ _toolStatus = null;
     }
   }
 
+  /// スレッドを削除する
+  ///
+  /// 削除したのが今開いているスレッドだった場合は、
+  /// 画面をクリアして新しい会話に切り替える
+  /// （消したスレッドを開いたままにしておくと、次の発話が
+  ///  存在しない threadId へ送られて復活してしまうため）。
+  Future<void> deleteThread(String threadId) async {
+    final service = _llmService;
+    if (service is! RaimServerService) return;
+    if (threadId.isEmpty) return;
+
+    _isLoadingThreads = true;
+    _threadError = null;
+    notifyListeners();
+
+    try {
+      await service.deleteThread(threadId);
+
+      _threads = _threads.where((t) => t.threadId != threadId).toList();
+
+      if (_currentThreadId == threadId) {
+        startNewThread();
+      }
+
+      debugPrint('[ChatProvider] スレッド削除: $threadId');
+    } catch (e) {
+      debugPrint('[ChatProvider] スレッド削除に失敗: $e');
+      _threadError = '会話を削除できませんでした';
+    } finally {
+      _isLoadingThreads = false;
+      notifyListeners();
+    }
+  }
+
+  /// さらに古いメッセージを読み込む
+  ///
+  /// 画面を上へスクロールしきったときに呼ぶ。
+  /// 取得したぶんはメッセージ一覧の先頭へ差し込む。
+  Future<void> loadOlderMessages() async {
+    final service = _llmService;
+    if (service is! RaimServerService) return;
+
+    final threadId = _currentThreadId;
+    final cursor = _historyCursor;
+
+    // 遡る先が無い、または読み込み中なら何もしない
+    if (threadId == null || cursor == null || cursor <= 0) return;
+    if (_isLoadingOlder) return;
+
+    _isLoadingOlder = true;
+    notifyListeners();
+
+    try {
+      final history = await service.fetchThreadHistory(
+        threadId,
+        beforeIndex: cursor,
+      );
+
+      if (history != null && history.messages.isNotEmpty) {
+        final older = history.messages.map(_toMessage).toList();
+
+        // 古い方を先頭へ差し込む
+        _messages.insertAll(0, older);
+
+        _historyCursor = history.hasMore ? history.startIndex : null;
+        _hasMoreHistory = history.hasMore;
+
+        debugPrint(
+          '[ChatProvider] 過去メッセージを追加: ${older.length}件 '
+          '(startIndex=${history.startIndex}, hasMore=${history.hasMore})',
+        );
+      } else {
+        _historyCursor = null;
+        _hasMoreHistory = false;
+      }
+    } catch (e) {
+      debugPrint('[ChatProvider] 過去メッセージの取得に失敗: $e');
+    } finally {
+      _isLoadingOlder = false;
+      notifyListeners();
+    }
+  }
+
+  /// 履歴のメッセージを画面用の Message へ変換する
+  Message _toMessage(ThreadMessage m) {
+    final dominantEmotion = (m.emotions != null && m.emotions!.isNotEmpty)
+        ? m.emotions!.entries
+            .reduce((a, b) => a.value >= b.value ? a : b)
+            .key
+        : 'neutral';
+
+    return Message(
+      text: m.displayText,
+      role: m.isUser ? MessageRole.user : MessageRole.assistant,
+      timestamp: DateTime.tryParse(m.createdAt) ?? DateTime.now(),
+      emotion: m.isUser ? null : dominantEmotion,
+      emotions: m.emotions ?? const {'neutral': 1.0},
+    );
+  }
+
   /// 新しい会話を始める
   ///
   /// クライアント側で識別子を採番して送る。サーバーは未知の threadId を
   /// 受け取るとその ID でスレッドを新規作成するため、専用の API は要らない。
   void startNewThread() {
     _currentThreadId = _generateThreadId();
+    _historyCursor = null;
+    _hasMoreHistory = false;
     _messages.clear();
     _currentStreamingMessage = null;
     _isLoading = false;
