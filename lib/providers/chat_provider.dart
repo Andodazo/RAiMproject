@@ -112,8 +112,19 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
       final service = _llmService;
       _connectionState = service.state;
       _stateSubscription = service.stateStream.listen((newState) {
+        final wasConnected = _connectionState == RaimConnectionState.connected;
         _connectionState = newState;
         notifyListeners();
+
+        // 接続できた時点で、前回の続きから始められるようにする。
+        //
+        // サーバー側は activeThreadId を覚えているので、何もしなくても
+        // 会話自体は前のスレッドに続く。ただし画面は空のままなので、
+        // ユーザーからは「忘れられた」ように見える。
+        // そこで最後に使ったスレッドの履歴を読み込んで表示する。
+        if (!wasConnected && newState == RaimConnectionState.connected) {
+          _restoreLastThread();
+        }
       });
     }
   }
@@ -458,6 +469,29 @@ _toolStatus = null;
     } finally {
       _isLoadingThreads = false;
       notifyListeners();
+    }
+  }
+
+  /// 起動直後に、最後に話していたスレッドを開く
+  ///
+  /// 一覧は更新が新しい順なので、先頭が直近のスレッドになる。
+  /// すでにスレッドを開いている場合や、会話中の場合は何もしない。
+  Future<void> _restoreLastThread() async {
+    if (_currentThreadId != null) return;
+    if (_messages.isNotEmpty) return;
+    if (_isLoading) return;
+
+    try {
+      await loadThreads();
+
+      if (_threads.isEmpty) return;
+      if (_currentThreadId != null || _messages.isNotEmpty) return;
+
+      await switchThread(_threads.first.threadId);
+      debugPrint('[ChatProvider] 前回の会話を復元: ${_threads.first.title}');
+    } catch (e) {
+      // 復元に失敗しても新規会話として続けられるので、黙って諦める
+      debugPrint('[ChatProvider] 前回の会話を復元できませんでした: $e');
     }
   }
 
