@@ -33,6 +33,36 @@ abstract class UnityCommunicator {
     required Map<String, double> emotions,
     required double overallIntensity,
   });
+
+  // ============================================================
+  // 吹き出し（Windows版のデスクトップマスコット用）
+  // ============================================================
+  // Windows では文字を Unity 側の吹き出しに出すため、text_chunk を
+  // そのまま Unity へ転送する。
+  // モバイルは Flutter のチャット画面が文字を描くので、
+  // EmbedUnityBridge 側では何もしない実装にしてある。
+
+  /// text_chunk を Unity へ転送する
+  ///
+  /// サーバーから 140〜270ms 間隔で届くので、Unity 側は届いた順に
+  /// 追記するだけで自然なタイプライター表示になる。
+  void sendText({
+    required String text,
+    bool isFiller = false,
+  });
+
+  /// bubble_break を Unity へ転送する
+  ///
+  /// ツールの前置き（「ちょっと待ってね」）と本文を別の吹き出しに
+  /// 分けるための区切り。
+  void sendBubbleBreak();
+
+  /// chat_end を Unity へ転送する
+  ///
+  /// Unity 側はここから吹き出しの消去タイマーを開始する。
+  /// [fullText] は取りこぼし対策の最終確定テキスト。
+  void sendChatEnd({String? fullText});
+
   /// 通信を停止
   Future<void> stop();
 }

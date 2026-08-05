@@ -13,6 +13,13 @@ public class RAiMCharacterController : MonoBehaviour
     [SerializeField] private string serverUrl = "ws://localhost:8765";
     [SerializeField] private bool useWebSocket = true;
 
+    [Tooltip("接続に失敗したとき再試行する間隔(秒)。0で再接続しない")]
+    [SerializeField] private float reconnectInterval = 3f;
+
+    [Header("吹き出し（Windows版のみ）")]
+    [Tooltip("SpeechBubbleController。WindowsOverlay の子に置く。未設定でも動作する")]
+    [SerializeField] private SpeechBubbleController speechBubble;
+
     [Header("表情スプライト")]
     [SerializeField] private Sprite defaultSprite;
     [SerializeField] private Sprite happySprite;
@@ -48,6 +55,11 @@ public class RAiMCharacterController : MonoBehaviour
     private SpriteRenderer spriteRenderer;
     private WebSocket websocket;
     private Dictionary<string, Sprite> emotionMap;
+
+    // 再接続用
+    private bool isConnecting = false;
+    private float reconnectTimer = 0f;
+    private bool quitting = false;
 
     // ============================================================
     // 起動時処理
@@ -245,25 +257,89 @@ public class RAiMCharacterController : MonoBehaviour
     }
 
     // ============================================================
+    // 吹き出し（Windows版のみ）
+    // ============================================================
+    // モバイルではチャットUIをFlutterが描くため、speechBubble は
+    // WindowsOverlay の子（=モバイルでは無効）に置いてある。
+    // 無効なら何もしないので、プラットフォーム分岐は不要。
+
+    private bool BubbleAvailable =>
+        speechBubble != null && speechBubble.isActiveAndEnabled;
+
+    /// <summary>
+    /// text_chunk を受け取り、吹き出しに追記する。
+    /// </summary>
+    public void ReceiveTextChunk(string json)
+    {
+        if (!BubbleAvailable) return;
+
+        try
+        {
+            var data = JsonUtility.FromJson<TextChunkMessage>(json);
+            if (data == null || string.IsNullOrEmpty(data.text)) return;
+
+            // is_filler は v14 以降サーバー側で実質使われていないが、
+            // 届いても本文と同じ扱いで問題ない。
+            speechBubble.AppendText(data.text);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"text_chunk JSONエラー: {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// bubble_break。次の text_chunk から新しい吹き出しにする。
+    /// </summary>
+    public void ReceiveBubbleBreak()
+    {
+        if (!BubbleAvailable) return;
+        speechBubble.BreakBubble();
+    }
+
+    /// <summary>
+    /// chat_end。消去タイマーを開始する。
+    /// </summary>
+    public void ReceiveChatEnd(string json)
+    {
+        if (!BubbleAvailable) return;
+
+        try
+        {
+            var data = JsonUtility.FromJson<ChatEndMessage>(json);
+            speechBubble.EndSpeech(data != null ? data.full_text : null);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"chat_end JSONエラー: {e.Message}");
+            speechBubble.EndSpeech();
+        }
+    }
+
+    // ============================================================
     // Windows用WebSocket接続
     // ============================================================
 
     private async System.Threading.Tasks.Task ConnectWebSocket()
     {
+        isConnecting = true;
         websocket = new WebSocket(serverUrl);
 
         websocket.OnOpen += () =>
         {
+            isConnecting = false;
             Debug.Log("WebSocket接続成功");
         };
 
         websocket.OnError += (errorMessage) =>
         {
+            isConnecting = false;
             Debug.LogError($"WebSocketエラー: {errorMessage}");
         };
 
         websocket.OnClose += (closeCode) =>
         {
+            isConnecting = false;
             Debug.Log($"WebSocket切断: {closeCode}");
         };
 
@@ -283,6 +359,7 @@ public class RAiMCharacterController : MonoBehaviour
         }
         catch (Exception e)
         {
+            isConnecting = false;
             Debug.LogError($"WebSocket接続失敗: {e.Message}");
         }
     }
@@ -309,6 +386,25 @@ public class RAiMCharacterController : MonoBehaviour
                 typeData.type == "emotions")
             {
                 ReceiveEmotions(json);
+                return;
+            }
+
+            // 吹き出し系（Windows版のみ）
+            if (typeData != null && typeData.type == "text_chunk")
+            {
+                ReceiveTextChunk(json);
+                return;
+            }
+
+            if (typeData != null && typeData.type == "bubble_break")
+            {
+                ReceiveBubbleBreak();
+                return;
+            }
+
+            if (typeData != null && typeData.type == "chat_end")
+            {
+                ReceiveChatEnd(json);
                 return;
             }
 
@@ -479,11 +575,45 @@ public class RAiMCharacterController : MonoBehaviour
     private void Update()
     {
 #if !UNITY_WEBGL || UNITY_EDITOR
-        if (useWebSocket && websocket != null)
+        if (!useWebSocket) return;
+
+        if (websocket != null)
         {
             websocket.DispatchMessageQueue();
         }
+
+        TryReconnect();
 #endif
+    }
+
+    // ============================================================
+    // 再接続
+    // ============================================================
+    // Unity を Flutter より先に起動した場合、Start() の1回きりでは
+    // 永久に繋がらないため、閉じている間は一定間隔で再試行する。
+
+    private void TryReconnect()
+    {
+        if (quitting) return;
+        if (reconnectInterval <= 0f) return;
+        if (isConnecting) return;
+
+        bool needsConnect =
+            websocket == null ||
+            websocket.State == WebSocketState.Closed;
+
+        if (!needsConnect)
+        {
+            reconnectTimer = 0f;
+            return;
+        }
+
+        reconnectTimer -= Time.deltaTime;
+        if (reconnectTimer > 0f) return;
+
+        reconnectTimer = reconnectInterval;
+        Debug.Log("WebSocket再接続を試みます");
+        _ = ConnectWebSocket();
     }
 
     // ============================================================
@@ -492,6 +622,8 @@ public class RAiMCharacterController : MonoBehaviour
 
     private async void OnApplicationQuit()
     {
+        quitting = true;
+
         if (websocket != null)
         {
             await websocket.Close();
@@ -516,6 +648,22 @@ public class EmotionMessage
 public class MessageType
 {
     public string type;
+}
+
+[Serializable]
+public class TextChunkMessage
+{
+    public string type;
+    public string text;
+    public bool is_filler;
+    public bool is_final;
+}
+
+[Serializable]
+public class ChatEndMessage
+{
+    public string type;
+    public string full_text;
 }
 
 [Serializable]

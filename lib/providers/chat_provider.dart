@@ -157,6 +157,10 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
       emotions: response.emotions,
       overallIntensity: response.overallIntensity,
     );
+
+    // 追加: 吹き出しの消去タイマーを開始させる（Windows版のみ効く）
+    _unityBridge.sendChatEnd(fullText: response.fullText);
+
     // ストリーミング中メッセージを終了扱いにする
     _currentStreamingMessage = null;
     // 検索中表示を消す
@@ -245,6 +249,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     print('[ChatProvider] bubble_break 受信: 次の text_chunk は新規吹き出しにする');
     // 現在のストリーミング吹き出しを区切る
     _currentStreamingMessage = null;
+    _unityBridge.sendBubbleBreak();
     // notifyListeners は不要（UI 変化なし）
   }
   //分割された文章を吹き出しに追加していく処理
@@ -301,7 +306,7 @@ _toolStatus = null;
      // List内の最後のAIメッセージを、追記後の内容に差し替える
     _messages[_messages.length - 1] = _currentStreamingMessage!;
   }
-
+  _unityBridge.sendText(text: response.text);
   notifyListeners();
 }
   // ============================================================
