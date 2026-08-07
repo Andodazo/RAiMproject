@@ -17,8 +17,8 @@ Cognito認証状態を確認
 ↓
 認証済みなら既存WebSocket接続を開始してChatScreenを表示*/
 
-import 'dart:async' show unawaited;
-import 'dart:io' show Platform;
+import 'dart:async' show StreamSubscription, unawaited;
+import 'dart:io' show Platform, exit;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -80,12 +80,16 @@ void main() async {
 //webかアプリかを判定
 UnityCommunicator _createUnityBridge() {
   if (kIsWeb) {
-    return WindowsUnityBridge();
+    return WindowsUnityBridge(autoLaunchUnity: false);
   }
   if (Platform.isAndroid || Platform.isIOS) {
     return EmbedUnityBridge();
   }
-  return WindowsUnityBridge();
+
+  // Windows: Unity を自動起動する。
+  // ただし Unity Editor から手動で再生している場合に二重起動しないよう、
+  // 起動判断は WindowsUnityBridge 側で「2秒待って未接続なら起動」としている。
+  return WindowsUnityBridge(autoLaunchUnity: true);
 }
 
 class RaimApp extends StatefulWidget {
@@ -107,17 +111,68 @@ class RaimApp extends StatefulWidget {
 //RaimAppの状態を管理するクラスを作る
 //アプリの起動中・終了・バックグラウンドなどの変化を監視できるようにする
 class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
+  // Unity から届くイベント（Windows のみ流れる）
+  StreamSubscription<Map<String, dynamic>>? _unitySub;
+
   //RaimApp が起動したタイミングで、アプリのライフサイクル変化を受け取れるように登録している
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _listenUnityEvents();
+  }
+
+  // ====================================================
+  // Unity → Flutter のイベント購読（Windows のみ）
+  // ====================================================
+  // モバイルでは EmbedUnityBridge が空の Stream を返すので何も流れない。
+  //
+  //   unity.quit    : Unity 側の Ctrl+Q。Flutter も一緒に終了する
+  //   unity.clicked : ライムがクリックされた。入力小窓を開く合図
+  //   unity.moved   : ウィンドウが動いた。入力小窓を追従させる
+  void _listenUnityEvents() {
+    _unitySub = widget.unityBridge.unityEvents.listen((event) {
+      switch (event['type']) {
+        case 'unity.quit':
+          debugPrint('[Unity] 終了通知を受信。Flutter も終了します');
+          _quitWithUnity();
+          break;
+
+        case 'unity.clicked':
+          debugPrint('[Unity] ライムがクリックされました');
+          // TODO(Step 5-b): 入力小窓を開く
+          break;
+
+        case 'unity.moved':
+          // TODO(Step 6): 入力小窓をライムに追従させる
+          break;
+      }
+    });
+  }
+
+  /// Unity 側の Ctrl+Q を受けて Flutter も終了する。
+  ///
+  /// このメソッドは unityEvents のリスナー内から呼ばれる。
+  /// その場で unityBridge.stop() を await すると、閉じようとしている
+  /// Stream のコールバック中で待つことになり進まなくなるため、
+  /// stop() は呼ばず microtask に逃がしてから終了する。
+  /// exit(0) でプロセスが終われば WebSocket サーバーも一緒に閉じる。
+  void _quitWithUnity() {
+    Future.microtask(() async {
+      try {
+        await widget.raimService.dispose();
+      } catch (_) {
+        // 終了処理なので失敗しても構わない
+      }
+      exit(0);
+    });
   }
 
   //サーバーから切断された場合状態管理を解く処理
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _unitySub?.cancel();
     widget.authProvider.disposeService();
     unawaited(widget.raimService.dispose());
     super.dispose();

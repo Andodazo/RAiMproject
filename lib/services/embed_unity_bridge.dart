@@ -66,7 +66,6 @@ void sendToolState({
   // ============================================================
   // モバイルは Flutter のチャット画面が文字を描くため、
   // Unity へテキストは送らない。インターフェースを満たすための空実装。
-  // 将来 Unity 側で口パクなどに使いたくなったらここに足す。
 
   @override
   void sendText({
@@ -85,6 +84,20 @@ void sendToolState({
   void sendChatEnd({String? fullText}) {
     // 何もしない
   }
+
+  @override
+  void sendError({required String message}) {
+    // 何もしない
+  }
+
+  // ============================================================
+  // Unity → Flutter
+  // ============================================================
+  // モバイルでは Unity が Flutter の中に埋め込まれており、
+  // クリックもウィンドウ移動も存在しない。常に空の Stream を返す。
+
+  @override
+  Stream<Map<String, dynamic>> get unityEvents => const Stream.empty();
 
   @override
   Future<void> stop() async {

@@ -353,7 +353,7 @@ Canvas:
   m_OverridePixelPerfect: 0
   m_SortingBucketNormalizedSize: 0
   m_VertexColorAlwaysGammaSpace: 0
-  m_AdditionalShaderChannelsFlag: 0
+  m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
   m_SortingOrder: 0
@@ -835,13 +835,13 @@ MonoBehaviour:
   m_text: New Text
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: d6237d52fb478a243ae860cee16caaab, type: 2}
-  m_sharedMaterial: {fileID: 0}
+  m_sharedMaterial: {fileID: 5015687445985410458, guid: d6237d52fb478a243ae860cee16caaab, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4294967295
+    rgba: 4280953386
   m_fontColor: {r: 0.16470589, g: 0.16470589, b: 0.16470589, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
@@ -854,7 +854,7 @@ MonoBehaviour:
   m_spriteAsset: {fileID: 0}
   m_tintAllSprites: 0
   m_StyleSheet: {fileID: 0}
-  m_TextStyleHashCode: 0
+  m_TextStyleHashCode: -1183493901
   m_overrideHtmlColors: 0
   m_faceColor:
     serializedVersion: 2
@@ -1057,7 +1057,7 @@ MonoBehaviour:
   bubbleWidth: 280
   maxBubbleHeight: 240
   padding: 16
-  offset: {x: 150, y: 180}
+  offset: {x: 240, y: 120}
   baseDuration: 4
   secondsPerChar: 0.15
   minDuration: 5
@@ -1288,9 +1288,18 @@ MonoBehaviour:
   overlayRoot: {fileID: 808802513}
   hideOnWindows:
   - {fileID: 971807030}
+  cameraOffsetX: -4.2
+  cameraOffsetY: 0
+  characterController: {fileID: 1726773442}
+  notifyClick: 1
+  dragThreshold: 4
+  notifyMove: 1
+  moveNotifyInterval: 0.1
   enableQuitShortcut: 1
   quitKey: 113
   requireShift: 0
+  quitFlutterToo: 1
+  quitNotifyDelay: 0.3
   rememberPosition: 1
   targetFrameRate: 30
   logWindowInfoOnStart: 1

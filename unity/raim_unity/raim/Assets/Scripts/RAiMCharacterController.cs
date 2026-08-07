@@ -317,6 +317,31 @@ public class RAiMCharacterController : MonoBehaviour
     }
 
     // ============================================================
+    // Flutter への送信（Windows版のみ）
+    // ============================================================
+
+    /// <summary>
+    /// Flutter へ JSON を送る。WindowsOverlayController から呼ばれ、
+    /// ライムのクリックやウィンドウ移動を通知するのに使う。
+    ///
+    /// WebSocket をこのクラスが持っているため、送信口もここに置く。
+    /// 未接続のときは黙って捨てる（通知は失っても支障がないため）。
+    /// </summary>
+    public async void SendToFlutter(string json)
+    {
+        if (websocket == null || websocket.State != WebSocketState.Open) return;
+
+        try
+        {
+            await websocket.SendText(json);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Flutter への送信に失敗: {e.Message}");
+        }
+    }
+
+    // ============================================================
     // Windows用WebSocket接続
     // ============================================================
 

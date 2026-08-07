@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Runtime.InteropServices;
 using UnityEngine;
 using Kirurobo;
@@ -8,12 +9,17 @@ using Kirurobo;
 /// Windows ビルドのときだけ:
 ///   - 背景スプライトなど、透過の邪魔になるものを消す
 ///   - UniWindowController を有効にして透過ウィンドウにする
-///   - Ctrl+Q の脱出口を用意する（クリックスルー中でも効く）
+///   - カメラをずらしてキャラを窓の右寄りに配置する（左を吹き出し用に空ける）
+///   - Ctrl+Q で Unity と Flutter をまとめて終了する
 ///   - ウィンドウ位置を記憶して、次回起動時に同じ場所へ戻す
-///   - 起動時にウィンドウサイズ等をログ出力する（吹き出し設計用）
+///   - ライムのクリックとウィンドウ移動を Flutter へ通知する
+///
+/// マウスもキーボードも UnityEngine.Input を使わず Win32 API で拾う。
+/// このプロジェクトは新しい Input System を使っており、
+/// 旧来の UnityEngine.Input が反応しないため。
+/// クリックスルー中はウィンドウがフォーカスを取れないという事情もある。
 ///
 /// Android / iOS では何も起きない。
-/// RAiMCharacterController.cs は変更しない。
 /// </summary>
 public class WindowsOverlayController : MonoBehaviour
 {
@@ -25,6 +31,30 @@ public class WindowsOverlayController : MonoBehaviour
     [Tooltip("background など。描画されると透過ウィンドウでも背景が残る")]
     [SerializeField] private GameObject[] hideOnWindows;
 
+    [Header("カメラ位置の調整")]
+    [Tooltip("キャラを窓の右寄りに置くためのカメラ移動量(ワールド単位)。" +
+             "マイナスでキャラが右へ寄る。0 で調整しない")]
+    [SerializeField] private float cameraOffsetX = 0f;
+
+    [Tooltip("縦方向の調整。マイナスでキャラが上へ寄る")]
+    [SerializeField] private float cameraOffsetY = 0f;
+
+    [Header("Flutter への通知")]
+    [Tooltip("WebSocket 送信を担当する RAiMCharacterController")]
+    [SerializeField] private RAiMCharacterController characterController;
+
+    [Tooltip("ライムのクリックを Flutter に通知する（入力小窓を開くため）")]
+    [SerializeField] private bool notifyClick = true;
+
+    [Tooltip("ドラッグとみなすウィンドウ移動量(px)。これ未満ならクリック扱い")]
+    [SerializeField] private float dragThreshold = 4f;
+
+    [Tooltip("ウィンドウ位置を Flutter に通知する（入力小窓を追従させるため）")]
+    [SerializeField] private bool notifyMove = true;
+
+    [Tooltip("移動通知の間隔(秒)。細かく送りすぎないよう間引く")]
+    [SerializeField] private float moveNotifyInterval = 0.1f;
+
     [Header("終了ショートカット")]
     [Tooltip("クリックスルー中はウィンドウを閉じられないので脱出口を用意する")]
     [SerializeField] private bool enableQuitShortcut = true;
@@ -35,6 +65,12 @@ public class WindowsOverlayController : MonoBehaviour
     [Tooltip("Shift も必要にする。Ctrl+Q が他アプリと衝突するときに使う")]
     [SerializeField] private bool requireShift = false;
 
+    [Tooltip("Ctrl+Q で Flutter 側も一緒に終了させる")]
+    [SerializeField] private bool quitFlutterToo = true;
+
+    [Tooltip("終了通知が Flutter に届くのを待つ秒数")]
+    [SerializeField] private float quitNotifyDelay = 0.3f;
+
     [Header("ウィンドウ位置の記憶")]
     [Tooltip("終了時に位置を保存し、次回起動時に復元する")]
     [SerializeField] private bool rememberPosition = true;
@@ -44,26 +80,36 @@ public class WindowsOverlayController : MonoBehaviour
     [SerializeField] private int targetFrameRate = 30;
 
     [Header("デバッグ")]
-    [Tooltip("起動時にウィンドウサイズ・座標・画面解像度をログに出す")]
+    [Tooltip("起動時にウィンドウサイズ・座標・キャラの占有範囲をログに出す")]
     [SerializeField] private bool logWindowInfoOnStart = true;
 
     private bool isWindowsOverlay = false;
 
     // ------------------------------------------------------------
-    // Win32: フォーカスに依存しないキー入力
+    // Win32
     // ------------------------------------------------------------
-    // クリックスルー中はウィンドウがフォアグラウンドになれず、
-    // Unity の Input.GetKey がまったく反応しない。
-    // GetAsyncKeyState はフォーカスと無関係にキーの物理状態を読めるので、
-    // 透過オーバーレイからでも終了ショートカットを拾える。
 
 #if UNITY_STANDALONE_WIN
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
 
-    private const int VK_CONTROL = 0x11;
-    private const int VK_SHIFT = 0x10;
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT lpPoint);
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+
+    private const int VK_LBUTTON = 0x01;
+    private const int VK_SHIFT = 0x10;
+    private const int VK_CONTROL = 0x11;
+
+    /// <summary>
+    /// キーが物理的に押されているか。フォーカスと無関係に読める。
+    /// </summary>
     private static bool IsKeyDown(int vKey)
     {
         if (vKey == 0) return false;
@@ -72,6 +118,16 @@ public class WindowsOverlayController : MonoBehaviour
 #endif
 
     private bool quitComboWasDown = false;
+    private bool leftButtonWasDown = false;
+    private bool quitting = false;
+
+    // クリック / ドラッグ判定用
+    private Vector2 windowPosOnMouseDown;
+    private bool mouseDownOnCharacter = false;
+
+    // 移動通知の間引き用
+    private Vector2 lastNotifiedPosition;
+    private float moveNotifyTimer = 0f;
 
     // 位置保存用のキー
     private const string PrefKeyX = "raim_window_x";
@@ -101,8 +157,8 @@ public class WindowsOverlayController : MonoBehaviour
         }
         Debug.Log($"[Overlay] Windows: {hidden}個のオブジェクトを非表示にしました");
 
-        // 透過ウィンドウを有効化。
-        // DragMoveCanvas を子にしておけば、これで一緒に有効になる。
+        ApplyCameraOffset();
+
         if (overlayRoot != null)
         {
             overlayRoot.SetActive(true);
@@ -113,6 +169,11 @@ public class WindowsOverlayController : MonoBehaviour
             Debug.LogWarning("[Overlay] overlayRoot が未設定です");
         }
 
+        if (characterController == null)
+        {
+            characterController = FindObjectOfType<RAiMCharacterController>();
+        }
+
         if (targetFrameRate > 0)
         {
             Application.targetFrameRate = targetFrameRate;
@@ -121,21 +182,58 @@ public class WindowsOverlayController : MonoBehaviour
         // 最小化されても Flutter からのメッセージを処理し続ける
         Application.runInBackground = true;
 #else
-        // モバイルでは何もしない。背景もそのまま表示される。
         isWindowsOverlay = false;
 #endif
     }
 
-    private void Start()
+    /// <summary>
+    /// キャラを窓の中で右寄りに配置する。
+    ///
+    /// 吹き出しはウィンドウの内側にしか描けないため、キャラを中央に置くと
+    /// 左右どちらにも吹き出し分の余白が必要になり、窓が横に広がってしまう。
+    /// キャラを右に寄せれば左側だけを確保すればよく、
+    /// そのぶん画面の右端までライムを近づけられる。
+    ///
+    /// キャラの Transform ではなくカメラを動かすのは、
+    /// シーンをモバイルと共有しているため。
+    /// </summary>
+    private void ApplyCameraOffset()
     {
-        if (!isWindowsOverlay) return;
+        if (cameraOffsetX == 0f && cameraOffsetY == 0f) return;
+
+        var cam = Camera.main;
+        if (cam == null)
+        {
+            Debug.LogWarning("[Overlay] Main Camera が見つかりません");
+            return;
+        }
+
+        var pos = cam.transform.position;
+        pos.x += cameraOffsetX;
+        pos.y += cameraOffsetY;
+        cam.transform.position = pos;
+
+        Debug.Log($"[Overlay] カメラを移動: offset=({cameraOffsetX}, {cameraOffsetY})");
+    }
+
+    /// <summary>
+    /// UniWindowController の初期化は Awake の直後には終わっていないため、
+    /// ログ出力は1フレーム待ってから行う。
+    /// </summary>
+    private IEnumerator Start()
+    {
+        if (!isWindowsOverlay) yield break;
 
         RestoreWindowPosition();
+
+        yield return null;
 
         if (logWindowInfoOnStart)
         {
             LogWindowInfo();
         }
+
+        lastNotifiedPosition = CurrentWindowPosition();
     }
 
     // ------------------------------------------------------------
@@ -144,7 +242,20 @@ public class WindowsOverlayController : MonoBehaviour
 
     private void Update()
     {
-        if (!isWindowsOverlay || !enableQuitShortcut) return;
+        if (!isWindowsOverlay || quitting) return;
+
+        HandleQuitShortcut();
+        HandleClickDetection();
+        HandleMoveNotification();
+    }
+
+    // ============================================================
+    // 終了ショートカット
+    // ============================================================
+
+    private void HandleQuitShortcut()
+    {
+        if (!enableQuitShortcut) return;
 
 #if UNITY_STANDALONE_WIN
         bool ctrl = IsKeyDown(VK_CONTROL);
@@ -157,13 +268,116 @@ public class WindowsOverlayController : MonoBehaviour
         if (down && !quitComboWasDown)
         {
             Debug.Log("[Overlay] 終了ショートカットが押されました");
-            QuitApplication();
+            StartCoroutine(QuitRoutine());
         }
         quitComboWasDown = down;
 #endif
     }
 
+    /// <summary>
+    /// Flutter へ終了を伝えてから自分も落ちる。
+    ///
+    /// SendToFlutter は非同期なので、送信が WebSocket に乗る前に
+    /// Application.Quit() すると届かない。少し待ってから終了する。
+    /// </summary>
+    private IEnumerator QuitRoutine()
+    {
+        quitting = true;
+        SaveWindowPosition();
+
+        if (quitFlutterToo)
+        {
+            Debug.Log("[Overlay] Flutter へ終了を通知します");
+            SendToFlutter("{\"type\":\"unity.quit\"}");
+            yield return new WaitForSecondsRealtime(quitNotifyDelay);
+        }
+
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
+    }
+
+    // ============================================================
+    // クリック / ドラッグの判定
+    // ============================================================
+    //
+    // DragMoveCanvas が左ドラッグでウィンドウを動かすため、
+    // 「押して離した」だけをクリックとして拾う必要がある。
+    //
+    // マウスのスクリーン座標では判定できないことに注意。
+    // カーソル座標はドラッグ中ウィンドウごと動くため、
+    // ウィンドウとの相対位置がほとんど変わらない。
+    // 代わりにウィンドウ自体が動いたかどうかを見る。
+
+    private void HandleClickDetection()
+    {
+        if (!notifyClick) return;
+
 #if UNITY_STANDALONE_WIN
+        bool down = IsKeyDown(VK_LBUTTON);
+
+        // 押した瞬間
+        if (down && !leftButtonWasDown)
+        {
+            mouseDownOnCharacter = IsCursorOverCharacter();
+            windowPosOnMouseDown = CurrentWindowPosition();
+        }
+
+        // 離した瞬間
+        if (!down && leftButtonWasDown && mouseDownOnCharacter)
+        {
+            mouseDownOnCharacter = false;
+
+            float moved = (CurrentWindowPosition() - windowPosOnMouseDown).magnitude;
+            if (moved < dragThreshold)
+            {
+                Debug.Log("[Overlay] ライムがクリックされました");
+                SendToFlutter("{\"type\":\"unity.clicked\"}");
+            }
+            else
+            {
+                Debug.Log($"[Overlay] ドラッグ移動 ({moved:F0}px)");
+                NotifyMove(force: true);
+                SaveWindowPosition();
+            }
+        }
+
+        leftButtonWasDown = down;
+#endif
+    }
+
+#if UNITY_STANDALONE_WIN
+    /// <summary>
+    /// カーソルがライムのスプライト範囲にあるか。
+    ///
+    /// GetCursorPos は画面全体の座標(左上原点・Y下向き)を返す。
+    /// ウィンドウ位置を引いてウィンドウ内座標にし、
+    /// Unity のスクリーン座標(左下原点・Y上向き)へ変換して比較する。
+    ///
+    /// 判定はスプライトの矩形なので、髪の横の透明な部分でも反応する。
+    /// 厳密にしたいならテクスチャのアルファを読む必要がある。
+    /// </summary>
+    private bool IsCursorOverCharacter()
+    {
+        if (!GetCursorPos(out POINT p)) return false;
+
+        var winPos = CurrentWindowPosition();
+        float localX = p.X - winPos.x;
+        float localY = Screen.height - (p.Y - winPos.y);
+
+        var cam = Camera.main;
+        var sr = FindObjectOfType<SpriteRenderer>();
+        if (cam == null || sr == null) return false;
+
+        Vector3 min = cam.WorldToScreenPoint(sr.bounds.min);
+        Vector3 max = cam.WorldToScreenPoint(sr.bounds.max);
+
+        return localX >= min.x && localX <= max.x
+            && localY >= min.y && localY <= max.y;
+    }
+
     /// <summary>
     /// UnityEngine.KeyCode を Win32 の仮想キーコードに変換する。
     /// A-Z / 0-9 / Escape だけ対応していれば足りる。
@@ -183,35 +397,110 @@ public class WindowsOverlayController : MonoBehaviour
     }
 #endif
 
+    // ============================================================
+    // ウィンドウ移動の通知
+    // ============================================================
+    // Flutter の入力小窓をライムに追従させるために使う。
+
+    private void HandleMoveNotification()
+    {
+        if (!notifyMove) return;
+
+        moveNotifyTimer -= Time.deltaTime;
+        if (moveNotifyTimer > 0f) return;
+
+        moveNotifyTimer = moveNotifyInterval;
+        NotifyMove();
+    }
+
+    private void NotifyMove(bool force = false)
+    {
+        var pos = CurrentWindowPosition();
+
+        if (!force && (pos - lastNotifiedPosition).sqrMagnitude < 1f) return;
+        lastNotifiedPosition = pos;
+
+        var controller = UniWindowController.current;
+        Vector2 size = controller != null ? controller.clientSize : Vector2.zero;
+
+        // 補間文字列で書式指定子(:F0)と閉じ波括弧(}})が隣接すると
+        // 解釈が壊れて "height":F700 のような不正な JSON になる。
+        // 先に int へ丸めてから素直に連結する。
+        int x = Mathf.RoundToInt(pos.x);
+        int y = Mathf.RoundToInt(pos.y);
+        int w = Mathf.RoundToInt(size.x);
+        int h = Mathf.RoundToInt(size.y);
+
+        string json = "{\"type\":\"unity.moved\"," +
+                      "\"x\":" + x + ",\"y\":" + y + "," +
+                      "\"width\":" + w + ",\"height\":" + h + "}";
+
+        SendToFlutter(json);
+    }
+
+    private Vector2 CurrentWindowPosition()
+    {
+        var controller = UniWindowController.current;
+        return controller != null ? controller.windowPosition : Vector2.zero;
+    }
+
+    /// <summary>
+    /// WebSocket は RAiMCharacterController が持っているので、そこ経由で送る。
+    /// </summary>
+    private void SendToFlutter(string json)
+    {
+        if (characterController == null) return;
+        characterController.SendToFlutter(json);
+    }
+
     // ------------------------------------------------------------
     // ウィンドウ情報のログ
     // ------------------------------------------------------------
 
-    /// <summary>
-    /// 吹き出しのレイアウトを決めるための情報を出す。
-    ///
-    /// - clientSize : 実際の描画領域。吹き出し用の余白を足す基準になる
-    /// - windowSize : 枠込みのサイズ。clientSize と同じなら枠なし
-    /// - screen     : 画面端の判定（吹き出しを左右どちらに出すか）に使う
-    /// - Screen.w/h : Unity の描画解像度。windowSize とズレていたら高DPIの影響
-    /// </summary>
     private void LogWindowInfo()
     {
         var controller = UniWindowController.current;
-        if (controller == null)
+        var res = Screen.currentResolution;
+
+        if (controller != null)
+        {
+            Debug.Log(
+                $"[Overlay] windowSize={controller.windowSize} " +
+                $"clientSize={controller.clientSize} " +
+                $"windowPosition={controller.windowPosition} " +
+                $"screen={res.width}x{res.height} " +
+                $"Screen.width/height={Screen.width}x{Screen.height} " +
+                $"dpi={Screen.dpi}"
+            );
+        }
+        else
         {
             Debug.LogWarning("[Overlay] UniWindowController が見つかりません");
-            return;
         }
 
-        var res = Screen.currentResolution;
+        LogCharacterBounds();
+    }
+
+    /// <summary>
+    /// キャラクターの画面上での占有範囲を測る。
+    /// 必要なウィンドウ幅 = キャラ幅 + 吹き出しのオフセット + 吹き出し幅/2 + 余白
+    /// </summary>
+    private void LogCharacterBounds()
+    {
+        var cam = Camera.main;
+        if (cam == null) return;
+
+        var sr = FindObjectOfType<SpriteRenderer>();
+        if (sr == null) return;
+
+        Vector3 min = cam.WorldToScreenPoint(sr.bounds.min);
+        Vector3 max = cam.WorldToScreenPoint(sr.bounds.max);
+
         Debug.Log(
-            $"[Overlay] windowSize={controller.windowSize} " +
-            $"clientSize={controller.clientSize} " +
-            $"windowPosition={controller.windowPosition} " +
-            $"screen={res.width}x{res.height} " +
-            $"Screen.width/height={Screen.width}x{Screen.height} " +
-            $"dpiScale={Screen.dpi}"
+            $"[Overlay] character screen bounds: " +
+            $"x={min.x:F0}〜{max.x:F0} ({max.x - min.x:F0}px) " +
+            $"y={min.y:F0}〜{max.y:F0} ({max.y - min.y:F0}px) " +
+            $"center=({(min.x + max.x) * 0.5f:F0}, {(min.y + max.y) * 0.5f:F0})"
         );
     }
 
@@ -219,10 +508,6 @@ public class WindowsOverlayController : MonoBehaviour
     // ウィンドウ位置の保存・復元
     // ------------------------------------------------------------
 
-    /// <summary>
-    /// 前回終了時の位置に戻す。
-    /// 画面構成が変わって範囲外になっていた場合は既定位置のままにする。
-    /// </summary>
     private void RestoreWindowPosition()
     {
         if (!rememberPosition) return;
@@ -256,16 +541,13 @@ public class WindowsOverlayController : MonoBehaviour
         PlayerPrefs.SetFloat(PrefKeyX, pos.x);
         PlayerPrefs.SetFloat(PrefKeyY, pos.y);
         PlayerPrefs.Save();
-        Debug.Log($"[Overlay] ウィンドウ位置を保存: {pos}");
     }
 
     /// <summary>
     /// モニタ構成が変わって完全に画面外になっていないかを見る。
-    /// ざっくり判定で十分（厳密なマルチモニタ計算はしない）。
     /// </summary>
     private bool IsPositionVisible(Vector2 pos)
     {
-        // 全モニタを合わせた大まかな範囲。負の座標もありうるので広めに取る。
         const float margin = 10000f;
         return pos.x > -margin && pos.x < margin
             && pos.y > -margin && pos.y < margin;
@@ -275,21 +557,6 @@ public class WindowsOverlayController : MonoBehaviour
     // 終了処理
     // ------------------------------------------------------------
 
-    private void QuitApplication()
-    {
-        SaveWindowPosition();
-
-#if UNITY_EDITOR
-        UnityEditor.EditorApplication.isPlaying = false;
-#else
-        Application.Quit();
-#endif
-    }
-
-    /// <summary>
-    /// × ボタンやシャットダウンなど、別経路で落ちた場合も位置を残す。
-    /// タスクマネージャーでの強制終了時は呼ばれない。
-    /// </summary>
     private void OnApplicationQuit()
     {
         if (!isWindowsOverlay) return;

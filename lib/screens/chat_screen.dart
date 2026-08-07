@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/services/app_exit_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
-import 'package:raim_prototype/widgets/character_display.dart';
 import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
 import 'package:raim_prototype/widgets/thread_selector_menu.dart';
@@ -79,17 +78,10 @@ class ChatScreen extends StatelessWidget {
         child: const EmbedUnity(onMessageFromUnity: _handleUnityMessage),
       );
     }
-
-    return Positioned.fill(
-      child: Transform.translate(
-        offset: const Offset(-40, 40),
-        child: Transform.scale(
-          scale: 0.85, //Windowsのキャラクターの大きさ変更
-          child: const CharacterDisplay(),
-        ),
-      ),
-    );
+    // Windows: Unity 側が描画するので何も置かない
+    return const SizedBox.shrink();
   }
+
 
   /// Unity からのメッセージハンドラ
   ///
