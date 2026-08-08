@@ -7,6 +7,13 @@
       "dependencies": {},
       "hash": "ea014c9ae534d56111962d96f89f8a046e302dc9"
     },
+    "com.kirurobo.uniwinc": {
+      "version": "https://github.com/kirurobo/UniWindowController.git#upm",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {},
+      "hash": "304f9ba2aa4a8fae7f3c71f38118c44722a2f6cc"
+    },
     "com.learntoflutter.flutter_embed_unity_6000_0": {
       "version": "https://github.com/learntoflutter/flutter_embed_unity.git?path=example_unity_6000_0_project/Assets/FlutterEmbed",
       "depth": 0,
@@ -96,7 +103,7 @@
       }
     },
     "com.unity.2d.tilemap.extras": {
-      "version": "4.1.0",
+      "version": "4.1.1",
       "depth": 0,
       "source": "registry",
       "dependencies": {
@@ -107,7 +114,7 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.ai.navigation": {
-      "version": "2.0.12",
+      "version": "2.0.14",
       "depth": 0,
       "source": "registry",
       "dependencies": {
@@ -162,7 +169,7 @@
         "com.unity.2d.sprite": "1.0.0",
         "com.unity.2d.spriteshape": "10.0.7",
         "com.unity.2d.tilemap": "1.0.0",
-        "com.unity.2d.tilemap.extras": "4.1.0",
+        "com.unity.2d.tilemap.extras": "4.1.1",
         "com.unity.2d.aseprite": "1.1.11"
       }
     },
@@ -176,7 +183,7 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.ide.visualstudio": {
-      "version": "2.0.26",
+      "version": "2.0.27",
       "depth": 0,
       "source": "registry",
       "dependencies": {
@@ -316,11 +323,11 @@
       }
     },
     "com.unity.visualscripting": {
-      "version": "1.9.11",
+      "version": "1.9.12",
       "depth": 0,
       "source": "registry",
       "dependencies": {
-        "com.unity.ugui": "1.0.0",
+        "com.unity.ugui": "2.0.0",
         "com.unity.modules.jsonserialize": "1.0.0"
       },
       "url": "https://packages.unity.com"

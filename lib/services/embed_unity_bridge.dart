@@ -61,6 +61,57 @@ void sendToolState({
   );
 }
 
+  // ============================================================
+  // 吹き出し（Windows版のみ）
+  // ============================================================
+  // モバイルは Flutter のチャット画面が文字を描くため、
+  // Unity へテキストは送らない。インターフェースを満たすための空実装。
+
+  @override
+  void sendText({
+    required String text,
+    bool isFiller = false,
+  }) {
+    // 何もしない
+  }
+
+  @override
+  void sendBubbleBreak() {
+    // 何もしない
+  }
+
+  @override
+  void sendChatEnd({String? fullText}) {
+    // 何もしない
+  }
+
+  @override
+  void sendError({required String message}) {
+    // 何もしない
+  }
+
+  @override
+  void sendAppQuit() {
+    // モバイルでは Unity がアプリ内にいるので個別終了はしない
+  }
+
+  // ============================================================
+  // Unity → Flutter
+  // ============================================================
+  // モバイルでは Unity が Flutter の中に埋め込まれており、
+  // クリックもウィンドウ移動も存在しない。常に空の Stream を返す。
+
+  @override
+  Stream<Map<String, dynamic>> get unityEvents => const Stream.empty();
+
+  @override
+  bool get isUnityConnected => true;
+
+  @override
+  Future<void> ensureUnityRunning() async {
+    // モバイルでは Unity がアプリ内にいるので起動制御は不要
+  }
+
   @override
   Future<void> stop() async {
     // flutter_embed_unity は自動管理なので明示的な停止は不要です。
