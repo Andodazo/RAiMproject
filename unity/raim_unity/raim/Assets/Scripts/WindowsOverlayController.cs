@@ -55,6 +55,17 @@ public class WindowsOverlayController : MonoBehaviour
     [Tooltip("移動通知の間隔(秒)。細かく送りすぎないよう間引く")]
     [SerializeField] private float moveNotifyInterval = 0.1f;
 
+    [Tooltip("位置が変わっていなくても強制的に送る間隔(秒)。" +
+             "起動直後や再接続直後に Flutter が位置を知らないままになるのを防ぐ")]
+    [SerializeField] private float forceNotifyInterval = 2f;
+
+    [Header("画面外へのはみ出し防止")]
+    [Tooltip("ドラッグでライムが画面外へ出ないよう押し戻す")]
+    [SerializeField] private bool clampToScreen = true;
+
+    [Tooltip("画面端に残す余白(px)。0 でぴったりまで寄せられる")]
+    [SerializeField] private float screenMargin = 0f;
+
     [Header("終了ショートカット")]
     [Tooltip("クリックスルー中はウィンドウを閉じられないので脱出口を用意する")]
     [SerializeField] private bool enableQuitShortcut = true;
@@ -128,6 +139,8 @@ public class WindowsOverlayController : MonoBehaviour
     // 移動通知の間引き用
     private Vector2 lastNotifiedPosition;
     private float moveNotifyTimer = 0f;
+    private float forceNotifyTimer = 0f;
+    private bool hasNotifiedOnce = false;
 
     // 位置保存用のキー
     private const string PrefKeyX = "raim_window_x";
@@ -233,7 +246,6 @@ public class WindowsOverlayController : MonoBehaviour
             LogWindowInfo();
         }
 
-        lastNotifiedPosition = CurrentWindowPosition();
     }
 
     // ------------------------------------------------------------
@@ -246,7 +258,56 @@ public class WindowsOverlayController : MonoBehaviour
 
         HandleQuitShortcut();
         HandleClickDetection();
+        ClampWindowToScreen();
         HandleMoveNotification();
+    }
+
+    // ============================================================
+    // 画面外へのはみ出し防止
+    // ============================================================
+    //
+    // DragMoveCanvas は毎フレーム windowPosition を書き換えるので、
+    // その後に押し戻す。ウィンドウではなく「ライムの見えている範囲」を
+    // 基準にするので、透明な余白のぶんは画面外に出てよい。
+
+    private void ClampWindowToScreen()
+    {
+        if (!clampToScreen) return;
+
+        var controller = UniWindowController.current;
+        var cam = Camera.main;
+        var sr = FindObjectOfType<SpriteRenderer>();
+        if (controller == null || cam == null || sr == null) return;
+
+        Vector2 pos = controller.windowPosition;
+        Vector2 size = controller.clientSize;
+        if (size.x <= 0 || size.y <= 0) return;
+
+        // ウィンドウ内でのキャラの位置（Unityのスクリーン座標＝左下原点）
+        Vector3 bMin = cam.WorldToScreenPoint(sr.bounds.min);
+        Vector3 bMax = cam.WorldToScreenPoint(sr.bounds.max);
+
+        float screenW = Screen.currentResolution.width;
+        float screenH = Screen.currentResolution.height;
+
+        // windowPosition の Y は下から上なので、そのまま足し引きできる
+        float charLeft = pos.x + bMin.x;
+        float charRight = pos.x + bMax.x;
+        float charBottom = pos.y + bMin.y;
+        float charTop = pos.y + bMax.y;
+
+        float dx = 0f;
+        float dy = 0f;
+
+        if (charLeft < screenMargin) dx = screenMargin - charLeft;
+        else if (charRight > screenW - screenMargin) dx = screenW - screenMargin - charRight;
+
+        if (charBottom < screenMargin) dy = screenMargin - charBottom;
+        else if (charTop > screenH - screenMargin) dy = screenH - screenMargin - charTop;
+
+        if (Mathf.Abs(dx) < 0.5f && Mathf.Abs(dy) < 0.5f) return;
+
+        controller.windowPosition = new Vector2(pos.x + dx, pos.y + dy);
     }
 
     // ============================================================
@@ -406,6 +467,17 @@ public class WindowsOverlayController : MonoBehaviour
     {
         if (!notifyMove) return;
 
+        // 位置が変わっていなくても定期的に送り直す。
+        // Flutter が後から起動した場合や再接続した場合、
+        // 差分だけ送る方式だと相手はいつまでも位置を知らないままになる。
+        forceNotifyTimer -= Time.deltaTime;
+        if (forceNotifyTimer <= 0f || !hasNotifiedOnce)
+        {
+            forceNotifyTimer = forceNotifyInterval;
+            NotifyMove(force: true);
+            return;
+        }
+
         moveNotifyTimer -= Time.deltaTime;
         if (moveNotifyTimer > 0f) return;
 
@@ -419,21 +491,47 @@ public class WindowsOverlayController : MonoBehaviour
 
         if (!force && (pos - lastNotifiedPosition).sqrMagnitude < 1f) return;
         lastNotifiedPosition = pos;
+        hasNotifiedOnce = true;
 
         var controller = UniWindowController.current;
         Vector2 size = controller != null ? controller.clientSize : Vector2.zero;
 
+        // UniWindowController の windowPosition は Y が下から上（Unity流）。
+        // Windows のウィンドウ座標は上から下なので、ここで変換して送る。
+        // 変換せずに渡すと、ライムを上へ動かしたとき入力小窓が下へ動く。
+        int screenH = Screen.currentResolution.height;
+
         // 補間文字列で書式指定子(:F0)と閉じ波括弧(}})が隣接すると
         // 解釈が壊れて "height":F700 のような不正な JSON になる。
         // 先に int へ丸めてから素直に連結する。
-        int x = Mathf.RoundToInt(pos.x);
-        int y = Mathf.RoundToInt(pos.y);
         int w = Mathf.RoundToInt(size.x);
         int h = Mathf.RoundToInt(size.y);
+        int x = Mathf.RoundToInt(pos.x);
+        int y = Mathf.RoundToInt(screenH - (pos.y + size.y));
+
+        // ライムの足元の座標も送る。
+        // ウィンドウの中でキャラがどこにいるかは cameraOffset や
+        // モデルの差し替えで変わるので、Flutter 側で推測させない。
+        // cx = キャラ中心のX、cy = 足元のY（どちらも画面座標・上原点）
+        int cx = x + Mathf.RoundToInt(w * 0.5f);
+        int cy = y + h;
+
+        var cam = Camera.main;
+        var sr = FindObjectOfType<SpriteRenderer>();
+        if (cam != null && sr != null)
+        {
+            // Unity のスクリーン座標は左下原点・Y上向き
+            Vector3 bMin = cam.WorldToScreenPoint(sr.bounds.min);
+            Vector3 bMax = cam.WorldToScreenPoint(sr.bounds.max);
+
+            cx = x + Mathf.RoundToInt((bMin.x + bMax.x) * 0.5f);
+            cy = y + Mathf.RoundToInt(Screen.height - bMin.y);
+        }
 
         string json = "{\"type\":\"unity.moved\"," +
                       "\"x\":" + x + ",\"y\":" + y + "," +
-                      "\"width\":" + w + ",\"height\":" + h + "}";
+                      "\"width\":" + w + ",\"height\":" + h + "," +
+                      "\"cx\":" + cx + ",\"cy\":" + cy + "}";
 
         SendToFlutter(json);
     }

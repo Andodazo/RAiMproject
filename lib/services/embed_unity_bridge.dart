@@ -90,6 +90,11 @@ void sendToolState({
     // 何もしない
   }
 
+  @override
+  void sendAppQuit() {
+    // モバイルでは Unity がアプリ内にいるので個別終了はしない
+  }
+
   // ============================================================
   // Unity → Flutter
   // ============================================================
@@ -98,6 +103,14 @@ void sendToolState({
 
   @override
   Stream<Map<String, dynamic>> get unityEvents => const Stream.empty();
+
+  @override
+  bool get isUnityConnected => true;
+
+  @override
+  Future<void> ensureUnityRunning() async {
+    // モバイルでは Unity がアプリ内にいるので起動制御は不要
+  }
 
   @override
   Future<void> stop() async {

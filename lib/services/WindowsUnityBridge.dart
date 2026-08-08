@@ -37,6 +37,18 @@ class WindowsUnityBridge implements UnityCommunicator {
   @override
   Stream<Map<String, dynamic>> get unityEvents => _events.stream;
 
+  @override
+  bool get isUnityConnected => _clients.isNotEmpty;
+
+  @override
+  Future<void> ensureUnityRunning() async {
+    if (_clients.isNotEmpty) {
+      print('Unity は接続中のため起動しません');
+      return;
+    }
+    await _launchUnity();
+  }
+
   // ============================================================
   // 起動 / 終了
   // ============================================================
@@ -274,6 +286,11 @@ class WindowsUnityBridge implements UnityCommunicator {
       'type': 'error',
       'message': message,
     }));
+  }
+
+  @override
+  void sendAppQuit() {
+    _broadcast(jsonEncode({'type': 'app.quit'}));
   }
 
   // ============================================================

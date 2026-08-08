@@ -1288,13 +1288,14 @@ MonoBehaviour:
   overlayRoot: {fileID: 808802513}
   hideOnWindows:
   - {fileID: 971807030}
-  cameraOffsetX: -4.2
+  cameraOffsetX: -2
   cameraOffsetY: 0
   characterController: {fileID: 1726773442}
   notifyClick: 1
   dragThreshold: 4
   notifyMove: 1
   moveNotifyInterval: 0.1
+  forceNotifyInterval: 2
   enableQuitShortcut: 1
   quitKey: 113
   requireShift: 0

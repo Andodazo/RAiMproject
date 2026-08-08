@@ -53,6 +53,13 @@ abstract class UnityCommunicator {
   /// error を Unity へ転送する
   void sendError({required String message});
 
+  /// Flutter 側で終了が選ばれたことを Unity へ伝える。
+  ///
+  /// Flutter が Unity を起動した場合は stop() の kill で落とせるが、
+  /// Unity Editor や手動起動の場合は kill が効かない。
+  /// Unity 自身に終了してもらうためのメッセージ。
+  void sendAppQuit();
+
   // ============================================================
   // Unity → Flutter
   // ============================================================
@@ -66,6 +73,13 @@ abstract class UnityCommunicator {
   // モバイルでは何も流れない（空の Stream）。
 
   Stream<Map<String, dynamic>> get unityEvents;
+
+  /// Unity が接続中か。トレイメニューの出し分けに使う。
+  bool get isUnityConnected;
+
+  /// Unity が落ちていたら起動し直す。
+  /// 既に繋がっていれば何もしない。
+  Future<void> ensureUnityRunning();
 
   /// 通信を停止
   Future<void> stop();

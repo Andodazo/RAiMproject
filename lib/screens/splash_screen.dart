@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/screens/chat_screen.dart';
 import 'package:raim_prototype/screens/login_screen.dart';
+import 'package:raim_prototype/screens/windows_input_window.dart';
+import 'package:raim_prototype/services/mascot_window_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 
 /// アプリ起動直後に表示する認証振り分け画面です。
@@ -79,6 +81,11 @@ class _AuthenticatedChatScreenState extends State<_AuthenticatedChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Windows ではライムを Unity の透過ウィンドウが描くので、
+    // Flutter 側はライムの足元に置く入力小窓になる。
+    if (MascotWindowService.isSupported) {
+      return const WindowsInputWindow();
+    }
     return const ChatScreen();
   }
 }

@@ -317,6 +317,27 @@ public class RAiMCharacterController : MonoBehaviour
     }
 
     // ============================================================
+    // Flutter からの終了指示
+    // ============================================================
+
+    /// <summary>
+    /// Flutter のメニューで「終了」が押されたときに呼ばれる。
+    ///
+    /// Flutter が Unity を起動した場合はプロセスを kill されるが、
+    /// Unity Editor や手動起動の場合は kill が効かないため、
+    /// メッセージを受けて自分で終了する。
+    /// ウィンドウ位置の保存は OnApplicationQuit が担当する。
+    /// </summary>
+    private void QuitFromFlutter()
+    {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
+    }
+
+    // ============================================================
     // Flutter への送信（Windows版のみ）
     // ============================================================
 
@@ -430,6 +451,14 @@ public class RAiMCharacterController : MonoBehaviour
             if (typeData != null && typeData.type == "chat_end")
             {
                 ReceiveChatEnd(json);
+                return;
+            }
+
+            // Flutter 側のメニューから終了された
+            if (typeData != null && typeData.type == "app.quit")
+            {
+                Debug.Log("Flutter から終了を指示されました");
+                QuitFromFlutter();
                 return;
             }
 

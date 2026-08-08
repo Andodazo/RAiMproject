@@ -31,6 +31,8 @@ import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/WindowsUnityBridge.dart';
 import 'package:raim_prototype/services/embed_unity_bridge.dart';
+import 'package:raim_prototype/services/mascot_window_service.dart';
+import 'package:raim_prototype/services/tray_service.dart';
 
 // ====================================================
 // RAiM サーバー接続先URL
@@ -58,6 +60,15 @@ class RaimConfig {
 void main() async {
   //ウィジェットを使うための初期化処理
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Windows のウィンドウ制御を初期化する。
+  // 認証中は通常のウィンドウのままで、認証後に入力小窓へ切り替える。
+  await MascotWindowService.initialize();
+
+  // トレイの登録はウィジェットのライフサイクルに依存させない。
+  // 入力小窓を閉じるとタスクバーからも消えるので、
+  // トレイは確実に立ち上がっていないと復帰できなくなる。
+  await TrayService.instance.setup();
 
   // Unity Bridge
   final UnityCommunicator unityBridge = _createUnityBridge();
@@ -198,6 +209,8 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
         ChangeNotifierProvider.value(value: widget.authProvider),
         // ログアウト終了処理などから明示的に disconnect できるように公開
         Provider<RaimServerService>.value(value: widget.raimService),
+        // 入力小窓が unity.clicked / unity.moved を購読するために公開
+        Provider<UnityCommunicator>.value(value: widget.unityBridge),
         //既存のChatProvider
         ChangeNotifierProvider(
           create: (_) => ChatProvider(widget.raimService, widget.unityBridge),
