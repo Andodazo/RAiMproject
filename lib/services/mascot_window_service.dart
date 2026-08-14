@@ -54,6 +54,9 @@ class MascotWindowService {
   /// マイナス値で詰められる。ホットリロードで効くので実機を見ながら調整する。
   static double gapBelowCharacter = -24;
 
+  /// 配置の計算をログに出す。マルチモニタで位置がおかしいときに使う。
+  static bool debugPosition = false;
+
   /// Unity が cx/cy を送ってこない古いビルド向けの保険。
   /// ウィンドウ幅に対するキャラ中心の位置（0=左端, 1=右端）。
   static double characterCenterRatio = 0.65;
@@ -81,6 +84,10 @@ class MascotWindowService {
   /// Unity が送ってくるので、ウィンドウ内のどこにキャラがいるかを
   /// Flutter 側で推測する必要がない。
   Offset? _characterFoot;
+
+  /// ライムがいるモニタの作業領域（タスクバーを除いた範囲）。
+  /// 入力小窓をこの中に収める。Unity が測って送ってくる。
+  Rect? _workArea;
 
   static bool get isSupported {
     if (kIsWeb) return false;
@@ -217,11 +224,16 @@ class MascotWindowService {
     required double height,
     double? characterCenterX,
     double? characterBottomY,
+    Rect? workArea,
   }) async {
     _unityRect = Rect.fromLTWH(x, y, width, height);
 
     if (characterCenterX != null && characterBottomY != null) {
       _characterFoot = Offset(characterCenterX, characterBottomY);
+    }
+
+    if (workArea != null && workArea.width > 0 && workArea.height > 0) {
+      _workArea = workArea;
     }
 
     if (!_mascotMode) return;
@@ -238,8 +250,36 @@ class MascotWindowService {
     await _placeUnderCharacter();
   }
 
-  /// ライムの足元に入力小窓を置く。
+  /// setPosition の実行中フラグ。
+  ///
+  /// Unity は 60fps 近い頻度で位置を送ってくる。
+  /// 1件ずつ await していると処理が溜まって、指を離した後も
+  /// 窓が遅れて動き続ける。実行中は最新の目標だけ覚えておき、
+  /// 終わってからまとめて反映する（中間の座標は捨てる）。
+  bool _placing = false;
+  bool _placeQueued = false;
+
   Future<void> _placeUnderCharacter() async {
+    if (_placing) {
+      _placeQueued = true;
+      return;
+    }
+
+    _placing = true;
+    try {
+      await _applyPosition();
+
+      // 待っている間に新しい座標が届いていたら、最新だけ反映する
+      while (_placeQueued) {
+        _placeQueued = false;
+        await _applyPosition();
+      }
+    } finally {
+      _placing = false;
+    }
+  }
+
+  Future<void> _applyPosition() async {
     final rect = _unityRect;
     if (rect == null) return;
 
@@ -255,12 +295,32 @@ class MascotWindowService {
     final top = footY + gapBelowCharacter + _collapsedHeight - _currentHeight;
 
     var left = centerX - windowWidth / 2;
+    var placeTop = top;
 
-    // 画面左端より外へは出さない。右端は Unity 側が画面内にいる限り
-    // はみ出さないので、ここでは見ない（マルチモニタで誤判定するため）。
-    if (left < 0) left = 0;
+    // ライムがいるモニタの中に収める。
+    // 「画面座標が 0 以上」で判定してはいけない。
+    // プライマリの左にサブモニタがあると座標が負になり、
+    // 0 で押し戻すとサブモニタへ付いていけなくなる。
+    final area = _workArea;
+    if (area != null) {
+      final maxLeft = area.right - windowWidth;
+      if (maxLeft > area.left) {
+        left = left.clamp(area.left, maxLeft);
+      }
 
-    await windowManager.setPosition(Offset(left, top));
+      final maxTop = area.bottom - _currentHeight;
+      if (maxTop > area.top) {
+        placeTop = placeTop.clamp(area.top, maxTop);
+      }
+    }
+
+    if (debugPosition) {
+      debugPrint('[Mascot] 配置: left=${left.toStringAsFixed(0)} '
+          'top=${placeTop.toStringAsFixed(0)} '
+          'foot=$foot area=$_workArea height=$_currentHeight');
+    }
+
+    await windowManager.setPosition(Offset(left, placeTop));
   }
 
   // ------------------------------------------------------------

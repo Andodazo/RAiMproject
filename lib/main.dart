@@ -138,25 +138,18 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
   // ====================================================
   // モバイルでは EmbedUnityBridge が空の Stream を返すので何も流れない。
   //
-  //   unity.quit    : Unity 側の Ctrl+Q。Flutter も一緒に終了する
-  //   unity.clicked : ライムがクリックされた。入力小窓を開く合図
-  //   unity.moved   : ウィンドウが動いた。入力小窓を追従させる
+  // ここで扱うのはアプリ全体に関わる unity.quit だけ。
+  // unity.clicked（入力小窓を開く）と unity.moved（追従）は
+  // 窓そのものを操作するものなので WindowsInputWindow 側で購読している。
+  //
+  // unityEvents は broadcast なので購読者が複数いても問題ないが、
+  // 同じイベントを2箇所で処理すると後から追いにくくなる。
+  // 「アプリの寿命に関わるものはここ、窓の見た目はウィンドウ側」で分けている。
   void _listenUnityEvents() {
     _unitySub = widget.unityBridge.unityEvents.listen((event) {
-      switch (event['type']) {
-        case 'unity.quit':
-          debugPrint('[Unity] 終了通知を受信。Flutter も終了します');
-          _quitWithUnity();
-          break;
-
-        case 'unity.clicked':
-          debugPrint('[Unity] ライムがクリックされました');
-          // TODO(Step 5-b): 入力小窓を開く
-          break;
-
-        case 'unity.moved':
-          // TODO(Step 6): 入力小窓をライムに追従させる
-          break;
+      if (event['type'] == 'unity.quit') {
+        debugPrint('[Unity] 終了通知を受信。Flutter も終了します');
+        _quitWithUnity();
       }
     });
   }

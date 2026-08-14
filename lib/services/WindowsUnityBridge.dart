@@ -29,9 +29,19 @@ class WindowsUnityBridge implements UnityCommunicator {
   final List<String> _pending = [];
   static const int _maxPending = 16;
 
+  /// 受信ログを全部出すか。
+  ///
+  /// unity.moved は追従のため毎フレーム近く飛んでくるので、
+  /// 既定ではログに出さない。通信を追いたいときだけ true にする。
+  final bool verboseLog;
+
+  /// ログに出さないメッセージ種別
+  static const Set<String> _quietTypes = {'unity.moved'};
+
   WindowsUnityBridge({
     this.port = 8765,
     this.autoLaunchUnity = true,
+    this.verboseLog = false,
   });
 
   @override
@@ -310,7 +320,11 @@ class WindowsUnityBridge implements UnityCommunicator {
       final decoded = jsonDecode(message);
       if (decoded is! Map<String, dynamic>) return;
 
-      print('Unity から受信: $message');
+      final type = decoded['type'] as String?;
+      if (verboseLog || !_quietTypes.contains(type)) {
+        print('Unity から受信: $message');
+      }
+
       _events.add(decoded);
     } catch (e) {
       print('Unity からの不正なメッセージ: $message ($e)');

@@ -139,10 +139,25 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
             height: (event['height'] as num).toDouble(),
             characterCenterX: (event['cx'] as num?)?.toDouble(),
             characterBottomY: (event['cy'] as num?)?.toDouble(),
+            workArea: _readWorkArea(event),
           );
           break;
       }
     });
+  }
+
+  /// unity.moved に載っているモニタの作業領域を読む。
+  /// 古い Unity ビルドでは無いので null になる。
+  Rect? _readWorkArea(Map<String, dynamic> event) {
+    final mx = (event['mx'] as num?)?.toDouble();
+    final my = (event['my'] as num?)?.toDouble();
+    final mw = (event['mw'] as num?)?.toDouble();
+    final mh = (event['mh'] as num?)?.toDouble();
+
+    if (mx == null || my == null || mw == null || mh == null) return null;
+    if (mw <= 0 || mh <= 0) return null;
+
+    return Rect.fromLTWH(mx, my, mw, mh);
   }
 
   @override
