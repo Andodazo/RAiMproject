@@ -1,5 +1,7 @@
 import 'dart:io' show Platform;
 
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
@@ -216,7 +218,27 @@ class MascotWindowService {
   // ライムへの追従
   // ------------------------------------------------------------
 
+  // ------------------------------------------------------------
+  // 座標系の変換
+  // ------------------------------------------------------------
+  // Unity は Win32 の GetWindowRect で取った「物理ピクセル」を送ってくる。
+  // 一方 window_manager の setPosition / setSize は「論理ピクセル」で、
+  // 表示倍率のぶん値が違う。
+  //
+  //   倍率100% : 物理 = 論理        （デスクトップ機はこれで一致していた）
+  //   倍率125% : 物理 1000 → 論理 800
+  //
+  // 変換しないと、倍率が上がるほどライムから下へ離れていく。
+
+  double get _scale {
+    final views = PlatformDispatcher.instance.views;
+    if (views.isEmpty) return 1.0;
+    final ratio = views.first.devicePixelRatio;
+    return ratio > 0 ? ratio : 1.0;
+  }
+
   /// Unity から届いた unity.moved を反映する。
+  /// 引数はすべて物理ピクセル。ここで論理ピクセルへ直す。
   Future<void> onUnityMoved({
     required double x,
     required double y,
@@ -226,14 +248,21 @@ class MascotWindowService {
     double? characterBottomY,
     Rect? workArea,
   }) async {
-    _unityRect = Rect.fromLTWH(x, y, width, height);
+    final s = _scale;
+
+    _unityRect = Rect.fromLTWH(x / s, y / s, width / s, height / s);
 
     if (characterCenterX != null && characterBottomY != null) {
-      _characterFoot = Offset(characterCenterX, characterBottomY);
+      _characterFoot = Offset(characterCenterX / s, characterBottomY / s);
     }
 
     if (workArea != null && workArea.width > 0 && workArea.height > 0) {
-      _workArea = workArea;
+      _workArea = Rect.fromLTWH(
+        workArea.left / s,
+        workArea.top / s,
+        workArea.width / s,
+        workArea.height / s,
+      );
     }
 
     if (!_mascotMode) return;
@@ -317,7 +346,8 @@ class MascotWindowService {
     if (debugPosition) {
       debugPrint('[Mascot] 配置: left=${left.toStringAsFixed(0)} '
           'top=${placeTop.toStringAsFixed(0)} '
-          'foot=$foot area=$_workArea height=$_currentHeight');
+          'foot=$foot area=$_workArea height=$_currentHeight '
+          'scale=${_scale.toStringAsFixed(2)}');
     }
 
     await windowManager.setPosition(Offset(left, placeTop));

@@ -97,6 +97,29 @@ public class WindowsOverlayController : MonoBehaviour
 
     private bool isWindowsOverlay = false;
 
+    // 毎フレーム参照するのでキャッシュする。
+    // FindObjectOfType を Update から呼ぶとシーン全体を走査するため重い。
+    private Camera _cam;
+    private SpriteRenderer _sprite;
+
+    private Camera Cam => _cam != null ? _cam : (_cam = Camera.main);
+
+    private SpriteRenderer Sprite
+    {
+        get
+        {
+            if (_sprite == null)
+            {
+#if UNITY_2023_1_OR_NEWER
+                _sprite = FindFirstObjectByType<SpriteRenderer>();
+#else
+                _sprite = FindObjectOfType<SpriteRenderer>();
+#endif
+            }
+            return _sprite;
+        }
+    }
+
     // ------------------------------------------------------------
     // Win32
     // ------------------------------------------------------------
@@ -108,8 +131,21 @@ public class WindowsOverlayController : MonoBehaviour
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out POINT lpPoint);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern IntPtr FindWindowEx(IntPtr hWndParent, IntPtr hWndChildAfter,
+        string lpszClass, string lpszWindow);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetActiveWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentProcessId();
 
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
@@ -188,16 +224,84 @@ public class WindowsOverlayController : MonoBehaviour
 
     /// <summary>
     /// 自分のウィンドウハンドル。
-    /// クリックスルー中は GetActiveWindow が使えないため、
-    /// Unity のウィンドウクラス名から探す。
+    ///
+    /// クリックスルー中は GetActiveWindow が使えない。
+    /// クラス名で探す FindWindow も、Unity Editor が同時に開いていると
+    /// そちらを掴んでしまうことがあるため、
+    /// 自プロセスの可視トップレベルウィンドウを列挙して特定する。
     /// </summary>
     private IntPtr _hwnd = IntPtr.Zero;
 
     private IntPtr GetSelfWindow()
     {
         if (_hwnd != IntPtr.Zero) return _hwnd;
-        _hwnd = FindWindow("UnityWndClass", null);
+
+        uint myPid = GetCurrentProcessId();
+
+        // ① 起動直後はまだフォーカスがあるので、これで取れることが多い
+        IntPtr active = GetActiveWindow();
+        if (IsOwnWindow(active, myPid))
+        {
+            _hwnd = active;
+        }
+
+        // ② Unity のウィンドウクラスを総当たりする。
+        //    FindWindow はクラス名が一致した最初の1つしか返さず、
+        //    Editor が開いているとそちらを掴んでしまうため、
+        //    FindWindowEx で次々に辿って自プロセスのものを探す。
+        if (_hwnd == IntPtr.Zero)
+        {
+            _hwnd = FindOwnWindowByClass("UnityWndClass", myPid);
+        }
+
+        // ③ クラス名が違う場合に備えて、全トップレベルウィンドウを辿る
+        if (_hwnd == IntPtr.Zero)
+        {
+            _hwnd = FindOwnWindowByClass(null, myPid);
+        }
+
+        if (_hwnd == IntPtr.Zero)
+        {
+            Debug.LogWarning("[Overlay] 自分のウィンドウハンドルが取得できません");
+        }
+        else
+        {
+            Debug.Log($"[Overlay] ウィンドウハンドルを取得: {_hwnd}");
+        }
+
         return _hwnd;
+    }
+
+    /// <summary>
+    /// 指定クラス名（null なら全部）のトップレベルウィンドウを順に辿り、
+    /// 自プロセスのものを返す。
+    ///
+    /// EnumWindows はコールバックを native へ渡すため IL2CPP ビルドでは
+    /// 動作しない。FindWindowEx なら hWndChildAfter で列挙を継続でき、
+    /// コールバックが要らない。
+    /// </summary>
+    private IntPtr FindOwnWindowByClass(string className, uint myPid)
+    {
+        IntPtr h = IntPtr.Zero;
+        for (int i = 0; i < 200; i++)
+        {
+            h = FindWindowEx(IntPtr.Zero, h, className, null);
+            if (h == IntPtr.Zero) break;
+            if (IsOwnWindow(h, myPid)) return h;
+        }
+        return IntPtr.Zero;
+    }
+
+    private bool IsOwnWindow(IntPtr hWnd, uint myPid)
+    {
+        if (hWnd == IntPtr.Zero) return false;
+        if (!IsWindowVisible(hWnd)) return false;
+
+        GetWindowThreadProcessId(hWnd, out uint pid);
+        if (pid != myPid) return false;
+
+        if (!GetWindowRect(hWnd, out RECT r)) return false;
+        return (r.Right - r.Left) > 0 && (r.Bottom - r.Top) > 0;
     }
 
     /// <summary>
@@ -286,7 +390,11 @@ public class WindowsOverlayController : MonoBehaviour
 
         if (characterController == null)
         {
+#if UNITY_2023_1_OR_NEWER
+            characterController = FindFirstObjectByType<RAiMCharacterController>();
+#else
             characterController = FindObjectOfType<RAiMCharacterController>();
+#endif
         }
 
         if (targetFrameRate > 0)
@@ -487,8 +595,8 @@ public class WindowsOverlayController : MonoBehaviour
         float localX = p.X - r.Left;
         float localY = Screen.height - (p.Y - r.Top);
 
-        var cam = Camera.main;
-        var sr = FindObjectOfType<SpriteRenderer>();
+        var cam = Cam;
+        var sr = Sprite;
         if (cam == null || sr == null) return false;
 
         Vector3 bMin = cam.WorldToScreenPoint(sr.bounds.min);
@@ -525,8 +633,8 @@ public class WindowsOverlayController : MonoBehaviour
     {
         if (!clampToScreen) return;
 
-        var cam = Camera.main;
-        var sr = FindObjectOfType<SpriteRenderer>();
+        var cam = Cam;
+        var sr = Sprite;
         if (cam == null || sr == null) return;
 
         if (!TryGetWindowRect(out RECT r)) return;
@@ -599,11 +707,19 @@ public class WindowsOverlayController : MonoBehaviour
         NotifyMove();
     }
 
+    /// 送信できない理由を一度だけ出すためのフラグ
+    private bool warnedNoRect = false;
+
     private void NotifyMove(bool force = false)
     {
         // OS から実座標を取る。マルチモニタでもそのまま使える。
         if (!TryGetWindowRect(out RECT r))
         {
+            if (!warnedNoRect)
+            {
+                warnedNoRect = true;
+                Debug.LogWarning("[Overlay] ウィンドウ矩形が取得できないため位置を送れません");
+            }
             return;
         }
 
@@ -625,8 +741,8 @@ public class WindowsOverlayController : MonoBehaviour
         int cx = x + w / 2;
         int cy = y + h;
 
-        var cam = Camera.main;
-        var sr = FindObjectOfType<SpriteRenderer>();
+        var cam = Cam;
+        var sr = Sprite;
         if (cam != null && sr != null)
         {
             // Unity のスクリーン座標は左下原点・Y上向き
@@ -657,8 +773,16 @@ public class WindowsOverlayController : MonoBehaviour
                       "\"mx\":" + mx + ",\"my\":" + my + "," +
                       "\"mw\":" + mw + ",\"mh\":" + mh + "}";
 
+        if (!hasSentMoveOnce)
+        {
+            hasSentMoveOnce = true;
+            Debug.Log($"[Overlay] 初回の位置を送信: {json}");
+        }
+
         SendToFlutter(json);
     }
+
+    private bool hasSentMoveOnce = false;
 
     /// <summary>
     /// ウィンドウの左上座標（画面座標）。取得できなければゼロ。
@@ -712,10 +836,10 @@ public class WindowsOverlayController : MonoBehaviour
     /// </summary>
     private void LogCharacterBounds()
     {
-        var cam = Camera.main;
+        var cam = Cam;
         if (cam == null) return;
 
-        var sr = FindObjectOfType<SpriteRenderer>();
+        var sr = Sprite;
         if (sr == null) return;
 
         Vector3 min = cam.WorldToScreenPoint(sr.bounds.min);

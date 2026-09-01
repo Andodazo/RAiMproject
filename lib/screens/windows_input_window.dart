@@ -349,6 +349,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         clipBehavior: Clip.antiAlias,
         child: Column(
           mainAxisSize: MainAxisSize.max,
+          // パネルは上へ伸びるので、バーは常に下端に置く
+          mainAxisAlignment: MainAxisAlignment.end,
           children: [
             if (_mode != _PanelMode.none)
               Expanded(
@@ -373,11 +375,15 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   Widget _buildBar() {
     final chat = context.watch<ChatProvider>();
 
-    return SizedBox(
-      // 枠線の上下1pxずつを差し引かないと 2px はみ出す
-      height: MascotWindowService.barHeight - MascotWindowService.borderWidth,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+    // 高さを固定しない。
+    //
+    // 表示倍率が 100% 以外だとウィンドウの論理サイズが小数になり
+    // （例: 58px を要求しても実際は 57.6px）、
+    // 枠線ぶんを引いた値をそのまま指定すると 1px 未満だけはみ出す。
+    // 中身に必要な高さ（約34px）はウィンドウ高より十分小さいので、
+    // 固定せず Row の自然な高さに任せれば余白が緩衝材になる。
+    return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Row(
           children: [
             _iconButton(
@@ -438,7 +444,6 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
             ),
           ],
         ),
-      ),
     );
   }
 
