@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Runtime.InteropServices;
 using UnityEngine;
@@ -53,7 +54,7 @@ public class WindowsOverlayController : MonoBehaviour
     [SerializeField] private bool notifyMove = true;
 
     [Tooltip("移動通知の間隔(秒)。細かく送りすぎないよう間引く")]
-    [SerializeField] private float moveNotifyInterval = 0.1f;
+    [SerializeField] private float moveNotifyInterval = 0.016f;
 
     [Tooltip("位置が変わっていなくても強制的に送る間隔(秒)。" +
              "起動直後や再接続直後に Flutter が位置を知らないままになるのを防ぐ")]
@@ -96,6 +97,29 @@ public class WindowsOverlayController : MonoBehaviour
 
     private bool isWindowsOverlay = false;
 
+    // 毎フレーム参照するのでキャッシュする。
+    // FindObjectOfType を Update から呼ぶとシーン全体を走査するため重い。
+    private Camera _cam;
+    private SpriteRenderer _sprite;
+
+    private Camera Cam => _cam != null ? _cam : (_cam = Camera.main);
+
+    private SpriteRenderer Sprite
+    {
+        get
+        {
+            if (_sprite == null)
+            {
+#if UNITY_2023_1_OR_NEWER
+                _sprite = FindFirstObjectByType<SpriteRenderer>();
+#else
+                _sprite = FindObjectOfType<SpriteRenderer>();
+#endif
+            }
+            return _sprite;
+        }
+    }
+
     // ------------------------------------------------------------
     // Win32
     // ------------------------------------------------------------
@@ -107,11 +131,193 @@ public class WindowsOverlayController : MonoBehaviour
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out POINT lpPoint);
 
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern IntPtr FindWindowEx(IntPtr hWndParent, IntPtr hWndChildAfter,
+        string lpszClass, string lpszWindow);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetActiveWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentProcessId();
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+        int X, int Y, int cx, int cy, uint uFlags);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int nIndex);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT
     {
         public int X;
         public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
+
+    private const uint MONITOR_DEFAULTTONEAREST = 2;
+
+    /// <summary>
+    /// ライムが今いるモニタの作業領域（タスクバーを除いた範囲）を返す。
+    /// Flutter の入力小窓をそのモニタ内に収めるために送る。
+    /// </summary>
+    private bool TryGetCurrentMonitorWorkArea(out RECT work)
+    {
+        work = default;
+
+        IntPtr hwnd = GetSelfWindow();
+        if (hwnd == IntPtr.Zero) return false;
+
+        IntPtr monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if (monitor == IntPtr.Zero) return false;
+
+        var info = new MONITORINFO();
+        info.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+        if (!GetMonitorInfo(monitor, ref info)) return false;
+
+        work = info.rcWork;
+        return true;
+    }
+
+    // 仮想デスクトップ（全モニタを合わせた矩形）
+    private const int SM_XVIRTUALSCREEN = 76;
+    private const int SM_YVIRTUALSCREEN = 77;
+    private const int SM_CXVIRTUALSCREEN = 78;
+    private const int SM_CYVIRTUALSCREEN = 79;
+
+    private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOZORDER = 0x0004;
+    private const uint SWP_NOACTIVATE = 0x0010;
+
+    /// <summary>
+    /// 自分のウィンドウハンドル。
+    ///
+    /// クリックスルー中は GetActiveWindow が使えない。
+    /// クラス名で探す FindWindow も、Unity Editor が同時に開いていると
+    /// そちらを掴んでしまうことがあるため、
+    /// 自プロセスの可視トップレベルウィンドウを列挙して特定する。
+    /// </summary>
+    private IntPtr _hwnd = IntPtr.Zero;
+
+    private IntPtr GetSelfWindow()
+    {
+        if (_hwnd != IntPtr.Zero) return _hwnd;
+
+        uint myPid = GetCurrentProcessId();
+
+        // ① 起動直後はまだフォーカスがあるので、これで取れることが多い
+        IntPtr active = GetActiveWindow();
+        if (IsOwnWindow(active, myPid))
+        {
+            _hwnd = active;
+        }
+
+        // ② Unity のウィンドウクラスを総当たりする。
+        //    FindWindow はクラス名が一致した最初の1つしか返さず、
+        //    Editor が開いているとそちらを掴んでしまうため、
+        //    FindWindowEx で次々に辿って自プロセスのものを探す。
+        if (_hwnd == IntPtr.Zero)
+        {
+            _hwnd = FindOwnWindowByClass("UnityWndClass", myPid);
+        }
+
+        // ③ クラス名が違う場合に備えて、全トップレベルウィンドウを辿る
+        if (_hwnd == IntPtr.Zero)
+        {
+            _hwnd = FindOwnWindowByClass(null, myPid);
+        }
+
+        if (_hwnd == IntPtr.Zero)
+        {
+            Debug.LogWarning("[Overlay] 自分のウィンドウハンドルが取得できません");
+        }
+        else
+        {
+            Debug.Log($"[Overlay] ウィンドウハンドルを取得: {_hwnd}");
+        }
+
+        return _hwnd;
+    }
+
+    /// <summary>
+    /// 指定クラス名（null なら全部）のトップレベルウィンドウを順に辿り、
+    /// 自プロセスのものを返す。
+    ///
+    /// EnumWindows はコールバックを native へ渡すため IL2CPP ビルドでは
+    /// 動作しない。FindWindowEx なら hWndChildAfter で列挙を継続でき、
+    /// コールバックが要らない。
+    /// </summary>
+    private IntPtr FindOwnWindowByClass(string className, uint myPid)
+    {
+        IntPtr h = IntPtr.Zero;
+        for (int i = 0; i < 200; i++)
+        {
+            h = FindWindowEx(IntPtr.Zero, h, className, null);
+            if (h == IntPtr.Zero) break;
+            if (IsOwnWindow(h, myPid)) return h;
+        }
+        return IntPtr.Zero;
+    }
+
+    private bool IsOwnWindow(IntPtr hWnd, uint myPid)
+    {
+        if (hWnd == IntPtr.Zero) return false;
+        if (!IsWindowVisible(hWnd)) return false;
+
+        GetWindowThreadProcessId(hWnd, out uint pid);
+        if (pid != myPid) return false;
+
+        if (!GetWindowRect(hWnd, out RECT r)) return false;
+        return (r.Right - r.Left) > 0 && (r.Bottom - r.Top) > 0;
+    }
+
+    /// <summary>
+    /// ウィンドウの実座標を取得する（画面座標・左上原点・仮想デスクトップ基準）。
+    ///
+    /// UniWindowController の windowPosition は Y が下から上で、
+    /// しかもプライマリモニタの高さを基準に反転しているため、
+    /// サブモニタでは正しい値にならない。
+    /// GetWindowRect なら OS が持っている実座標がそのまま取れる。
+    /// </summary>
+    private bool TryGetWindowRect(out RECT rect)
+    {
+        rect = default;
+        IntPtr hwnd = GetSelfWindow();
+        if (hwnd == IntPtr.Zero) return false;
+        return GetWindowRect(hwnd, out rect);
     }
 
     private const int VK_LBUTTON = 0x01;
@@ -184,7 +390,11 @@ public class WindowsOverlayController : MonoBehaviour
 
         if (characterController == null)
         {
+#if UNITY_2023_1_OR_NEWER
+            characterController = FindFirstObjectByType<RAiMCharacterController>();
+#else
             characterController = FindObjectOfType<RAiMCharacterController>();
+#endif
         }
 
         if (targetFrameRate > 0)
@@ -270,46 +480,6 @@ public class WindowsOverlayController : MonoBehaviour
     // その後に押し戻す。ウィンドウではなく「ライムの見えている範囲」を
     // 基準にするので、透明な余白のぶんは画面外に出てよい。
 
-    private void ClampWindowToScreen()
-    {
-        if (!clampToScreen) return;
-
-        var controller = UniWindowController.current;
-        var cam = Camera.main;
-        var sr = FindObjectOfType<SpriteRenderer>();
-        if (controller == null || cam == null || sr == null) return;
-
-        Vector2 pos = controller.windowPosition;
-        Vector2 size = controller.clientSize;
-        if (size.x <= 0 || size.y <= 0) return;
-
-        // ウィンドウ内でのキャラの位置（Unityのスクリーン座標＝左下原点）
-        Vector3 bMin = cam.WorldToScreenPoint(sr.bounds.min);
-        Vector3 bMax = cam.WorldToScreenPoint(sr.bounds.max);
-
-        float screenW = Screen.currentResolution.width;
-        float screenH = Screen.currentResolution.height;
-
-        // windowPosition の Y は下から上なので、そのまま足し引きできる
-        float charLeft = pos.x + bMin.x;
-        float charRight = pos.x + bMax.x;
-        float charBottom = pos.y + bMin.y;
-        float charTop = pos.y + bMax.y;
-
-        float dx = 0f;
-        float dy = 0f;
-
-        if (charLeft < screenMargin) dx = screenMargin - charLeft;
-        else if (charRight > screenW - screenMargin) dx = screenW - screenMargin - charRight;
-
-        if (charBottom < screenMargin) dy = screenMargin - charBottom;
-        else if (charTop > screenH - screenMargin) dy = screenH - screenMargin - charTop;
-
-        if (Mathf.Abs(dx) < 0.5f && Mathf.Abs(dy) < 0.5f) return;
-
-        controller.windowPosition = new Vector2(pos.x + dx, pos.y + dy);
-    }
-
     // ============================================================
     // 終了ショートカット
     // ============================================================
@@ -367,10 +537,9 @@ public class WindowsOverlayController : MonoBehaviour
     // DragMoveCanvas が左ドラッグでウィンドウを動かすため、
     // 「押して離した」だけをクリックとして拾う必要がある。
     //
-    // マウスのスクリーン座標では判定できないことに注意。
-    // カーソル座標はドラッグ中ウィンドウごと動くため、
-    // ウィンドウとの相対位置がほとんど変わらない。
-    // 代わりにウィンドウ自体が動いたかどうかを見る。
+    // カーソルのスクリーン座標では判定できないことに注意。
+    // ドラッグ中はウィンドウごと動くので、ウィンドウとの相対位置が
+    // ほとんど変わらない。代わりにウィンドウ自体が動いたかどうかを見る。
 
     private void HandleClickDetection()
     {
@@ -399,7 +568,6 @@ public class WindowsOverlayController : MonoBehaviour
             }
             else
             {
-                Debug.Log($"[Overlay] ドラッグ移動 ({moved:F0}px)");
                 NotifyMove(force: true);
                 SaveWindowPosition();
             }
@@ -413,30 +581,29 @@ public class WindowsOverlayController : MonoBehaviour
     /// <summary>
     /// カーソルがライムのスプライト範囲にあるか。
     ///
-    /// GetCursorPos は画面全体の座標(左上原点・Y下向き)を返す。
-    /// ウィンドウ位置を引いてウィンドウ内座標にし、
-    /// Unity のスクリーン座標(左下原点・Y上向き)へ変換して比較する。
+    /// GetCursorPos もウィンドウ矩形も画面座標（左上原点）なので、
+    /// 引き算でウィンドウ内座標になる。
+    /// Unity のスクリーン座標は左下原点なので Y だけ反転する。
     ///
-    /// 判定はスプライトの矩形なので、髪の横の透明な部分でも反応する。
-    /// 厳密にしたいならテクスチャのアルファを読む必要がある。
+    /// 判定はスプライトの矩形。髪の横の透明な部分でも反応する。
     /// </summary>
     private bool IsCursorOverCharacter()
     {
         if (!GetCursorPos(out POINT p)) return false;
+        if (!TryGetWindowRect(out RECT r)) return false;
 
-        var winPos = CurrentWindowPosition();
-        float localX = p.X - winPos.x;
-        float localY = Screen.height - (p.Y - winPos.y);
+        float localX = p.X - r.Left;
+        float localY = Screen.height - (p.Y - r.Top);
 
-        var cam = Camera.main;
-        var sr = FindObjectOfType<SpriteRenderer>();
+        var cam = Cam;
+        var sr = Sprite;
         if (cam == null || sr == null) return false;
 
-        Vector3 min = cam.WorldToScreenPoint(sr.bounds.min);
-        Vector3 max = cam.WorldToScreenPoint(sr.bounds.max);
+        Vector3 bMin = cam.WorldToScreenPoint(sr.bounds.min);
+        Vector3 bMax = cam.WorldToScreenPoint(sr.bounds.max);
 
-        return localX >= min.x && localX <= max.x
-            && localY >= min.y && localY <= max.y;
+        return localX >= bMin.x && localX <= bMax.x
+            && localY >= bMin.y && localY <= bMax.y;
     }
 
     /// <summary>
@@ -459,9 +626,64 @@ public class WindowsOverlayController : MonoBehaviour
 #endif
 
     // ============================================================
-    // ウィンドウ移動の通知
+    // 画面外へのはみ出し防止
     // ============================================================
-    // Flutter の入力小窓をライムに追従させるために使う。
+
+    private void ClampWindowToScreen()
+    {
+        if (!clampToScreen) return;
+
+        var cam = Cam;
+        var sr = Sprite;
+        if (cam == null || sr == null) return;
+
+        if (!TryGetWindowRect(out RECT r)) return;
+
+        int w = r.Right - r.Left;
+        int h = r.Bottom - r.Top;
+        if (w <= 0 || h <= 0) return;
+
+        // ウィンドウ内でのキャラの位置（Unityのスクリーン座標＝左下原点）
+        Vector3 bMin = cam.WorldToScreenPoint(sr.bounds.min);
+        Vector3 bMax = cam.WorldToScreenPoint(sr.bounds.max);
+
+        // 画面座標（左上原点）へ直す
+        float charLeft = r.Left + bMin.x;
+        float charRight = r.Left + bMax.x;
+        float charTop = r.Top + (Screen.height - bMax.y);
+        float charBottom = r.Top + (Screen.height - bMin.y);
+
+        // 全モニタを合わせた矩形。サブモニタへ移動しても弾かれない。
+        float vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        float vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        float vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        float vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+        float minX = vx + screenMargin;
+        float maxX = vx + vw - screenMargin;
+        float minY = vy + screenMargin;
+        float maxY = vy + vh - screenMargin;
+
+        float dx = 0f;
+        float dy = 0f;
+
+        if (charLeft < minX) dx = minX - charLeft;
+        else if (charRight > maxX) dx = maxX - charRight;
+
+        if (charTop < minY) dy = minY - charTop;
+        else if (charBottom > maxY) dy = maxY - charBottom;
+
+        if (Mathf.Abs(dx) < 0.5f && Mathf.Abs(dy) < 0.5f) return;
+
+        IntPtr hwnd = GetSelfWindow();
+        if (hwnd == IntPtr.Zero) return;
+
+        SetWindowPos(hwnd, IntPtr.Zero,
+            r.Left + Mathf.RoundToInt(dx),
+            r.Top + Mathf.RoundToInt(dy),
+            0, 0,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 
     private void HandleMoveNotification()
     {
@@ -485,39 +707,42 @@ public class WindowsOverlayController : MonoBehaviour
         NotifyMove();
     }
 
+    /// 送信できない理由を一度だけ出すためのフラグ
+    private bool warnedNoRect = false;
+
     private void NotifyMove(bool force = false)
     {
-        var pos = CurrentWindowPosition();
+        // OS から実座標を取る。マルチモニタでもそのまま使える。
+        if (!TryGetWindowRect(out RECT r))
+        {
+            if (!warnedNoRect)
+            {
+                warnedNoRect = true;
+                Debug.LogWarning("[Overlay] ウィンドウ矩形が取得できないため位置を送れません");
+            }
+            return;
+        }
+
+        var pos = new Vector2(r.Left, r.Top);
 
         if (!force && (pos - lastNotifiedPosition).sqrMagnitude < 1f) return;
         lastNotifiedPosition = pos;
         hasNotifiedOnce = true;
 
-        var controller = UniWindowController.current;
-        Vector2 size = controller != null ? controller.clientSize : Vector2.zero;
-
-        // UniWindowController の windowPosition は Y が下から上（Unity流）。
-        // Windows のウィンドウ座標は上から下なので、ここで変換して送る。
-        // 変換せずに渡すと、ライムを上へ動かしたとき入力小窓が下へ動く。
-        int screenH = Screen.currentResolution.height;
-
-        // 補間文字列で書式指定子(:F0)と閉じ波括弧(}})が隣接すると
-        // 解釈が壊れて "height":F700 のような不正な JSON になる。
-        // 先に int へ丸めてから素直に連結する。
-        int w = Mathf.RoundToInt(size.x);
-        int h = Mathf.RoundToInt(size.y);
-        int x = Mathf.RoundToInt(pos.x);
-        int y = Mathf.RoundToInt(screenH - (pos.y + size.y));
+        int x = r.Left;
+        int y = r.Top;
+        int w = r.Right - r.Left;
+        int h = r.Bottom - r.Top;
 
         // ライムの足元の座標も送る。
         // ウィンドウの中でキャラがどこにいるかは cameraOffset や
         // モデルの差し替えで変わるので、Flutter 側で推測させない。
         // cx = キャラ中心のX、cy = 足元のY（どちらも画面座標・上原点）
-        int cx = x + Mathf.RoundToInt(w * 0.5f);
+        int cx = x + w / 2;
         int cy = y + h;
 
-        var cam = Camera.main;
-        var sr = FindObjectOfType<SpriteRenderer>();
+        var cam = Cam;
+        var sr = Sprite;
         if (cam != null && sr != null)
         {
             // Unity のスクリーン座標は左下原点・Y上向き
@@ -528,23 +753,49 @@ public class WindowsOverlayController : MonoBehaviour
             cy = y + Mathf.RoundToInt(Screen.height - bMin.y);
         }
 
+        // ライムがいるモニタの作業領域。
+        // Flutter はこの中に入力小窓を収める。
+        // モニタごとに解像度もタスクバー位置も違うので、
+        // Flutter 側で調べさせず Unity が測って渡す。
+        int mx = 0, my = 0, mw = 0, mh = 0;
+        if (TryGetCurrentMonitorWorkArea(out RECT work))
+        {
+            mx = work.Left;
+            my = work.Top;
+            mw = work.Right - work.Left;
+            mh = work.Bottom - work.Top;
+        }
+
         string json = "{\"type\":\"unity.moved\"," +
                       "\"x\":" + x + ",\"y\":" + y + "," +
                       "\"width\":" + w + ",\"height\":" + h + "," +
-                      "\"cx\":" + cx + ",\"cy\":" + cy + "}";
+                      "\"cx\":" + cx + ",\"cy\":" + cy + "," +
+                      "\"mx\":" + mx + ",\"my\":" + my + "," +
+                      "\"mw\":" + mw + ",\"mh\":" + mh + "}";
+
+        if (!hasSentMoveOnce)
+        {
+            hasSentMoveOnce = true;
+            Debug.Log($"[Overlay] 初回の位置を送信: {json}");
+        }
 
         SendToFlutter(json);
     }
 
-    private Vector2 CurrentWindowPosition()
-    {
-        var controller = UniWindowController.current;
-        return controller != null ? controller.windowPosition : Vector2.zero;
-    }
+    private bool hasSentMoveOnce = false;
 
     /// <summary>
-    /// WebSocket は RAiMCharacterController が持っているので、そこ経由で送る。
+    /// ウィンドウの左上座標（画面座標）。取得できなければゼロ。
     /// </summary>
+    private Vector2 CurrentWindowPosition()
+    {
+        if (TryGetWindowRect(out RECT r))
+        {
+            return new Vector2(r.Left, r.Top);
+        }
+        return Vector2.zero;
+    }
+
     private void SendToFlutter(string json)
     {
         if (characterController == null) return;
@@ -585,10 +836,10 @@ public class WindowsOverlayController : MonoBehaviour
     /// </summary>
     private void LogCharacterBounds()
     {
-        var cam = Camera.main;
+        var cam = Cam;
         if (cam == null) return;
 
-        var sr = FindObjectOfType<SpriteRenderer>();
+        var sr = Sprite;
         if (sr == null) return;
 
         Vector3 min = cam.WorldToScreenPoint(sr.bounds.min);
