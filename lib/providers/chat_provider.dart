@@ -13,6 +13,7 @@ import 'package:raim_prototype/models/conversation_thread.dart';
 import 'package:raim_prototype/services/llm_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/audio_play_queue.dart';
+import 'package:raim_prototype/services/audio_chunk_assembler.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -28,6 +29,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   final UnityCommunicator _unityBridge;
   // サーバーから届いた audio_chunk を順番に再生するキュー
   final AudioPlayQueue _audioQueue = AudioPlayQueue();
+  late final AudioChunkAssembler _audioAssembler;
   //messagesとは描画する会話をまとめたもの
 
   // ============================================================
@@ -88,6 +90,11 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   StreamSubscription<RaimConnectionState>? _stateSubscription;
   //ここは使わない
   ChatProvider(this._llmService, this._unityBridge) {
+    _audioAssembler = AudioChunkAssembler(
+      onAudioReady: (audio) {
+        _audioQueue.enqueueBytes(bytes: audio.bytes, format: audio.format);
+      },
+    );
     _bindConnectionState();
   }
   //メッセージの中身を編集されないようにするため。(読み取り専用)
@@ -114,6 +121,10 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
       _stateSubscription = service.stateStream.listen((newState) {
         final wasConnected = _connectionState == RaimConnectionState.connected;
         _connectionState = newState;
+        if (newState != RaimConnectionState.connected) {
+          _audioAssembler.reset();
+          unawaited(_audioQueue.reset());
+        }
         notifyListeners();
 
         // 接続できた時点で、前回の続きから始められるようにする。
@@ -217,11 +228,16 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
       'audioLength=${response.audioBase64!.length}',
     );
 
-    // Base64音声を AudioPlayQueue に渡す
-    // AudioPlayQueue 側でデコードして、届いた順番に再生する
-    _audioQueue.enqueue(
-      base64Audio: response.audioBase64!,
-      format: response.format ?? 'wav',
+    _audioAssembler.add(
+      AudioChunkPart(
+        chunkId: response.chunkId,
+        audioBase64: response.audioBase64!,
+        format: response.format ?? 'wav',
+        partIndex: response.partIndex,
+        partCount: response.partCount,
+        isLast: response.isLast,
+        isFirst: response.isFirst,
+      ),
     );
   }
 
@@ -413,6 +429,9 @@ _toolStatus = null;
     if (service is! RaimServerService) return;
     if (threadId.isEmpty || threadId == _currentThreadId) return;
 
+    _audioAssembler.reset();
+    await _audioQueue.reset();
+
     _isLoadingThreads = true;
     notifyListeners();
 
@@ -571,6 +590,8 @@ _toolStatus = null;
   /// クライアント側で識別子を採番して送る。サーバーは未知の threadId を
   /// 受け取るとその ID でスレッドを新規作成するため、専用の API は要らない。
   void startNewThread() {
+    _audioAssembler.reset();
+    unawaited(_audioQueue.reset());
     _currentThreadId = _generateThreadId();
     _historyCursor = null;
     _hasMoreHistory = false;
@@ -592,6 +613,7 @@ _toolStatus = null;
   String _generateThreadId() => 'thread-${const Uuid().v4()}';
   @override
   void reassemble() {
+    _audioAssembler.reset();
     _messages.clear();
     _currentStreamingMessage = null;
     _toolStatus = null;
@@ -610,6 +632,7 @@ _toolStatus = null;
   @override
   void dispose() {
     _stateSubscription?.cancel();
+    _audioAssembler.dispose();
     // ChatProvider が破棄されるとき、音声プレイヤーも破棄する
     unawaited(_audioQueue.dispose());
     super.dispose();
@@ -617,6 +640,7 @@ _toolStatus = null;
 //{List<String>? images}の追加
   Future<void> sendUserMessage(String text, {List<String>? images, List<String>? filePaths}) async {
     // 新しい送信を始める前に、前回の音声・途中メッセージ・検索中表示をリセットする
+    _audioAssembler.reset();
     await _audioQueue.reset();
     _currentStreamingMessage = null;
     _toolStatus = null;

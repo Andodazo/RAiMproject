@@ -53,26 +53,32 @@ class AudioPlayQueue {
       // Base64 文字列を音声バイトに変換する
       final bytes = base64Decode(normalizedBase64);
 
-      // 再生待ちキューに追加する
-      _queue.add(
-        _QueuedAudio(
-          // Base64 文字列を音声バイトに変換する
-          bytes: bytes,
-          mimeType: _mimeTypeFromFormat(format),
-        ),
-      );
-
-      print(
-        '[AudioPlayQueue] キュー追加完了: '
-        'queue=${_queue.length}',
-      );
-
-      // 今なにも再生していなければ、すぐ再生開始する
-      if (!_isPlaying) {
-        _playNext();
-      }
+      enqueueBytes(bytes: bytes, format: format);
     } catch (e) {
       print('[AudioPlayQueue] 音声デコード失敗: $e');
+    }
+  }
+
+  /// デコード済みの音声をキューに追加する。
+  /// 分割WAVを再構成した音声の投入にも使用する。
+  void enqueueBytes({required Uint8List bytes, String format = 'wav'}) {
+    if (_disposed) return;
+
+    _queue.add(
+      _QueuedAudio(
+        bytes: bytes,
+        mimeType: _mimeTypeFromFormat(format),
+      ),
+    );
+
+    print(
+      '[AudioPlayQueue] キュー追加完了: '
+      'queue=${_queue.length}',
+    );
+
+    // 今なにも再生していなければ、すぐ再生開始する
+    if (!_isPlaying) {
+      _playNext();
     }
   }
 
