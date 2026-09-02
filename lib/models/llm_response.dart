@@ -4,6 +4,13 @@
 // サーバーから受信するJSONメッセージのモデルクラス
 // =============================================================================
 //
+
+int? _readNullableInt(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
+}
 // 【このファイルの役割】
 // WebSocket でサーバーから受信した JSON を Dart オブジェクトに変換するためのクラス。
 // 全てのメッセージ type（chat / filler_audio / session_start / error など）を
@@ -68,6 +75,14 @@ class LLMResponse {
   // Base64 を AudioPlayQueue でデコードして再生する。
   final String? audioBase64;
   final String? format;
+  /// 分割音声のパーツ番号（0始まり）。単一音声では null。
+  final int? partIndex;
+
+  /// 分割音声の総パーツ数。単一音声では null。
+  final int? partCount;
+
+  /// このパーツが分割音声の末尾であることを示すフラグ。
+  final bool isLast;
    // ============================================================
   // 返答完了・シーン情報
   // ============================================================
@@ -114,6 +129,9 @@ class LLMResponse {
     this.isFiller = false,
     this.audioBase64,
     this.format,
+    this.partIndex,
+    this.partCount,
+    this.isLast = false,
     this.fullText,
     this.sceneId,
     this.threadId,
@@ -180,6 +198,9 @@ class LLMResponse {
       isFiller: (json['is_filler'] as bool?) ?? false,
       audioBase64: json['audio'] as String?,
       format: json['format'] as String?,
+      partIndex: _readNullableInt(json['part_index']),
+      partCount: _readNullableInt(json['part_count']),
+      isLast: (json['is_last'] as bool?) ?? false,
       fullText: json['full_text'] as String?,
       sceneId: json['scene_id'] as String?,
       threadId: json['threadId'] as String?,
