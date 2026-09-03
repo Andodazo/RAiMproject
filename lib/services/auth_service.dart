@@ -11,6 +11,7 @@ import 'package:raim_prototype/models/auth_tokens.dart';
 import 'package:raim_prototype/services/browser_login_launcher.dart';
 import 'package:raim_prototype/services/local_callback_server.dart';
 import 'package:raim_prototype/services/token_storage.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
 /// Cognito Managed Login / PKCE / Token 保存をまとめて扱うサービスです。
 ///
@@ -50,7 +51,7 @@ class AuthService {
     _linkSubscription = _appLinks.uriLinkStream.listen(
       _handleIncomingUri,
       onError: (error) {
-        debugPrint('[AuthService] Deep Link listen error: $error');
+        RaimLog.d('[AuthService] Deep Link listen error: $error');
       },
     );
 
@@ -150,7 +151,8 @@ class AuthService {
   /// Cognito から戻ってきた callback URL を処理します。
   Future<AuthTokens> handleCallback(Uri uri) async {
     if (!_isExpectedCallbackUri(uri)) {
-      throw Exception('RAiM用ではないcallbackです: $uri');
+      // 例外文は画面に表示されるため、URI（認可コード入り）を含めない
+      throw Exception('RAiM用ではないcallbackを受け取りました。');
     }
 
     final error = uri.queryParameters['error'];
@@ -208,7 +210,7 @@ class AuthService {
 
     if (response.statusCode != 200) {
       await _storage.clearTokens();
-      debugPrint('[AuthService] refresh failed: ${response.statusCode}');
+      RaimLog.d('[AuthService] refresh failed: ${response.statusCode}');
       return null;
     }
 
@@ -240,7 +242,8 @@ class AuthService {
 
     final callbackUri = uri.toString();
     if (_callbackInFlight || _lastHandledCallbackUri == callbackUri) {
-      debugPrint('[AuthService] Ignoring duplicate callback: $uri');
+      // URI には認可コードが含まれるためログに出さない
+      RaimLog.d('[AuthService] 重複した callback を無視しました');
       return;
     }
 

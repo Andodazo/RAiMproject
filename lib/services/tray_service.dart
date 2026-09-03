@@ -1,7 +1,8 @@
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:tray_manager/tray_manager.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
 /// タスクトレイの常駐アイコン。
 ///
@@ -38,23 +39,23 @@ class TrayService {
   /// トレイアイコンとメニューを登録する。
   /// main() から呼ぶ。ウィジェットのライフサイクルに依存させない。
   Future<void> setup() async {
-    debugPrint('[Tray] setup 開始 (supported=$isSupported, ready=$_ready)');
+    RaimLog.d('[Tray] setup 開始 (supported=$isSupported, ready=$_ready)');
 
     if (!isSupported || _ready) return;
 
     try {
       await trayManager.setIcon(iconPath);
-      debugPrint('[Tray] アイコンを設定: $iconPath');
+      RaimLog.d('[Tray] アイコンを設定: $iconPath');
 
       await trayManager.setToolTip('RAiM');
       await refreshMenu();
 
       _ready = true;
-      debugPrint('[Tray] トレイアイコンを登録しました');
+      RaimLog.d('[Tray] トレイアイコンを登録しました');
     } catch (e, st) {
       // トレイが使えなくても本体は動くので落とさない
-      debugPrint('[Tray] 登録に失敗: $e');
-      debugPrint('$st');
+      RaimLog.e('[Tray] 登録に失敗: $e');
+      RaimLog.d('$st');
     }
   }
 

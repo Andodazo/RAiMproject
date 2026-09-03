@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:raim_prototype/services/raim_log.dart';
 
 /// 受信した音声パーツ1件。
 class AudioChunkPart {
@@ -82,7 +83,7 @@ class AudioChunkAssembler {
     // 0またはpart_countが届いた時点で基準を確定する。
     if (partCount <= 0 || partIndex == null || partIndex < 0 ||
         partIndex > partCount) {
-      print(
+      RaimLog.d(
         '[AudioChunkAssembler] invalid part metadata: '
         'chunkId=$chunkId partIndex=$partIndex partCount=$partCount',
       );
@@ -130,7 +131,7 @@ class AudioChunkAssembler {
 
     // 同じraw part_indexは重複として無視し、二重再生を防ぐ。
     if (pending.parts.containsKey(partIndex)) {
-      print(
+      RaimLog.d(
         '[AudioChunkAssembler] duplicate part ignored: '
         'chunkId=$chunkId partIndex=$partIndex',
       );
@@ -170,7 +171,7 @@ class AudioChunkAssembler {
         chunkId: chunkId,
       );
     } catch (_) {
-      print('[AudioChunkAssembler] WAV assembly failed: chunkId=$chunkId');
+      RaimLog.e('[AudioChunkAssembler] WAV assembly failed: chunkId=$chunkId');
       _skipped.add(chunkId);
     }
 
@@ -207,7 +208,7 @@ class AudioChunkAssembler {
       ));
     } catch (_) {
       // 不正なBase64は再生対象から除外する。
-      print('[AudioChunkAssembler] single audio decode failed');
+      RaimLog.e('[AudioChunkAssembler] single audio decode failed');
     }
   }
 
@@ -225,7 +226,7 @@ class AudioChunkAssembler {
   void _expire(String chunkId) {
     final pending = _pending.remove(chunkId);
     pending?.timer.cancel();
-    print('[AudioChunkAssembler] chunk timeout: chunkId=$chunkId');
+    RaimLog.d('[AudioChunkAssembler] chunk timeout: chunkId=$chunkId');
     _finalized.add(chunkId);
     _skipped.add(chunkId);
     _drainReady();

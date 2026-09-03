@@ -17,6 +17,7 @@ import 'package:raim_prototype/services/audio_chunk_assembler.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
 class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // ============================================================
@@ -150,7 +151,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     // 次回の送信でこれを送り返すと同じスレッドに追記される。
     if (response.threadId != null && response.threadId!.isNotEmpty) {
       if (_currentThreadId != response.threadId) {
-        debugPrint('[ChatProvider] スレッド確定: ${response.threadId}');
+        RaimLog.d('[ChatProvider] スレッド確定: ${response.threadId}');
       }
       _currentThreadId = response.threadId;
     }
@@ -196,7 +197,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
      // Tool使用開始時は「考え中」表示を終了する
     _isThinking = false;
     // Toolの説明文を画面に表示する
-     debugPrint('[ChatProvider] Tool使用開始');
+     RaimLog.d('[ChatProvider] Tool使用開始');
      // tool_call では検索などの外部処理中であることが通知される
     // description があればそれを表示し、無ければデフォルト文を表示する
 
@@ -216,12 +217,12 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   void _handleAudioChunk(LLMResponse response) {
      // audio が空の場合は再生できないため、何もせず終了する
     if (response.audioBase64 == null || response.audioBase64!.isEmpty) {
-      print('[ChatProvider] audio_chunk 受信: audio が空です');
+      RaimLog.d('[ChatProvider] audio_chunk 受信: audio が空です');
       return;
     }
 
     // 音声データは長いので、ログには中身ではなく長さだけ出す
-    print(
+    RaimLog.d(
       '[ChatProvider] audio_chunk を再生キューに追加: '
       'chunkId=${response.chunkId}, '
       'format=${response.format ?? 'wav'}, '
@@ -273,7 +274,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // 次の text_chunk が来たら新しい吹き出しを作らせる。
 
   void _handleBubbleBreak(LLMResponse response) {
-    print('[ChatProvider] bubble_break 受信: 次の text_chunk は新規吹き出しにする');
+    RaimLog.d('[ChatProvider] bubble_break 受信: 次の text_chunk は新規吹き出しにする');
     // 現在のストリーミング吹き出しを区切る
     _currentStreamingMessage = null;
     _unityBridge.sendBubbleBreak();
@@ -287,13 +288,15 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
       response.isFiller || response.text.contains('調べ');
 
   if (isTestFiller) {
-    print('[ChatProvider] filler扱いなのでUIに表示しません: ${response.text}');
+    RaimLog.d('[ChatProvider] filler扱いなのでUIに表示しません '
+        '${RaimLog.size(response.text)}');
     return;
   }*/
   // is_filler=true の text_chunk は待機用メッセージ
   // 例: 「少し待って？」など。チャット欄には表示しない
   if (response.isFiller) {
-    print('[ChatProvider] filler text_chunk はUIに表示しません: ${response.text}');
+    RaimLog.d('[ChatProvider] filler text_chunk はUIに表示しません '
+        '${RaimLog.size(response.text)}');
     return;
   }
   // 追加: 通常の本文が届いたら「考え中」表示を終了する
@@ -398,7 +401,7 @@ _toolStatus = null;
   Future<void> loadThreads() async {
     final service = _llmService;
     if (service is! RaimServerService) {
-      debugPrint('[ChatProvider] スレッド一覧は RaimServerService でのみ利用できます');
+      RaimLog.d('[ChatProvider] スレッド一覧は RaimServerService でのみ利用できます');
       return;
     }
 
@@ -408,9 +411,9 @@ _toolStatus = null;
 
     try {
       _threads = await service.fetchThreadList();
-      debugPrint('[ChatProvider] スレッド一覧: ${_threads.length}件');
+      RaimLog.d('[ChatProvider] スレッド一覧: ${_threads.length}件');
     } catch (e) {
-      debugPrint('[ChatProvider] スレッド一覧の取得に失敗: $e');
+      RaimLog.d('[ChatProvider] スレッド一覧の取得に失敗: $e');
       _threads = [];
       _threadError = '会話一覧を読み込めませんでした';
     } finally {
@@ -447,14 +450,14 @@ _toolStatus = null;
         _hasMoreHistory = history.hasMore;
 
         _messages.addAll(history.messages.map(_toMessage));
-        debugPrint(
+        RaimLog.d(
           '[ChatProvider] スレッド切替: $threadId '
           '(${history.messages.length}/${history.totalMessages}件, '
           'hasMore=${history.hasMore})',
         );
       }
     } catch (e) {
-      debugPrint('[ChatProvider] スレッド切替に失敗: $e');
+      RaimLog.d('[ChatProvider] スレッド切替に失敗: $e');
       _threadError = '会話を開けませんでした';
     } finally {
       _isLoadingThreads = false;
@@ -486,9 +489,9 @@ _toolStatus = null;
         startNewThread();
       }
 
-      debugPrint('[ChatProvider] スレッド削除: $threadId');
+      RaimLog.d('[ChatProvider] スレッド削除: $threadId');
     } catch (e) {
-      debugPrint('[ChatProvider] スレッド削除に失敗: $e');
+      RaimLog.d('[ChatProvider] スレッド削除に失敗: $e');
       _threadError = '会話を削除できませんでした';
     } finally {
       _isLoadingThreads = false;
@@ -512,10 +515,11 @@ _toolStatus = null;
       if (_currentThreadId != null || _messages.isNotEmpty) return;
 
       await switchThread(_threads.first.threadId);
-      debugPrint('[ChatProvider] 前回の会話を復元: ${_threads.first.title}');
+      // タイトルは会話内容から作られるためログに出さない
+      RaimLog.d('[ChatProvider] 前回の会話を復元: ${_threads.first.threadId}');
     } catch (e) {
       // 復元に失敗しても新規会話として続けられるので、黙って諦める
-      debugPrint('[ChatProvider] 前回の会話を復元できませんでした: $e');
+      RaimLog.d('[ChatProvider] 前回の会話を復元できませんでした: $e');
     }
   }
 
@@ -552,7 +556,7 @@ _toolStatus = null;
         _historyCursor = history.hasMore ? history.startIndex : null;
         _hasMoreHistory = history.hasMore;
 
-        debugPrint(
+        RaimLog.d(
           '[ChatProvider] 過去メッセージを追加: ${older.length}件 '
           '(startIndex=${history.startIndex}, hasMore=${history.hasMore})',
         );
@@ -561,7 +565,7 @@ _toolStatus = null;
         _hasMoreHistory = false;
       }
     } catch (e) {
-      debugPrint('[ChatProvider] 過去メッセージの取得に失敗: $e');
+      RaimLog.d('[ChatProvider] 過去メッセージの取得に失敗: $e');
     } finally {
       _isLoadingOlder = false;
       notifyListeners();
@@ -602,7 +606,7 @@ _toolStatus = null;
     _isUsingTool = false;
     _toolStatus = null;
 
-    debugPrint('[ChatProvider] 新しい会話: $_currentThreadId');
+    RaimLog.d('[ChatProvider] 新しい会話: $_currentThreadId');
     notifyListeners();
   }
 
@@ -754,7 +758,7 @@ _toolStatus = null;
       _handleError(response);
     // 想定していない type は落とさずログだけ出す
     } else {
-      print('[ChatProvider] 未対応のメッセージ type: ${response.type}');
+      RaimLog.d('[ChatProvider] 未対応のメッセージ type: ${response.type}');
     }
   }
 }

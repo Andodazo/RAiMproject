@@ -2,6 +2,7 @@ import 'dart:io' show Platform, exit;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
 /// ログアウト後のアプリ終了処理をプラットフォーム別に吸収するサービスです。
 ///
@@ -35,7 +36,7 @@ class AppExitService {
       } on MissingPluginException {
         // 古いビルドや未対応プラットフォームでは通常の終了へフォールバックします。
       } on PlatformException catch (error) {
-        debugPrint('[AppExitService] Android exit failed: ${error.message}');
+        RaimLog.d('[AppExitService] Android exit failed: ${error.message}');
       }
     }
 
@@ -46,9 +47,9 @@ class AppExitService {
         await _appControlChannel.invokeMethod<void>('debugExitProcess');
         return;
       } on MissingPluginException {
-        debugPrint('[AppExitService] iOS debug exit is unavailable');
+        RaimLog.d('[AppExitService] iOS debug exit is unavailable');
       } on PlatformException catch (error) {
-        debugPrint('[AppExitService] iOS debug exit failed: ${error.message}');
+        RaimLog.d('[AppExitService] iOS debug exit failed: ${error.message}');
       }
     }
 

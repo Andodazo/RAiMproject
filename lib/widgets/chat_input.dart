@@ -10,6 +10,8 @@ import 'package:raim_prototype/providers/camera_provider.dart';
 // 開発検証用
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
+import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/config/raim_config.dart';
 
 class ChatInput extends StatefulWidget {
   const ChatInput({super.key});
@@ -76,17 +78,11 @@ class _ChatInputState extends State<ChatInput> {
     //テキストも画像も両方空っぽなら何もせず終了
     if (text.isEmpty && !hasImage) return;
 
-    //[検証用ログ]送信ボタンが押されたときのデータをログに出す
-    debugPrint('[ChatInput]メッセージを送信します: text="$text", hasImage=$hasImage');
-    if (hasImage && base64List != null) {
-      debugPrint('[ChatInput]連動する画像パス: $imagePaths');
-      // すべての画像のBase64の頭15文字をインデックス付きでログ出力
-      for (int i = 0; i < base64List.length; i++) {
-        final base64str = base64List[i];
-        final preview = base64str.length > 15 ? '${base64str.substring(0, 15)}...' : base64str;
-        debugPrint('[ChatInput] 画像[$i] Base64(部分): $preview');
-      }
-    }
+    // 本文・画像パス・Base64 は出さない。件数と大きさだけ記録する。
+    RaimLog.d(
+      '[ChatInput] 送信 ${RaimLog.size(text)}, '
+      '画像=${base64List?.length ?? 0}件',
+    );
     //クリアされる前に、現在の画像パスのコピーを作成しておく（安全のため）
     final pathsToSend = imagePaths != null ? List<String>.from(imagePaths) : null;
     // Base64 も同様にコピーする
@@ -145,7 +141,7 @@ class _ChatInputState extends State<ChatInput> {
                         color: Colors.white70,
                       ),
                       onPressed: () {
-                        debugPrint(
+                        RaimLog.d(
                           '[ChatInput] 音声入力ボタンが押されました',
                         );
                       },
@@ -303,15 +299,16 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
 }
   class _ChatMenuButtonState extends State<ChatMenuButton> {
   bool _isSwitching = false;
-  static const String awsUrl = 'wss://d1403ont6098ah.cloudfront.net/dev';
-  static const String localUrl = 'ws://100.81.35.109:8080'; 
+  // 接続先は RaimConfig に集約した（3箇所に散っていたのをやめる）
+  static const String awsUrl = RaimConfig.serverUrl;
+  static const String localUrl = RaimConfig.localServerUrl;
   //-----------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     // --現在の RaimServerService から接続先URLを取得(開発検証用)
     final raimService = context.read<RaimServerService>();
     final currentUrl = raimService.serverUrl;
-    final isAws = currentUrl.contains('cloudfront.net');
+    final isAws = RaimConfig.isAwsUrl(currentUrl);
     //--------------------------------------------------------
     return PopupMenuButton<String>(
       tooltip: 'メニュー',
@@ -331,7 +328,7 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
 
             try {
               final currentUrl = raimService.serverUrl;
-              final isAws = currentUrl.contains('cloudfront.net');
+              final isAws = RaimConfig.isAwsUrl(currentUrl);
               final targetUrl = isAws ? localUrl : awsUrl;
               // 古いポップアップを全て消去してから「切り替え中」を出す
               ScaffoldMessenger.of(context).clearSnackBars();

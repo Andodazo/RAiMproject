@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
 /// サーバーから届いた audio_chunk を順番に再生するためのクラス
 ///
@@ -55,7 +56,7 @@ class AudioPlayQueue {
 
       enqueueBytes(bytes: bytes, format: format);
     } catch (e) {
-      print('[AudioPlayQueue] 音声デコード失敗: $e');
+      RaimLog.e('[AudioPlayQueue] 音声デコード失敗: $e');
     }
   }
 
@@ -71,7 +72,7 @@ class AudioPlayQueue {
       ),
     );
 
-    print(
+    RaimLog.d(
       '[AudioPlayQueue] キュー追加完了: '
       'queue=${_queue.length}',
     );
@@ -113,7 +114,7 @@ class AudioPlayQueue {
     // キューの先頭から音声を取り出す
     final audio = _queue.removeFirst();
 
-    print(
+    RaimLog.d(
       '[AudioPlayQueue] 再生開始: '
       'bytes=${audio.bytes.length}, mimeType=${audio.mimeType}',
     );
@@ -127,7 +128,7 @@ class AudioPlayQueue {
         ),
       );
     } catch (e) {
-      print('[AudioPlayQueue] 音声再生失敗: $e');
+      RaimLog.e('[AudioPlayQueue] 音声再生失敗: $e');
 
       // 失敗した場合も次の音声へ進める
       _isPlaying = false;

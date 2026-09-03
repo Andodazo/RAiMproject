@@ -5,6 +5,7 @@ import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
 /// Windows 版での Unity 通信実装
 ///
@@ -53,7 +54,7 @@ class WindowsUnityBridge implements UnityCommunicator {
   @override
   Future<void> ensureUnityRunning() async {
     if (_clients.isNotEmpty) {
-      print('Unity は接続中のため起動しません');
+      RaimLog.d('Unity は接続中のため起動しません');
       return;
     }
     await _launchUnity();
@@ -66,7 +67,7 @@ class WindowsUnityBridge implements UnityCommunicator {
   @override
   Future<void> start() async {
     final handler = webSocketHandler((WebSocketChannel webSocket, _) {
-      print('Unity 接続: ${_clients.length + 1}台目');
+      RaimLog.d('Unity 接続: ${_clients.length + 1}台目');
       _clients.add(webSocket);
 
       // 溜まっていた分を流して、接続直後から正しい状態にする
@@ -75,18 +76,18 @@ class WindowsUnityBridge implements UnityCommunicator {
       webSocket.stream.listen(
         (message) => _handleMessageFromUnity(message),
         onDone: () {
-          print('Unity 切断');
+          RaimLog.d('Unity 切断');
           _clients.remove(webSocket);
         },
         onError: (e) {
-          print('WebSocket エラー: $e');
+          RaimLog.e('WebSocket エラー: $e');
           _clients.remove(webSocket);
         },
       );
     });
 
     _server = await shelf_io.serve(handler, 'localhost', port);
-    print('WebSocketサーバー起動: ws://localhost:$port');
+    RaimLog.d('WebSocketサーバー起動: ws://localhost:$port');
 
     // サーバーを立ててから Unity を起こす。この順序が大事で、
     // 逆にすると Unity 側が接続に失敗して再接続待ちになる。
@@ -104,7 +105,7 @@ class WindowsUnityBridge implements UnityCommunicator {
     await Future.delayed(const Duration(seconds: 2));
 
     if (_clients.isNotEmpty) {
-      print('Unity は既に接続済みのため自動起動しません');
+      RaimLog.d('Unity は既に接続済みのため自動起動しません');
       return;
     }
 
@@ -136,8 +137,8 @@ class WindowsUnityBridge implements UnityCommunicator {
     final exePath = _resolveUnityExePath();
 
     if (exePath == null) {
-      print('Unity の実行ファイルが見つかりません。');
-      print('Unity Editor から手動で再生してください。');
+      RaimLog.d('Unity の実行ファイルが見つかりません。');
+      RaimLog.d('Unity Editor から手動で再生してください。');
       return;
     }
 
@@ -149,9 +150,9 @@ class WindowsUnityBridge implements UnityCommunicator {
         // Unity はログを大量に吐くため。終了は stop() の kill で行う。
         mode: ProcessStartMode.detached,
       );
-      print('Unity を起動しました: $exePath');
+      RaimLog.d('Unity を起動しました: $exePath');
     } catch (e) {
-      print('Unity の起動に失敗: $e');
+      RaimLog.e('Unity の起動に失敗: $e');
     }
   }
 
@@ -175,9 +176,9 @@ class WindowsUnityBridge implements UnityCommunicator {
       if (File(path).existsSync()) return path;
     }
 
-    print('探した場所:');
+    RaimLog.d('探した場所:');
     for (final path in candidates) {
-      print('  $path');
+      RaimLog.d('  $path');
     }
     return null;
   }
@@ -191,7 +192,7 @@ class WindowsUnityBridge implements UnityCommunicator {
     if (_clients.isEmpty) {
       if (_pending.length >= _maxPending) _pending.removeAt(0);
       _pending.add(message);
-      print('Unity 未接続のため保留: $message');
+      RaimLog.d('[UnityBridge] 未接続のため保留 ${RaimLog.size(message)}');
       return;
     }
 
@@ -199,11 +200,11 @@ class WindowsUnityBridge implements UnityCommunicator {
       try {
         client.sink.add(message);
       } catch (e) {
-        print('送信エラー: $e');
+        RaimLog.e('送信エラー: $e');
       }
     }
 
-    print('送信: $message (${_clients.length}台に配信)');
+    RaimLog.d('[UnityBridge] 送信 ${RaimLog.size(message)} (${_clients.length}台に配信)');
   }
 
   void _flushPending(WebSocketChannel client) {
@@ -211,7 +212,7 @@ class WindowsUnityBridge implements UnityCommunicator {
       try {
         client.sink.add(message);
       } catch (e) {
-        print('保留分の送信エラー: $e');
+        RaimLog.e('保留分の送信エラー: $e');
       }
     }
     _pending.clear();
@@ -322,12 +323,12 @@ class WindowsUnityBridge implements UnityCommunicator {
 
       final type = decoded['type'] as String?;
       if (verboseLog || !_quietTypes.contains(type)) {
-        print('Unity から受信: $message');
+        RaimLog.d('[UnityBridge] 受信 type=$type ${RaimLog.size(message)}');
       }
 
       _events.add(decoded);
     } catch (e) {
-      print('Unity からの不正なメッセージ: $message ($e)');
+      RaimLog.w('[UnityBridge] 不正なメッセージ ${RaimLog.size(message)}: $e');
     }
   }
 }

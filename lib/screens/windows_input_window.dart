@@ -14,6 +14,8 @@ import 'package:raim_prototype/services/mascot_window_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
+import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/config/raim_config.dart';
 
 /// Windows のデスクトップマスコット用の入力小窓。
 ///
@@ -50,9 +52,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   bool _hadImages = false;
 
   // ---- 開発検証用: 接続先切り替え ----
-  // chat_input.dart の ChatMenuButton と同じ URL・同じ手順。
-  static const String _awsUrl = 'wss://d1403ont6098ah.cloudfront.net/dev';
-  static const String _localUrl = 'ws://100.81.35.109:8080';
+  // chat_input.dart の ChatMenuButton と同じ手順。URL は RaimConfig に集約。
+  static const String _awsUrl = RaimConfig.serverUrl;
+  static const String _localUrl = RaimConfig.localServerUrl;
 
   bool _isSwitching = false;
   String? _switchNote;
@@ -241,7 +243,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
     try {
       final raimService = context.read<RaimServerService>();
-      final isAws = raimService.serverUrl.contains('cloudfront.net');
+      final isAws = RaimConfig.isAwsUrl(raimService.serverUrl);
       final targetUrl = isAws ? _localUrl : _awsUrl;
 
       final token = await context.read<AuthProvider>().getValidAccessToken();
@@ -517,7 +519,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         _sectionLabel('アプリ'),
         _buildServerRow(),
         _menuRow(Icons.settings_outlined, '設定', () {
-          debugPrint('[WindowsInputWindow] 設定が押されました');
+          RaimLog.d('[WindowsInputWindow] 設定が押されました');
         }),
         _menuRow(Icons.record_voice_over, 'クレジット表記',
             () => _setMode(_PanelMode.credits)),
@@ -616,7 +618,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     try {
       await raimService.disconnect().timeout(const Duration(seconds: 1));
     } catch (e) {
-      debugPrint('[WindowsInputWindow] WebSocket切断待ちをスキップ: $e');
+      RaimLog.d('[WindowsInputWindow] WebSocket切断待ちをスキップ: $e');
     }
 
     await _mascot.exitMascotMode();
@@ -668,7 +670,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   /// 接続先切り替え（開発検証用）。現在の接続先を副題に出す。
   Widget _buildServerRow() {
     final url = context.watch<RaimServerService>().serverUrl;
-    final isAws = url.contains('cloudfront.net');
+    final isAws = RaimConfig.isAwsUrl(url);
     final accent = isAws ? _lime : Colors.orangeAccent;
 
     return InkWell(

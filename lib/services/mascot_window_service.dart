@@ -2,9 +2,10 @@ import 'dart:io' show Platform;
 
 import 'dart:ui' show PlatformDispatcher;
 
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
 /// Windows でデスクトップマスコット用の入力小窓を制御する。
 ///
@@ -146,7 +147,7 @@ class MascotWindowService {
     // 壊れているように見える。
     await hide();
 
-    debugPrint('[Mascot] 入力小窓モードに切り替えました（クリック待ち）');
+    RaimLog.d('[Mascot] 入力小窓モードに切り替えました（クリック待ち）');
   }
 
   /// 通常ウィンドウに戻す（ログアウト時など）。
@@ -172,7 +173,7 @@ class MascotWindowService {
     await windowManager.show();
     await windowManager.focus();
 
-    debugPrint('[Mascot] 通常ウィンドウに戻しました');
+    RaimLog.d('[Mascot] 通常ウィンドウに戻しました');
   }
 
   // ------------------------------------------------------------
@@ -344,7 +345,7 @@ class MascotWindowService {
     }
 
     if (debugPosition) {
-      debugPrint('[Mascot] 配置: left=${left.toStringAsFixed(0)} '
+      RaimLog.d('[Mascot] 配置: left=${left.toStringAsFixed(0)} '
           'top=${placeTop.toStringAsFixed(0)} '
           'foot=$foot area=$_workArea height=$_currentHeight '
           'scale=${_scale.toStringAsFixed(2)}');
@@ -365,7 +366,7 @@ class MascotWindowService {
     // Unity の位置がまだ届いていないうちに出すと、前の位置のまま現れる。
     // Unity は2秒おきに強制送信してくるので、届いてから出す。
     if (_unityRect == null) {
-      debugPrint('[Mascot] ライムの位置がまだ不明。届き次第表示します');
+      RaimLog.d('[Mascot] ライムの位置がまだ不明。届き次第表示します');
       _pendingShow = true;
       return;
     }

@@ -40,6 +40,8 @@ import 'package:raim_prototype/models/llm_response.dart';
 import 'package:raim_prototype/models/conversation_thread.dart';
 import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/services/llm_service.dart';
+import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/config/raim_config.dart';
 /// 接続状態の列挙
 ///
 /// 将来 UI 側で立ち絵切替や Zzz... 表示等に使うため、enum で公開する。
@@ -157,8 +159,7 @@ class RaimServerService implements LLMService {
     if (!_stateController.isClosed) {
       _stateController.add(newState);
     }
-    // ignore: avoid_print
-    print('[RaimServerService] State: $newState');
+    RaimLog.d('[RaimServerService] State: $newState');
   }
 
   // ─────────────────────────────────────────────
@@ -176,14 +177,14 @@ class RaimServerService implements LLMService {
   Future<void> switchServer(String targetUrl, {String? accessToken}) async {
     // 1. すでに切り替え処理中なら連打を無視して終了
     if (_isSwitching) {
-      print('[RaimServerService] 切り替え処理中のため連打を無視しました');
+      RaimLog.d('[RaimServerService] 切り替え処理中のため連打を無視しました');
       return;
     }
 
     _isSwitching = true; // 処理中フラグをON
 
     try {
-      print('[RaimServerService] 接続先を切り替えます: $_serverUrl -> $targetUrl');
+      RaimLog.d('[RaimServerService] 接続先を切り替えます: $_serverUrl -> $targetUrl');
       
       // 既存の接続を切断
       await disconnect();
@@ -193,7 +194,7 @@ class RaimServerService implements LLMService {
       await connect(accessToken: accessToken);
 
     } catch (e) {
-      print('[RaimServerService] 切り替えエラー: $e');
+      RaimLog.e('[RaimServerService] 切り替えエラー: $e');
     } finally {
       // 成功・失敗にかかわらず、終わったら必ずフラグをOFFに戻す
       _isSwitching = false;
@@ -212,7 +213,7 @@ class RaimServerService implements LLMService {
         'User-Agent': 'RAiM-Flutter/1.0',
       };
       // AWS（cloudfront.net）接続時のみアクセストークンを付与する
-      final isAws = _serverUrl.contains('cloudfront.net');
+      final isAws = RaimConfig.isAwsUrl(_serverUrl);
       if (isAws) {
         // 引数で渡されたトークンか、無ければ accessTokenGetter から最新トークンを取得
         final token = accessToken ?? await accessTokenGetter?.call();
@@ -244,8 +245,7 @@ class RaimServerService implements LLMService {
       _reconnectAttempts = 0;
       _setState(RaimConnectionState.connected);
     } catch (e) {
-      // ignore: avoid_print
-      print('[RaimServerService] connect failed: $e');
+      RaimLog.e('[RaimServerService] connect failed: $e');
       await _scheduleReconnect();
     }
   }
@@ -268,7 +268,7 @@ class RaimServerService implements LLMService {
       await _channel?.sink.close(ws_status.normalClosure).timeout(
         const Duration(milliseconds: 500),
         onTimeout: () {
-          print('[RaimServerService] disconnect timeout (forced close)');
+          RaimLog.d('[RaimServerService] disconnect timeout (forced close)');
         },
       );
     } catch (_) {}
@@ -308,16 +308,17 @@ class RaimServerService implements LLMService {
   /// 4._broadcaster に流して ChatProvider 側で処理する。
   void _onMessage(dynamic rawMessage) {
     try {
-      print('[RaimServerService] raw message: $rawMessage');
+      // 本文・履歴・音声 Base64 が乗るため、中身は出さず大きさだけ記録する
+      RaimLog.d('[RaimServerService] 受信 ${RaimLog.size(rawMessage)}');
        // JSON文字列をDartのMapに変換する
       final data = jsonDecode(rawMessage as String) as Map<String, dynamic>;
       // MapからLLMResponseモデルを作る
       final response = LLMResponse.fromJson(data);
-      print('[RaimServerService] response type: ${response.type}');
+      RaimLog.d('[RaimServerService] response type: ${response.type}');
       // text_chunk の is_filler が正しく読めているか確認する
       if (response.isTextChunk) {
-        print(
-          '[RaimServerService] text_chunk text=${response.text}, '
+        RaimLog.d(
+          '[RaimServerService] text_chunk ${RaimLog.size(response.text)}, '
           'isFiller=${response.isFiller}',
         );
       }
@@ -325,13 +326,12 @@ class RaimServerService implements LLMService {
       // → sendMessage の chat 待ちループに混入させないため
       if (response.isSessionStart && response.sessionId != null) {
         _sessionId = response.sessionId;
-        // ignore: avoid_print
-        print('[RaimServerService] Session started: $_sessionId');
+        RaimLog.d('[RaimServerService] Session started: $_sessionId');
         return;
       }
       //audioのログ出力サーバー側
       if (response.isAudioChunk) {
-        print(
+        RaimLog.d(
           '[RaimServerService] audio_chunk '
           'chunkId=${response.chunkId}, '
           'format=${response.format}, '
@@ -343,23 +343,20 @@ class RaimServerService implements LLMService {
       // sendMessage の中のリスナーが chat を待ち構えてる
       _broadcaster?.add(response);
     } catch (e) {
-      // ignore: avoid_print
-      print('[RaimServerService] Parse error: $e (raw: $rawMessage)');
+      RaimLog.e('[RaimServerService] パース失敗', e);
       // パース失敗してもアプリは落とさない
     }
   }
 
   /// エラー時のハンドラ
   void _onError(dynamic error) {
-    // ignore: avoid_print
-    print('[RaimServerService] Stream error: $error');
+    RaimLog.e('[RaimServerService] Stream error: $error');
   }
 
   /// 切断時のハンドラ
   /// サーバー側からの切断 or ネットワーク断
   void _onDone() {
-    // ignore: avoid_print
-    print('[RaimServerService] Connection closed by server');
+    RaimLog.d('[RaimServerService] Connection closed by server');
     _sessionId = null;  // セッションIDも消す（再接続時は新セッション）
     if (_intentionalClose) return;  // 意図的な切断ならリトライしない
     _scheduleReconnect();
@@ -385,8 +382,7 @@ class RaimServerService implements LLMService {
 
     // 指数バックオフ: 1秒 → 2秒 → 4秒
     final delaySeconds = 1 << (_reconnectAttempts - 1);
-    // ignore: avoid_print
-    print('[RaimServerService] Reconnect attempt $_reconnectAttempts in ${delaySeconds}s');
+    RaimLog.d('[RaimServerService] Reconnect attempt $_reconnectAttempts in ${delaySeconds}s');
 
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(Duration(seconds: delaySeconds), () async {
@@ -434,7 +430,7 @@ class RaimServerService implements LLMService {
     // オフラインまたは切断中なら、送信前に再接続を試す
     if (_state == RaimConnectionState.offline ||
         _state == RaimConnectionState.disconnected) {
-      print('[RaimServerService] Waking up RAiM...');
+      RaimLog.d('[RaimServerService] Waking up RAiM...');
       await _wakeUp();
     }
     // 再接続しても接続できていなければ送信できない
