@@ -149,6 +149,15 @@ class LLMResponse {
   /// - サーバー側でフィールドを追加してもクラッシュしない
   /// - text が無い session_start メッセージも問題なく扱える
   /// - 型が違ってもデフォルト値で吸収する
+  /// 文字列として読む。型が違えば null を返す。
+  ///
+  /// サーバーが想定外の型を返しても `as String?` のように例外を投げない。
+  /// 1件の型違いでメッセージ全体が捨てられるのを防ぐ。
+  static String? _readString(dynamic value) => value is String ? value : null;
+
+  /// bool として読む。型が違えば null を返す。
+  static bool? _readBool(dynamic value) => value is bool ? value : null;
+
   factory LLMResponse.fromJson(Map<String, dynamic> json) {
     // ============================================================
     // emotions の変換
@@ -167,7 +176,7 @@ class LLMResponse {
     }
 
   if (emotionsMap.isEmpty) {
-      final emo = (json['emotion'] as String?) ?? 'neutral';
+      final emo = _readString(json['emotion']) ?? 'neutral';
       final intensity = (json['intensity'] as num?)?.toDouble() ?? 0.5;
       emotionsMap = {emo: intensity};
     }
@@ -186,28 +195,32 @@ class LLMResponse {
     // ============================================================
     // 無い項目はデフォルト値にして、未知のJSONでも落ちにくくする。
     return LLMResponse(
-      type: (json['type'] as String?) ?? 'chat',
-      text: (json['text'] as String?) ?? '',
-      emotion: (json['emotion'] as String?) ?? 'neutral',
+      // 既定値は 'unknown'。以前は 'chat' で、type が欠けたメッセージや
+      // 型違いのメッセージが「旧形式の chat」として終端扱いになり、
+      // 応答が途中で打ち切られて空の吹き出しが出ていた。
+      type: _readString(json['type']) ?? 'unknown',
+      text: _readString(json['text']) ?? '',
+      emotion: _readString(json['emotion']) ?? 'neutral',
       intensity: (json['intensity'] as num?)?.toDouble() ?? 0.5,
-      sessionId: json['session_id'] as String?,
+      sessionId: _readString(json['session_id']),
       emotions: emotionsMap,
       overallIntensity: overall,
-      chunkId: json['chunk_id'] as String?,
-      isFirst: (json['is_first'] as bool?) ?? false,
-      isFiller: (json['is_filler'] as bool?) ?? false,
-      audioBase64: json['audio'] as String?,
-      format: json['format'] as String?,
+      chunkId: _readString(json['chunk_id']),
+      isFirst: _readBool(json['is_first']) ?? false,
+      isFiller: _readBool(json['is_filler']) ?? false,
+      audioBase64: _readString(json['audio']),
+      format: _readString(json['format']),
       partIndex: _readNullableInt(json['part_index']),
       partCount: _readNullableInt(json['part_count']),
-      isLast: (json['is_last'] as bool?) ?? false,
-      fullText: json['full_text'] as String?,
-      sceneId: json['scene_id'] as String?,
-      threadId: json['threadId'] as String?,
+      isLast: _readBool(json['is_last']) ?? false,
+      fullText: _readString(json['full_text']),
+      sceneId: _readString(json['scene_id']),
+      threadId: _readString(json['threadId']),
       raw: json,
-      tool: json['tool'] as String?,
-      description: json['description'] as String?,
-      estimatedSeconds: json['estimated_seconds'] as int?,
+      tool: _readString(json['tool']),
+      description: _readString(json['description']),
+      // サーバーが 3.0 のような数値を返しても落ちないよう num 経由で読む
+      estimatedSeconds: _readNullableInt(json['estimated_seconds']),
     );
   }
 
