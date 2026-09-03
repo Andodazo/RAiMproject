@@ -24,8 +24,12 @@
 //    offline = 自動再接続を諦めた状態 = ライムが寝てる
 //    将来 UI 側で立ち絵切替などに使う。
 //
-// 4. 自動再接続（指数バックオフ）
-//    切断したら 1秒 → 2秒 → 4秒 でリトライ、3回失敗で offline へ。
+// 4. 自動再接続（指数バックオフ + ジッタ）
+//    切断したら 1秒 → 2秒 → 4秒 ... と間隔を伸ばしながらリトライする。
+//    maxReconnectAttempts を超えたら offline（寝てる）表示に切り替えるが、
+//    再接続自体は諦めず、最大60秒間隔で試し続ける。
+//    以前は 1+2+4=7秒で完全に諦めていたため、Wi-Fi 切替やスリープ復帰で
+//    すぐ offline に落ち、ユーザーが送信するまで復帰しなかった。
 //
 // 5. 「話しかけて起こす」フロー
 //    offline 状態でユーザーが送信したら、内部で再接続を試みる。
@@ -33,6 +37,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
@@ -40,6 +45,8 @@ import 'package:raim_prototype/models/llm_response.dart';
 import 'package:raim_prototype/models/conversation_thread.dart';
 import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/services/llm_service.dart';
+import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/config/raim_config.dart';
 /// 接続状態の列挙
 ///
 /// 将来 UI 側で立ち絵切替や Zzz... 表示等に使うため、enum で公開する。
@@ -71,8 +78,10 @@ class RaimServerService implements LLMService {
   String get serverUrl => _serverUrl;
   //-------------------------------------------
 
-  /// 自動再接続の最大試行回数
-  /// これを超えると offline 状態に遷移する
+  /// 「寝てる」表示に切り替えるまでの試行回数
+  ///
+  /// これを超えると offline 状態（ライムが寝てる）に遷移する。
+  /// 再接続そのものは止めず、間隔を空けて試し続ける。
   final int maxReconnectAttempts;
 
   /// 1リクエストの全体タイムアウト
@@ -116,6 +125,12 @@ class RaimServerService implements LLMService {
   /// 再接続用タイマー（バックオフ待ち中）
   Timer? _reconnectTimer;
 
+  /// 再接続間隔の上限（秒）
+  static const int _maxReconnectDelaySeconds = 60;
+
+  /// バックオフに乗せるジッタ用
+  final math.Random _random = math.Random();
+
   /// 意図的な切断か（dispose 等）
   /// true なら自動再接続を抑止する
   bool _intentionalClose = false;
@@ -157,8 +172,7 @@ class RaimServerService implements LLMService {
     if (!_stateController.isClosed) {
       _stateController.add(newState);
     }
-    // ignore: avoid_print
-    print('[RaimServerService] State: $newState');
+    RaimLog.d('[RaimServerService] State: $newState');
   }
 
   // ─────────────────────────────────────────────
@@ -176,14 +190,14 @@ class RaimServerService implements LLMService {
   Future<void> switchServer(String targetUrl, {String? accessToken}) async {
     // 1. すでに切り替え処理中なら連打を無視して終了
     if (_isSwitching) {
-      print('[RaimServerService] 切り替え処理中のため連打を無視しました');
+      RaimLog.d('[RaimServerService] 切り替え処理中のため連打を無視しました');
       return;
     }
 
     _isSwitching = true; // 処理中フラグをON
 
     try {
-      print('[RaimServerService] 接続先を切り替えます: $_serverUrl -> $targetUrl');
+      RaimLog.d('[RaimServerService] 接続先を切り替えます: $_serverUrl -> $targetUrl');
       
       // 既存の接続を切断
       await disconnect();
@@ -193,18 +207,24 @@ class RaimServerService implements LLMService {
       await connect(accessToken: accessToken);
 
     } catch (e) {
-      print('[RaimServerService] 切り替えエラー: $e');
+      RaimLog.e('[RaimServerService] 切り替えエラー: $e');
     } finally {
       // 成功・失敗にかかわらず、終わったら必ずフラグをOFFに戻す
       _isSwitching = false;
     }
   }
   //------------------------------------------------------------------------------
-  Future<void> connect({String? accessToken}) async {
+  /// [silent] が true のときは connecting 状態へ遷移しない。
+  ///
+  /// offline（寝てる）中の裏での再接続に使う。ここで connecting にすると
+  /// 60秒ごとに寝てる/起きてるの表示が入れ替わってちらつくため。
+  Future<void> connect({String? accessToken, bool silent = false}) async {
     if (_disposed) return;
     if (_state == RaimConnectionState.connected) return;
     _intentionalClose = false;
-    _setState(RaimConnectionState.connecting);
+    if (!silent) {
+      _setState(RaimConnectionState.connecting);
+    }
 
     try {
       //仕様書に基づいたヘッダーの構築
@@ -212,7 +232,7 @@ class RaimServerService implements LLMService {
         'User-Agent': 'RAiM-Flutter/1.0',
       };
       // AWS（cloudfront.net）接続時のみアクセストークンを付与する
-      final isAws = _serverUrl.contains('cloudfront.net');
+      final isAws = RaimConfig.isAwsUrl(_serverUrl);
       if (isAws) {
         // 引数で渡されたトークンか、無ければ accessTokenGetter から最新トークンを取得
         final token = accessToken ?? await accessTokenGetter?.call();
@@ -244,10 +264,19 @@ class RaimServerService implements LLMService {
       _reconnectAttempts = 0;
       _setState(RaimConnectionState.connected);
     } catch (e) {
-      // ignore: avoid_print
-      print('[RaimServerService] connect failed: $e');
+      RaimLog.e('[RaimServerService] connect failed: $e');
       await _scheduleReconnect();
     }
+  }
+
+  /// 再接続の待ち時間を決める。
+  ///
+  /// 1, 2, 4, 8, 16, 32, 60秒 と伸ばし、上限は [_maxReconnectDelaySeconds]。
+  /// 複数端末が同時に張り直してサーバーへ集中しないよう 0〜1秒のジッタを足す。
+  Duration _reconnectDelay(int attempt) {
+    final exponent = math.min(attempt - 1, 6);
+    final seconds = math.min(1 << exponent, _maxReconnectDelaySeconds);
+    return Duration(milliseconds: seconds * 1000 + _random.nextInt(1000));
   }
 
   /// サーバーから切断する
@@ -258,29 +287,36 @@ class RaimServerService implements LLMService {
     _intentionalClose = true;  // 自動再接続を抑止
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
+
+    // close する対象を先に退避してから _channel を null にする。
+    // 以前は subscription を cancel する try の中で _channel = null して
+    // いたため、直後の _channel?.sink.close() が null 相手の no-op になり、
+    // WebSocket が閉じられないまま放置されていた。
+    final channel = _channel;
+    _channel = null;
+
     try {
       await _subscription?.cancel();
-      _channel = null;
     } catch (_) {}
+    _subscription = null;
 
     try {
       // 壊れた接続の閉鎖処理でフリーズしないよう 500ms のタイムアウトを設定
-      await _channel?.sink.close(ws_status.normalClosure).timeout(
+      await channel?.sink.close(ws_status.normalClosure).timeout(
         const Duration(milliseconds: 500),
         onTimeout: () {
-          print('[RaimServerService] disconnect timeout (forced close)');
+          RaimLog.d('[RaimServerService] disconnect timeout (forced close)');
         },
       );
     } catch (_) {}
 
-    _channel = null;
-    _subscription = null;
     _sessionId = null;  // セッションIDもクリア
 
-    try {
-      await _broadcaster?.close();
-    } catch (_) {}
-    _broadcaster = null;
+    // _broadcaster はここでは閉じない。
+    // 閉じると進行中の sendMessage の StreamIterator が done を受け取り、
+    // 例外もエラー表示も出ないまま「正常終了」してしまう。
+    // ユーザーには「返事が来ないのにエラーも出ない」状態に見える。
+    // 破棄は dispose() でだけ行う。
     _setState(RaimConnectionState.disconnected);
   }
 
@@ -290,6 +326,12 @@ class RaimServerService implements LLMService {
     if (_disposed) return;
     await disconnect();
     _disposed = true;
+
+    // 受信ストリームを閉じるのはここだけ。
+    try {
+      await _broadcaster?.close();
+    } catch (_) {}
+    _broadcaster = null;
 
     if (!_stateController.isClosed) {
       await _stateController.close();
@@ -308,16 +350,17 @@ class RaimServerService implements LLMService {
   /// 4._broadcaster に流して ChatProvider 側で処理する。
   void _onMessage(dynamic rawMessage) {
     try {
-      print('[RaimServerService] raw message: $rawMessage');
+      // 本文・履歴・音声 Base64 が乗るため、中身は出さず大きさだけ記録する
+      RaimLog.d('[RaimServerService] 受信 ${RaimLog.size(rawMessage)}');
        // JSON文字列をDartのMapに変換する
       final data = jsonDecode(rawMessage as String) as Map<String, dynamic>;
       // MapからLLMResponseモデルを作る
       final response = LLMResponse.fromJson(data);
-      print('[RaimServerService] response type: ${response.type}');
+      RaimLog.d('[RaimServerService] response type: ${response.type}');
       // text_chunk の is_filler が正しく読めているか確認する
       if (response.isTextChunk) {
-        print(
-          '[RaimServerService] text_chunk text=${response.text}, '
+        RaimLog.d(
+          '[RaimServerService] text_chunk ${RaimLog.size(response.text)}, '
           'isFiller=${response.isFiller}',
         );
       }
@@ -325,13 +368,12 @@ class RaimServerService implements LLMService {
       // → sendMessage の chat 待ちループに混入させないため
       if (response.isSessionStart && response.sessionId != null) {
         _sessionId = response.sessionId;
-        // ignore: avoid_print
-        print('[RaimServerService] Session started: $_sessionId');
+        RaimLog.d('[RaimServerService] Session started: $_sessionId');
         return;
       }
       //audioのログ出力サーバー側
       if (response.isAudioChunk) {
-        print(
+        RaimLog.d(
           '[RaimServerService] audio_chunk '
           'chunkId=${response.chunkId}, '
           'format=${response.format}, '
@@ -343,23 +385,20 @@ class RaimServerService implements LLMService {
       // sendMessage の中のリスナーが chat を待ち構えてる
       _broadcaster?.add(response);
     } catch (e) {
-      // ignore: avoid_print
-      print('[RaimServerService] Parse error: $e (raw: $rawMessage)');
+      RaimLog.e('[RaimServerService] パース失敗', e);
       // パース失敗してもアプリは落とさない
     }
   }
 
   /// エラー時のハンドラ
   void _onError(dynamic error) {
-    // ignore: avoid_print
-    print('[RaimServerService] Stream error: $error');
+    RaimLog.e('[RaimServerService] Stream error: $error');
   }
 
   /// 切断時のハンドラ
   /// サーバー側からの切断 or ネットワーク断
   void _onDone() {
-    // ignore: avoid_print
-    print('[RaimServerService] Connection closed by server');
+    RaimLog.d('[RaimServerService] Connection closed by server');
     _sessionId = null;  // セッションIDも消す（再接続時は新セッション）
     if (_intentionalClose) return;  // 意図的な切断ならリトライしない
     _scheduleReconnect();
@@ -373,28 +412,40 @@ class RaimServerService implements LLMService {
   /// 1秒 → 2秒 → 4秒 のバックオフ
   /// 最大試行回数を超えたら offline 状態に遷移
   Future<void> _scheduleReconnect() async {
-    _reconnectAttempts++;
+    if (_disposed || _intentionalClose) return;
 
-    if (_reconnectAttempts > maxReconnectAttempts) {
-      // ギブアップ → 寝る
-      _setState(RaimConnectionState.offline);
+    // connect() の失敗と _onDone の両方から呼ばれる。
+    // 予約済みのタイマーがあるのに再度スケジュールすると、
+    // 待ち時間が上書きされて試行回数だけが空回りするため、ここで止める。
+    if (_reconnectTimer?.isActive ?? false) {
+      RaimLog.d('[RaimServerService] 再接続は予約済みのためスキップ');
       return;
     }
 
-    _setState(RaimConnectionState.disconnected);
+    _reconnectAttempts++;
 
-    // 指数バックオフ: 1秒 → 2秒 → 4秒
-    final delaySeconds = 1 << (_reconnectAttempts - 1);
-    // ignore: avoid_print
-    print('[RaimServerService] Reconnect attempt $_reconnectAttempts in ${delaySeconds}s');
+    // 表示上は「寝てる」に落とすが、再接続は諦めない。
+    final givenUp = _reconnectAttempts > maxReconnectAttempts;
+    _setState(givenUp
+        ? RaimConnectionState.offline
+        : RaimConnectionState.disconnected);
 
-    _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(Duration(seconds: delaySeconds), () async {
+    final delay = _reconnectDelay(_reconnectAttempts);
+    RaimLog.d(
+      '[RaimServerService] 再接続 $_reconnectAttempts 回目を '
+      '${delay.inMilliseconds}ms 後に試行 (offline=$givenUp)',
+    );
+
+    _reconnectTimer = Timer(delay, () async {
+      _reconnectTimer = null;
+      if (_disposed || _intentionalClose) return;
       // 古い接続オブジェクトをクリーンアップしてから再接続
-      await _subscription?.cancel();
+      try {
+        await _subscription?.cancel();
+      } catch (_) {}
       _subscription = null;
       _channel = null;
-      await connect();
+      await connect(silent: givenUp);
     });
   }
 
@@ -434,7 +485,7 @@ class RaimServerService implements LLMService {
     // オフラインまたは切断中なら、送信前に再接続を試す
     if (_state == RaimConnectionState.offline ||
         _state == RaimConnectionState.disconnected) {
-      print('[RaimServerService] Waking up RAiM...');
+      RaimLog.d('[RaimServerService] Waking up RAiM...');
       await _wakeUp();
     }
     // 再接続しても接続できていなければ送信できない
@@ -488,7 +539,7 @@ class RaimServerService implements LLMService {
         // ChatProvider 側へ1件ずつ渡す
         yield response;
         // chat_end / chat / error が来たら1回分の応答完了
-        if (response.isChatEnd || response.isChat || response.isError) {
+        if (_isTerminalResponse(response)) {
           break;
         }
         // 次の応答を待つ
@@ -556,7 +607,7 @@ class RaimServerService implements LLMService {
       payload: {
         'type': 'thread.history',
         'threadId': threadId,
-        if (beforeIndex != null) 'beforeIndex': beforeIndex,
+        'beforeIndex': ?beforeIndex,
       },
       matches: (r) => r.isThreadHistory,
       label: 'thread.history',

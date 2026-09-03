@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
 /// アプリのウィンドウ操作をまとめる小さなサービスです。
 ///
@@ -18,7 +19,7 @@ class AppWindowService {
     } on MissingPluginException {
       // Windows ランナー以外ではチャンネルが存在しないため、そのまま無視します。
     } on PlatformException catch (error) {
-      debugPrint('[AppWindowService] activate failed: ${error.message}');
+      RaimLog.d('[AppWindowService] activate failed: ${error.message}');
     }
   }
 }

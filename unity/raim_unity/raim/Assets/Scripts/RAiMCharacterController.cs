@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using NativeWebSocket;
 
@@ -15,6 +16,9 @@ public class RAiMCharacterController : MonoBehaviour
 
     [Tooltip("接続に失敗したとき再試行する間隔(秒)。0で再接続しない")]
     [SerializeField] private float reconnectInterval = 3f;
+
+    [Tooltip("接続完了を待つ上限(秒)。超えたら再接続をやり直す")]
+    [SerializeField] private float connectTimeout = 10f;
 
     [Header("吹き出し（Windows版のみ）")]
     [Tooltip("SpeechBubbleController。WindowsOverlay の子に置く。未設定でも動作する")]
@@ -60,6 +64,18 @@ public class RAiMCharacterController : MonoBehaviour
     private bool isConnecting = false;
     private float reconnectTimer = 0f;
     private bool quitting = false;
+
+    // 接続待ちの経過時間。OnOpen も OnError も来ないまま
+    // isConnecting が true のまま固まると再接続が永久に止まるため、
+    // 上限を超えたら自分で降ろす。
+    private float connectingElapsed = 0f;
+
+    // 8765 は誰でも接続できるので、Flutter と共有の合言葉で相互に確認する。
+    // Flutter が起動時にファイルへ書き、Unity がそれを読む。
+    private string bridgeToken = "";
+
+    // auth.ok を受け取るまでは、届いたメッセージを一切処理しない。
+    private bool authenticated = false;
 
     // ============================================================
     // 起動時処理
@@ -368,28 +384,74 @@ public class RAiMCharacterController : MonoBehaviour
 
     private async System.Threading.Tasks.Task ConnectWebSocket()
     {
-        isConnecting = true;
-        websocket = new WebSocket(serverUrl);
+        // Start() と Update() の TryReconnect() の両方から呼ばれる。
+        // フラグを立てるのは await より前でなければならない。
+        // 後ろに置くと、await で制御を手放した隙にもう1本張られ、
+        // 接続が2本になる（片方は合言葉を送れず切られる）。
+        if (isConnecting) return;
 
-        websocket.OnOpen += () =>
+        isConnecting = true;
+        connectingElapsed = 0f;
+        authenticated = false;
+
+        // 古いインスタンスを閉じてから作り直す。
+        // 以前はそのまま上書きしていたため、再接続のたびに
+        // ハンドラごと WebSocket が残り続けていた。
+        if (websocket != null)
+        {
+            try
+            {
+                await websocket.Close();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"古いWebSocketの終了に失敗: {e.Message}");
+            }
+            websocket = null;
+        }
+
+        if (string.IsNullOrEmpty(bridgeToken))
+        {
+            bridgeToken = LoadBridgeToken();
+        }
+
+        // ハンドラの中でフィールドではなくこのローカル変数を見る。
+        // フィールドを見ると、差し替わった後の別インスタンスを
+        // 触ってしまう（合言葉が違うソケットに飛ぶ）。
+        var socket = new WebSocket(serverUrl);
+        websocket = socket;
+
+        socket.OnOpen += () =>
         {
             isConnecting = false;
+
+            // 既に別のソケットへ差し替わっているなら、これは用済み。
+            if (!ReferenceEquals(socket, websocket))
+            {
+                Debug.LogWarning("古い接続が開いたので閉じます");
+                _ = socket.Close();
+                return;
+            }
+
             Debug.Log("WebSocket接続成功");
+            // 接続したら最初に合言葉を送る。
+            // Flutter 側は一定時間内に届かない接続を切る。
+            SendAuth(socket);
         };
 
-        websocket.OnError += (errorMessage) =>
+        socket.OnError += (errorMessage) =>
         {
             isConnecting = false;
             Debug.LogError($"WebSocketエラー: {errorMessage}");
         };
 
-        websocket.OnClose += (closeCode) =>
+        socket.OnClose += (closeCode) =>
         {
             isConnecting = false;
             Debug.Log($"WebSocket切断: {closeCode}");
         };
 
-        websocket.OnMessage += (bytes) =>
+        socket.OnMessage += (bytes) =>
         {
             string message =
                 System.Text.Encoding.UTF8.GetString(bytes);
@@ -401,7 +463,7 @@ public class RAiMCharacterController : MonoBehaviour
 
         try
         {
-            await websocket.Connect();
+            await socket.Connect();
         }
         catch (Exception e)
         {
@@ -417,6 +479,28 @@ public class RAiMCharacterController : MonoBehaviour
     {
         try
         {
+            // 認証が済むまでは auth.ok 以外を受け付けない。
+            // 8765 は誰でも接続できるので、偽の Flutter から
+            // 吹き出しに任意の文字を出されたり app.quit で落とされるのを防ぐ。
+            if (!authenticated)
+            {
+                var auth = JsonUtility.FromJson<AuthMessage>(json);
+
+                if (auth != null &&
+                    auth.type == "auth.ok" &&
+                    !string.IsNullOrEmpty(bridgeToken) &&
+                    auth.token == bridgeToken)
+                {
+                    authenticated = true;
+                    Debug.Log("Flutter との相互確認に成功しました");
+                }
+                else
+                {
+                    Debug.LogWarning("認証前のメッセージを無視しました");
+                }
+                return;
+            }
+
             var typeData = JsonUtility.FromJson<MessageType>(json);
 
             // Tool状態
@@ -650,7 +734,22 @@ public class RAiMCharacterController : MonoBehaviour
     {
         if (quitting) return;
         if (reconnectInterval <= 0f) return;
-        if (isConnecting) return;
+
+        if (isConnecting)
+        {
+            // OnOpen / OnError / OnClose のどれも来ないケースがある
+            // （TCP は繋がるがハンドシェイクが完了しない等）。
+            // その場合 isConnecting が true のまま固まり、
+            // 再接続が永久に止まってしまうので上限を設ける。
+            connectingElapsed += Time.deltaTime;
+            if (connectingElapsed >= connectTimeout)
+            {
+                Debug.LogWarning("WebSocket接続がタイムアウトしました。やり直します");
+                isConnecting = false;
+                connectingElapsed = 0f;
+            }
+            return;
+        }
 
         bool needsConnect =
             websocket == null ||
@@ -671,6 +770,60 @@ public class RAiMCharacterController : MonoBehaviour
     }
 
     // ============================================================
+    // 認証
+    // ============================================================
+
+    /// <summary>
+    /// 接続直後に合言葉を送る。
+    /// </summary>
+    private async void SendAuth(WebSocket socket)
+    {
+        if (socket == null) return;
+
+        var payload = JsonUtility.ToJson(
+            new AuthMessage { type = "auth", token = bridgeToken });
+
+        try
+        {
+            await socket.SendText(payload);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"認証メッセージの送信に失敗: {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Flutter が書き出した合言葉を読む。
+    ///
+    /// 置き場所は %LOCALAPPDATA%\RAiM\bridge_token。
+    /// Unity Editor から手動で再生する場合も、Flutter を先に起動していれば
+    /// 同じファイルを読むだけなので開発フローは変わらない。
+    /// </summary>
+    private string LoadBridgeToken()
+    {
+        try
+        {
+            var baseDir = Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData);
+            var path = Path.Combine(baseDir, "RAiM", "bridge_token");
+
+            if (!File.Exists(path))
+            {
+                Debug.LogWarning($"合言葉ファイルが見つかりません: {path}");
+                return "";
+            }
+
+            return File.ReadAllText(path).Trim();
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"合言葉ファイルの読み込みに失敗: {e.Message}");
+            return "";
+        }
+    }
+
+    // ============================================================
     // 終了処理
     // ============================================================
 
@@ -688,6 +841,13 @@ public class RAiMCharacterController : MonoBehaviour
 // ================================================================
 // JSONデータクラス
 // ================================================================
+
+[Serializable]
+public class AuthMessage
+{
+    public string type;
+    public string token;
+}
 
 [Serializable]
 public class EmotionMessage

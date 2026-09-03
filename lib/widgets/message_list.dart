@@ -1,6 +1,5 @@
 //ユーザー入力後を含む、会話履歴を画面に表示・更新する処理
 import 'dart:io';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
@@ -109,7 +108,7 @@ class MessageList extends StatelessWidget {
                   child: Text(
                     provider.toolStatus!,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withValues(alpha: 0.7),
                       fontSize: 13,
                     ),
                   ),

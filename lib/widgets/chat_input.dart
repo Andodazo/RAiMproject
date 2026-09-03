@@ -10,6 +10,8 @@ import 'package:raim_prototype/providers/camera_provider.dart';
 // 開発検証用
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
+import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/config/raim_config.dart';
 
 class ChatInput extends StatefulWidget {
   const ChatInput({super.key});
@@ -66,6 +68,11 @@ class _ChatInputState extends State<ChatInput> {
   }
   
   void _sendMessage() {
+    final chatProvider = context.read<ChatProvider>();
+
+    // 生成中の二重送信を防ぐ。Enter キーからもここを通る。
+    if (chatProvider.isLoading) return;
+
     final text = _controller.text.trim();
     //CameraProviderの状態を取得
     final cameraProvider = context.read<CameraProvider>();
@@ -76,25 +83,20 @@ class _ChatInputState extends State<ChatInput> {
     //テキストも画像も両方空っぽなら何もせず終了
     if (text.isEmpty && !hasImage) return;
 
-    //[検証用ログ]送信ボタンが押されたときのデータをログに出す
-    debugPrint('[ChatInput]メッセージを送信します: text="$text", hasImage=$hasImage');
-    if (hasImage && base64List != null) {
-      debugPrint('[ChatInput]連動する画像パス: $imagePaths');
-      // すべての画像のBase64の頭15文字をインデックス付きでログ出力
-      for (int i = 0; i < base64List.length; i++) {
-        final base64str = base64List[i];
-        final preview = base64str.length > 15 ? '${base64str.substring(0, 15)}...' : base64str;
-        debugPrint('[ChatInput] 画像[$i] Base64(部分): $preview');
-      }
-    }
+    // 本文・画像パス・Base64 は出さない。件数と大きさだけ記録する。
+    RaimLog.d(
+      '[ChatInput] 送信 ${RaimLog.size(text)}, '
+      '画像=${base64List?.length ?? 0}件',
+    );
     //クリアされる前に、現在の画像パスのコピーを作成しておく（安全のため）
-    final pathsToSend = imagePaths != null ? List<String>.from(imagePaths) : null;
+    // selectedImagePaths は非 null なので null 判定は不要（常に真だった）
+    final pathsToSend = List<String>.from(imagePaths);
     // Base64 も同様にコピーする
     // sendUserMessage は async で、内部の最初の await で制御が戻る。
     // その隙に clearImage() が走るため、参照のまま渡すと空になる
     final base64ToSend = base64List != null ? List<String>.from(base64List) : null;
     // サーバーへ送信
-    context.read<ChatProvider>().sendUserMessage(
+    chatProvider.sendUserMessage(
       text,
       images: base64ToSend,
       filePaths: pathsToSend, //画面表示用のファイルパスをChatProviderに渡す
@@ -145,21 +147,21 @@ class _ChatInputState extends State<ChatInput> {
                         color: Colors.white70,
                       ),
                       onPressed: () {
-                        debugPrint(
+                        RaimLog.d(
                           '[ChatInput] 音声入力ボタンが押されました',
                         );
                       },
                     ),
 
                     hintStyle: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
+                      color: Colors.white.withValues(alpha: 0.5),
                     ),
                     filled: true,
-                    fillColor: Colors.white.withOpacity(0.15),
+                    fillColor: Colors.white.withValues(alpha: 0.15),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
                       borderSide: BorderSide(
-                        color: Colors.white.withOpacity(0.3),
+                        color: Colors.white.withValues(alpha: 0.3),
                         width: 1,
                       ),
                     ),
@@ -187,7 +189,7 @@ class _ChatInputState extends State<ChatInput> {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
+                      color: Colors.black.withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -228,7 +230,7 @@ class _SelectedImagePreview extends StatelessWidget {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: provider.selectedImagePaths.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
                 final imagePath = provider.selectedImagePaths[index];
 
@@ -303,15 +305,16 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
 }
   class _ChatMenuButtonState extends State<ChatMenuButton> {
   bool _isSwitching = false;
-  static const String awsUrl = 'wss://d1403ont6098ah.cloudfront.net/dev';
-  static const String localUrl = 'ws://100.81.35.109:8080'; 
+  // 接続先は RaimConfig に集約した（3箇所に散っていたのをやめる）
+  static const String awsUrl = RaimConfig.serverUrl;
+  static const String localUrl = RaimConfig.localServerUrl;
   //-----------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     // --現在の RaimServerService から接続先URLを取得(開発検証用)
     final raimService = context.read<RaimServerService>();
     final currentUrl = raimService.serverUrl;
-    final isAws = currentUrl.contains('cloudfront.net');
+    final isAws = RaimConfig.isAwsUrl(currentUrl);
     //--------------------------------------------------------
     return PopupMenuButton<String>(
       tooltip: 'メニュー',
@@ -331,7 +334,7 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
 
             try {
               final currentUrl = raimService.serverUrl;
-              final isAws = currentUrl.contains('cloudfront.net');
+              final isAws = RaimConfig.isAwsUrl(currentUrl);
               final targetUrl = isAws ? localUrl : awsUrl;
               // 古いポップアップを全て消去してから「切り替え中」を出す
               ScaffoldMessenger.of(context).clearSnackBars();

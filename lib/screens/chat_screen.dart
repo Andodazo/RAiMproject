@@ -10,6 +10,7 @@ import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
 import 'package:raim_prototype/widgets/thread_selector_menu.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
@@ -62,7 +63,7 @@ class ChatScreen extends StatelessWidget {
   /// → キャラクターはくっきり、背景は夜の雰囲気で暗く
   Widget _buildBackgroundOverlay() {
     return Positioned.fill(
-      child: Container(color: Colors.black.withOpacity(0.3)),
+      child: Container(color: Colors.black.withValues(alpha: 0.3)),
     );
   }
 
@@ -88,7 +89,7 @@ class ChatScreen extends StatelessWidget {
   /// 現状は Flutter → Unity の一方通行なので空実装。
   /// 将来 Unity 側でクリック検知やアニメ完了通知が必要になったらここで処理。
   static void _handleUnityMessage(String message) {
-    debugPrint('[ChatScreen] Unity から受信: $message');
+    RaimLog.d('[ChatScreen] Unity から受信 ${RaimLog.size(message)}');
   }
 
   /// 参考UI風の上部ヘッダー
@@ -105,7 +106,7 @@ class ChatScreen extends StatelessWidget {
         children: [
           ChatMenuButton(
             onSettings: () {
-              debugPrint('[ChatScreen] 設定が押されました');
+              RaimLog.d('[ChatScreen] 設定が押されました');
             },
             onLogout: () {
               _confirmLogoutAndClose(context);
@@ -142,7 +143,7 @@ class ChatScreen extends StatelessWidget {
       right: 36,
       child: ChatVolumeButton(
         onTap: () {
-          debugPrint('[ChatScreen] 音量ボタンが押されました');
+          RaimLog.d('[ChatScreen] 音量ボタンが押されました');
         },
       ),
     );
@@ -232,9 +233,9 @@ class ChatScreen extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withOpacity(0.0),
-                  Colors.black.withOpacity(0.16),
-                  Colors.black.withOpacity(0.28),
+                  Colors.black.withValues(alpha: 0.0),
+                  Colors.black.withValues(alpha: 0.16),
+                  Colors.black.withValues(alpha: 0.28),
                 ],
                 stops: const [0.0, 0.4, 1.0],
               ),
@@ -275,7 +276,7 @@ class ChatScreen extends StatelessWidget {
           child: ChatMenuButton(
             isWide: true,
             onSettings: () {
-              debugPrint('[ChatScreen] 設定が押されました');
+              RaimLog.d('[ChatScreen] 設定が押されました');
             },
             onLogout: () {
               _confirmLogoutAndClose(context);
@@ -312,7 +313,7 @@ class ChatScreen extends StatelessWidget {
           child: ChatVolumeButton(
             isWide: true,
             onTap: () {
-              debugPrint('[ChatScreen] 音量ボタンが押されました');
+              RaimLog.d('[ChatScreen] 音量ボタンが押されました');
             },
           ),
         ),
@@ -351,10 +352,10 @@ class ChatScreen extends StatelessWidget {
           width: screenWidthRatio(context, 0.4),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.5),
+              color: Colors.black.withValues(alpha: 0.5),
               border: Border(
                 left: BorderSide(
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.2),
                   width: 1,
                 ),
               ),
@@ -365,10 +366,10 @@ class ChatScreen extends StatelessWidget {
                 const Expanded(child: MessageList()),
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.4),
+                    color: Colors.black.withValues(alpha: 0.4),
                     border: Border(
                       top: BorderSide(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withValues(alpha: 0.2),
                         width: 1,
                       ),
                     ),
@@ -441,9 +442,12 @@ class ChatScreen extends StatelessWidget {
       try {
         await raimService.disconnect().timeout(const Duration(seconds: 1));
       } catch (error) {
-        debugPrint('[ChatScreen] WebSocket切断待ちをスキップ: $error');
+        RaimLog.d('[ChatScreen] WebSocket切断待ちをスキップ: $error');
       }
       await AppExitService.exitAfterLogout();
+      // ここへ戻ってきたということは、アプリを終了できなかった
+      // （iOS 実機など）。トークンは消えているので、画面も未認証へ戻す。
+      authProvider.notifyLogoutFallback();
     }
   }
 }

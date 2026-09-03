@@ -57,6 +57,9 @@ public class SpeechBubbleController : MonoBehaviour
     [SerializeField] private float minDuration = 5f;
     [SerializeField] private float maxDuration = 20f;
 
+    [Tooltip("カーソルが乗っていてもこの秒数を超えたら消す。無限に残るのを防ぐ保険")]
+    [SerializeField] private float pointerHoldLimit = 15f;
+
     [Header("フェード")]
     [SerializeField] private float fadeInSeconds = 0.15f;
     [SerializeField] private float fadeOutSeconds = 0.4f;
@@ -415,9 +418,17 @@ public class SpeechBubbleController : MonoBehaviour
     private IEnumerator HideAfter(float seconds)
     {
         float elapsed = 0f;
+        float wallClock = 0f;
 
-        while (elapsed < seconds)
+        // ポインタ判定がどうであれ、この秒数を超えたら必ず消す。
+        // 以前はここに上限が無く、Input.mousePosition が吹き出しの矩形内で
+        // 固まると吹き出しが永久に残っていた。
+        float hardLimit = seconds + pointerHoldLimit;
+
+        while (elapsed < seconds && wallClock < hardLimit)
         {
+            wallClock += Time.deltaTime;
+
             // 読んでいる最中に消えるのが一番ストレスなので、
             // カーソルが吹き出しの上にある間はタイマーを止める。
             if (!IsPointerOverBubble())
@@ -441,6 +452,14 @@ public class SpeechBubbleController : MonoBehaviour
     {
         if (rectTransform == null) return false;
 
+        // ウィンドウが非フォーカスのとき Input.mousePosition は更新されず、
+        // 最後の座標のまま固まる。デスクトップマスコットでは Flutter 側の
+        // 入力小窓を操作している時間が長く、その固まった座標が吹き出しの上に
+        // 乗っていると「カーソルが乗り続けている」と誤判定してしまう。
+        // 信用できないので、非フォーカス時は乗っていない扱いにする。
+        if (!Application.isFocused) return false;
+
+        // Canvas は Screen Space - Overlay なので camera は null でよい。
         return RectTransformUtility.RectangleContainsScreenPoint(
             rectTransform,
             Input.mousePosition,

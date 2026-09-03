@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io' show File, exit;
 
-import 'package:flutter/material.dart' hide MenuItem;
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:image_picker/image_picker.dart';
@@ -14,6 +14,8 @@ import 'package:raim_prototype/services/mascot_window_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
+import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/config/raim_config.dart';
 
 /// Windows のデスクトップマスコット用の入力小窓。
 ///
@@ -50,9 +52,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   bool _hadImages = false;
 
   // ---- 開発検証用: 接続先切り替え ----
-  // chat_input.dart の ChatMenuButton と同じ URL・同じ手順。
-  static const String _awsUrl = 'wss://d1403ont6098ah.cloudfront.net/dev';
-  static const String _localUrl = 'ws://100.81.35.109:8080';
+  // chat_input.dart の ChatMenuButton と同じ手順。URL は RaimConfig に集約。
+  static const String _awsUrl = RaimConfig.serverUrl;
+  static const String _localUrl = RaimConfig.localServerUrl;
 
   bool _isSwitching = false;
   String? _switchNote;
@@ -132,11 +134,24 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
           break;
 
         case 'unity.moved':
+          // 8765 は誰でも繋げるうえ、Unity のビルドが古いと
+          // フィールドが欠けることもある。非 null キャストだと
+          // listener の中で TypeError になり、以降のイベントが止まる。
+          final x = (event['x'] as num?)?.toDouble();
+          final y = (event['y'] as num?)?.toDouble();
+          final width = (event['width'] as num?)?.toDouble();
+          final height = (event['height'] as num?)?.toDouble();
+
+          if (x == null || y == null || width == null || height == null) {
+            RaimLog.w('[WindowsInputWindow] unity.moved の座標が不正なので無視します');
+            break;
+          }
+
           await _mascot.onUnityMoved(
-            x: (event['x'] as num).toDouble(),
-            y: (event['y'] as num).toDouble(),
-            width: (event['width'] as num).toDouble(),
-            height: (event['height'] as num).toDouble(),
+            x: x,
+            y: y,
+            width: width,
+            height: height,
             characterCenterX: (event['cx'] as num?)?.toDouble(),
             characterBottomY: (event['cy'] as num?)?.toDouble(),
             workArea: _readWorkArea(event),
@@ -212,9 +227,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
     // sendUserMessage は async で、最初の await で制御が戻る。
     // その隙に clearImage() が走るため、参照のまま渡すと空になる。
-    final paths = camera.selectedImagePaths != null
-        ? List<String>.from(camera.selectedImagePaths!)
-        : null;
+    // selectedImagePaths は非 null なので null 判定は不要（常に真だった）
+    final paths = List<String>.from(camera.selectedImagePaths);
     final base64 = camera.selectedImagesBase64 != null
         ? List<String>.from(camera.selectedImagesBase64!)
         : null;
@@ -241,7 +255,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
     try {
       final raimService = context.read<RaimServerService>();
-      final isAws = raimService.serverUrl.contains('cloudfront.net');
+      final isAws = RaimConfig.isAwsUrl(raimService.serverUrl);
       final targetUrl = isAws ? _localUrl : _awsUrl;
 
       final token = await context.read<AuthProvider>().getValidAccessToken();
@@ -412,7 +426,11 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                   focusedBorder: _border(_lime),
                   disabledBorder: _border(_line),
                 ),
-                onSubmitted: (_) => _send(),
+                // 生成中は Enter でも送らない（ボタンは既に無効化済み）
+                onSubmitted: (_) {
+                  if (context.read<ChatProvider>().isLoading) return;
+                  _send();
+                },
               ),
             ),
             _iconButton(Icons.attach_file, '画像を送る', _pickImage),
@@ -517,7 +535,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         _sectionLabel('アプリ'),
         _buildServerRow(),
         _menuRow(Icons.settings_outlined, '設定', () {
-          debugPrint('[WindowsInputWindow] 設定が押されました');
+          RaimLog.d('[WindowsInputWindow] 設定が押されました');
         }),
         _menuRow(Icons.record_voice_over, 'クレジット表記',
             () => _setMode(_PanelMode.credits)),
@@ -616,7 +634,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     try {
       await raimService.disconnect().timeout(const Duration(seconds: 1));
     } catch (e) {
-      debugPrint('[WindowsInputWindow] WebSocket切断待ちをスキップ: $e');
+      RaimLog.d('[WindowsInputWindow] WebSocket切断待ちをスキップ: $e');
     }
 
     await _mascot.exitMascotMode();
@@ -668,7 +686,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   /// 接続先切り替え（開発検証用）。現在の接続先を副題に出す。
   Widget _buildServerRow() {
     final url = context.watch<RaimServerService>().serverUrl;
-    final isAws = url.contains('cloudfront.net');
+    final isAws = RaimConfig.isAwsUrl(url);
     final accent = isAws ? _lime : Colors.orangeAccent;
 
     return InkWell(
@@ -812,7 +830,7 @@ class _SelectedImageStrip extends StatelessWidget {
     final camera = context.watch<CameraProvider>();
     final paths = camera.selectedImagePaths;
 
-    if (paths == null || paths.isEmpty) return const SizedBox.shrink();
+    if (paths.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
       height: MascotWindowService.imageStripHeight,
@@ -820,7 +838,7 @@ class _SelectedImageStrip extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         itemCount: paths.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        separatorBuilder: (_, _) => const SizedBox(width: 6),
         itemBuilder: (_, i) {
           return Stack(
             children: [

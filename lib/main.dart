@@ -22,6 +22,7 @@ import 'dart:io' show Platform, exit;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:raim_prototype/config/raim_config.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
@@ -29,33 +30,13 @@ import 'package:raim_prototype/screens/splash_screen.dart';
 import 'package:raim_prototype/services/auth_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
-import 'package:raim_prototype/services/WindowsUnityBridge.dart';
+import 'package:raim_prototype/services/noop_unity_bridge.dart';
+import 'package:raim_prototype/services/windows_unity_bridge.dart';
 import 'package:raim_prototype/services/embed_unity_bridge.dart';
 import 'package:raim_prototype/services/mascot_window_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
-// ====================================================
-// RAiM サーバー接続先URL
-// ====================================================
-// [自宅で同一PC開発時] localhost
-// const String _raimServerUrl = 'ws://127.0.0.1:8080';
-//
-// [Tailscale経由 / 学校から / 別デバイスから]
-//const String _raimServerUrl = 'ws://100.81.35.109:8080';
-//
-// ↑ 100.x.y.z は自宅PCのTailscale IPに置き換える
-//   サーバー側で `tailscale ip -4` で確認可能
-const String _raimServerUrl = 'wss://d1403ont6098ah.cloudfront.net/dev';
-// ⚙️ その他 Cognito 等の設定値（ドキュメントより）
-class RaimConfig {
-  static const String cognitoDomain =
-      'https://ap-northeast-1omfv9fgsg.auth.ap-northeast-1.amazoncognito.com';
-  static const String clientId = '3s1n1qe8vlsihh2j2dlcs4ecf5';
-  static const String redirectUri = 'raim://callback';
-  static const String scope = 'openid email phone';
-  static const String webSocketUserAgent = 'RAiM-Flutter/1.0';
-}
-// ====================================================
 
 void main() async {
   //ウィジェットを使うための初期化処理
@@ -72,12 +53,21 @@ void main() async {
 
   // Unity Bridge
   final UnityCommunicator unityBridge = _createUnityBridge();
-  await unityBridge.start();
+  // ポートが埋まっている（RAiM の二重起動など）と start() は例外を投げる。
+  // ここで落とすと UI が一切出ないまま終了してしまうため、
+  // マスコット無しでも起動できるようにする。
+  try {
+    await unityBridge.start();
+  } catch (e) {
+    // よくある原因は RAiM の二重起動。マスコットは出ないが、
+    // チャット自体は動くのでアプリは続行する。
+    RaimLog.e('Unity ブリッジを起動できませんでした（マスコット無しで続行）', e);
+  }
 
   // RAiM サーバー接続用のサービスを作成する。
   // 未認証状態で WebSocket 接続しないよう、connect() は SplashScreen で認証済みを確認してから呼ぶ。
   final authProvider = AuthProvider(AuthService());
-  final raimService = RaimServerService(serverUrl: _raimServerUrl, accessTokenGetter: () => authProvider.getValidAccessToken(),);
+  final raimService = RaimServerService(serverUrl: RaimConfig.serverUrl, accessTokenGetter: () => authProvider.getValidAccessToken(),);
   //RaimAppにraimServiceとunityBridgeを入れている
   runApp(
     RaimApp(
@@ -88,13 +78,22 @@ void main() async {
   );
 }
 
-//webかアプリかを判定
+/// 実行中のプラットフォームに合ったマスコット連携を選ぶ。
+///
+/// 対応しているのは Windows / Android / iOS の3つだけ。
+/// Web・macOS・Linux はビルドこそ通るがマスコットは動かないので、
+/// 何もしない実装を返してチャットだけ使えるようにする。
+/// （以前はどちらも Windows 用へ落ちていて、Web では dart:io の
+/// HttpServer で例外、macOS / Linux では raim.exe を探しに行っていた）
 UnityCommunicator _createUnityBridge() {
   if (kIsWeb) {
-    return WindowsUnityBridge(autoLaunchUnity: false);
+    return NoopUnityBridge();
   }
   if (Platform.isAndroid || Platform.isIOS) {
     return EmbedUnityBridge();
+  }
+  if (!Platform.isWindows) {
+    return NoopUnityBridge();
   }
 
   // Windows: Unity を自動起動する。
@@ -148,7 +147,7 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
   void _listenUnityEvents() {
     _unitySub = widget.unityBridge.unityEvents.listen((event) {
       if (event['type'] == 'unity.quit') {
-        debugPrint('[Unity] 終了通知を受信。Flutter も終了します');
+        RaimLog.d('[Unity] 終了通知を受信。Flutter も終了します');
         _quitWithUnity();
       }
     });

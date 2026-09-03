@@ -60,6 +60,14 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>ライムに写真を見せるために、カメラを使用します。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ライムに写真を見せるために、写真ライブラリにアクセスします。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ライムに話しかけるために、マイクを使用します。</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

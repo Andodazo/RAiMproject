@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:raim_prototype/models/auth_tokens.dart';
 import 'package:raim_prototype/services/app_window_service.dart';
 import 'package:raim_prototype/services/auth_service.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
 enum AuthStatus {
   checking,
@@ -29,20 +30,36 @@ class AuthProvider extends ChangeNotifier {
   Future<void> initialize() async {
     _setStatus(AuthStatus.checking);
 
-    await _authService.startListening(onCallback: handleCallback);
+    // ここで例外が抜けると SplashScreen は checking のまま固まり、
+    // 再試行もログイン画面への遷移もできなくなる。
+    // 起動できないより、未認証としてログイン画面へ進めるほうがまし。
+    try {
+      await _authService.startListening(onCallback: handleCallback);
 
-    final tokens = await _authService.loadValidTokens();
-    if (tokens == null) {
+      final tokens = await _authService.loadValidTokens();
+      if (tokens == null) {
+        _tokens = null;
+        _setStatus(AuthStatus.unauthenticated);
+        return;
+      }
+
+      _tokens = tokens;
+      _setStatus(AuthStatus.authenticated);
+    } catch (e) {
+      RaimLog.e('[AuthProvider] 起動時の認証初期化に失敗', e);
       _tokens = null;
+      _errorMessage = '認証情報を確認できませんでした。通信状態を確認してやり直してください。';
       _setStatus(AuthStatus.unauthenticated);
-      return;
     }
-
-    _tokens = tokens;
-    _setStatus(AuthStatus.authenticated);
   }
 
   Future<void> startLogin() async {
+    // 進行中のログインがあるうちは新しい試行を始めない。
+    // AuthService 側でも共有するが、UI 側の状態遷移も抑える。
+    if (_status == AuthStatus.authenticating) {
+      return;
+    }
+
     try {
       _errorMessage = null;
       _setStatus(AuthStatus.authenticating);
@@ -102,6 +119,19 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logoutForExit() async {
     await _authService.logout();
     _tokens = null;
+    // 通知はしないが状態は未認証にしておく。
+    // 以前は status が authenticated のまま残っていたため、
+    // iOS のようにアプリを終了できない環境では
+    // 「トークンは消えているのに画面上はログイン中」になっていた。
+    _status = AuthStatus.unauthenticated;
+  }
+
+  /// 終了できなかったときに、未認証状態を UI へ反映させる。
+  ///
+  /// [logoutForExit] は LoginScreen の自動ログインが走らないよう
+  /// あえて通知しない。アプリが終了しなかった場合だけここを呼ぶ。
+  void notifyLogoutFallback() {
+    notifyListeners();
   }
 
   Future<void> disposeService() {
