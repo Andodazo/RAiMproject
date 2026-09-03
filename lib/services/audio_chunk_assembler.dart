@@ -465,7 +465,7 @@ class WavDataMerger {
     if (formatBytes == null || data.length == 0) {
       throw const FormatException('WAVにfmtまたはdataチャンクがありません');
     }
-    return _ParsedWav(formatBytes: formatBytes!, data: data.toBytes());
+    return _ParsedWav(formatBytes: formatBytes, data: data.toBytes());
   }
 
   static bool _looksLikeWav(Uint8List bytes) {

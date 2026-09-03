@@ -40,6 +40,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _retryLogin() async {
+    final auth = context.read<AuthProvider>();
+    if (auth.status == AuthStatus.authenticating ||
+        auth.status == AuthStatus.checking) {
+      return;
+    }
     _loginStarted = false;
     await _startLogin(force: true);
   }
@@ -107,9 +112,14 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildBody(AuthProvider auth, String? errorMessage) {
-    final isWaiting =
-        errorMessage == null &&
-        (auth.status == AuthStatus.authenticating ||
+    // 認証処理が動いている間は、エラー表示が残っていても待機扱いにする。
+    // 以前は errorMessage が付いた瞬間にボタンが出たため、
+    // 古い試行のタイムアウトで表示されたエラーを見て押してしまい、
+    // 進行中のログインと競合していた。
+    final isAuthenticating = auth.status == AuthStatus.authenticating ||
+        auth.status == AuthStatus.checking;
+    final isWaiting = isAuthenticating ||
+        (errorMessage == null &&
             auth.status == AuthStatus.unauthenticated);
 
     return Container(

@@ -63,7 +63,7 @@ class ChatScreen extends StatelessWidget {
   /// → キャラクターはくっきり、背景は夜の雰囲気で暗く
   Widget _buildBackgroundOverlay() {
     return Positioned.fill(
-      child: Container(color: Colors.black.withOpacity(0.3)),
+      child: Container(color: Colors.black.withValues(alpha: 0.3)),
     );
   }
 
@@ -233,9 +233,9 @@ class ChatScreen extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withOpacity(0.0),
-                  Colors.black.withOpacity(0.16),
-                  Colors.black.withOpacity(0.28),
+                  Colors.black.withValues(alpha: 0.0),
+                  Colors.black.withValues(alpha: 0.16),
+                  Colors.black.withValues(alpha: 0.28),
                 ],
                 stops: const [0.0, 0.4, 1.0],
               ),
@@ -352,10 +352,10 @@ class ChatScreen extends StatelessWidget {
           width: screenWidthRatio(context, 0.4),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.5),
+              color: Colors.black.withValues(alpha: 0.5),
               border: Border(
                 left: BorderSide(
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.2),
                   width: 1,
                 ),
               ),
@@ -366,10 +366,10 @@ class ChatScreen extends StatelessWidget {
                 const Expanded(child: MessageList()),
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.4),
+                    color: Colors.black.withValues(alpha: 0.4),
                     border: Border(
                       top: BorderSide(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withValues(alpha: 0.2),
                         width: 1,
                       ),
                     ),
@@ -445,6 +445,9 @@ class ChatScreen extends StatelessWidget {
         RaimLog.d('[ChatScreen] WebSocket切断待ちをスキップ: $error');
       }
       await AppExitService.exitAfterLogout();
+      // ここへ戻ってきたということは、アプリを終了できなかった
+      // （iOS 実機など）。トークンは消えているので、画面も未認証へ戻す。
+      authProvider.notifyLogoutFallback();
     }
   }
 }

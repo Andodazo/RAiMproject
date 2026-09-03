@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
 /// Cognito認証用ブラウザを起動するサービス。
 ///
@@ -50,6 +51,28 @@ class BrowserLoginLauncher {
     final process = _launchedProcess;
     _launchedProcess = null;
     process?.kill();
+  }
+
+  /// 認証用に作った Chrome プロファイルを消す。
+  ///
+  /// このプロファイルには Cognito と Google のセッション Cookie が残る。
+  /// 消さないと、ログアウトしても次のログインで同じアカウントの
+  /// セッションが再利用されうる（共用 PC で問題になる）。
+  /// 失敗してもログアウト自体は続行するため、例外は握りつぶす。
+  Future<void> clearSavedSession() async {
+    if (kIsWeb || !Platform.isWindows) return;
+
+    try {
+      final baseDir =
+          Platform.environment['LOCALAPPDATA'] ?? Directory.systemTemp.path;
+      final profileDir = Directory('$baseDir\\RAiM\\auth_chrome_profile');
+      if (await profileDir.exists()) {
+        await profileDir.delete(recursive: true);
+        RaimLog.d('[BrowserLoginLauncher] 認証用プロファイルを削除しました');
+      }
+    } catch (e) {
+      RaimLog.e('[BrowserLoginLauncher] 認証用プロファイルの削除に失敗', e);
+    }
   }
 
   String? _findChromePath() {

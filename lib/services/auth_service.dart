@@ -28,6 +28,18 @@ class AuthService {
   bool _callbackInFlight = false;
   String? _lastHandledCallbackUri;
 
+  /// 進行中のログイン処理。多重実行を防ぐために共有する。
+  Future<AuthTokens?>? _loginInFlight;
+
+  /// 進行中のトークン更新。同じ refresh token で二重に叩かないために共有する。
+  Future<AuthTokens?>? _refreshInFlight;
+
+  /// Cognito への HTTP 呼び出しのタイムアウト。
+  ///
+  /// 指定しないと、電波の悪い場所で起動したときに Splash が
+  /// 無期限に固まる（既定のタイムアウトが無いため）。
+  static const Duration _httpTimeout = Duration(seconds: 15);
+
   AuthService({
     TokenStorage? storage,
     AppLinks? appLinks,
@@ -121,7 +133,27 @@ class AuthService {
   /// Chrome を kiosk モードで起動してCognitoを開きます。
   ///
   /// Windows 以外では従来どおり Deep Link が戻ってくるのを待つため、ここでは Token を返しません。
-  Future<AuthTokens?> startLogin() async {
+  Future<AuthTokens?> startLogin() {
+    // 再試行ボタンの連打や deep link との競合で複数のログインが並走すると、
+    // 後から始まった試行が PKCE の state/verifier を上書きし、
+    // 古い試行は 10 分後にタイムアウトして、成功済みの状態を error へ戻していた。
+    // 進行中の試行があれば、その結果をそのまま返す。
+    final inFlight = _loginInFlight;
+    if (inFlight != null) {
+      RaimLog.d('[AuthService] ログイン処理中のため既存の試行を待ちます');
+      return inFlight;
+    }
+
+    final future = _startLoginInternal();
+    _loginInFlight = future;
+    return future.whenComplete(() {
+      if (identical(_loginInFlight, future)) {
+        _loginInFlight = null;
+      }
+    });
+  }
+
+  Future<AuthTokens?> _startLoginInternal() async {
     final loginUri = await createLoginUri();
     Future<Uri>? loopbackCallback;
 
@@ -190,7 +222,30 @@ class AuthService {
     }
   }
 
-  Future<AuthTokens?> refreshTokens(AuthTokens currentTokens) async {
+  /// 保存済みトークンを更新する。
+  ///
+  /// 起動時の [loadValidTokens] と、WebSocket 接続ごとの
+  /// [getValidAccessToken] の両方から呼ばれる。並走すると同じ
+  /// refresh token で 2 回叩くことになり、Cognito のローテーションが
+  /// 有効なら片方が invalid_grant で弾かれて強制ログアウトになる。
+  /// 進行中の更新があればそれを共有する。
+  Future<AuthTokens?> refreshTokens(AuthTokens currentTokens) {
+    final inFlight = _refreshInFlight;
+    if (inFlight != null) {
+      RaimLog.d('[AuthService] トークン更新が進行中のため結果を共有します');
+      return inFlight;
+    }
+
+    final future = _refreshTokensInternal(currentTokens);
+    _refreshInFlight = future;
+    return future.whenComplete(() {
+      if (identical(_refreshInFlight, future)) {
+        _refreshInFlight = null;
+      }
+    });
+  }
+
+  Future<AuthTokens?> _refreshTokensInternal(AuthTokens currentTokens) async {
     final refreshToken = currentTokens.refreshToken;
     if (refreshToken == null || refreshToken.isEmpty) {
       await _storage.clearTokens();
@@ -198,23 +253,55 @@ class AuthService {
     }
 
     final tokenUri = Uri.parse('${RaimConfig.cognitoDomain}/oauth2/token');
-    final response = await http.post(
-      tokenUri,
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: {
-        'grant_type': 'refresh_token',
-        'client_id': RaimConfig.clientId,
-        'refresh_token': refreshToken,
-      },
-    );
+    http.Response response;
 
-    if (response.statusCode != 200) {
-      await _storage.clearTokens();
-      RaimLog.d('[AuthService] refresh failed: ${response.statusCode}');
-      return null;
+    try {
+      response = await http
+          .post(
+            tokenUri,
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: {
+              'grant_type': 'refresh_token',
+              'client_id': RaimConfig.clientId,
+              'refresh_token': refreshToken,
+            },
+          )
+          .timeout(_httpTimeout);
+    } catch (e) {
+      // 通信できないだけ。保存済みトークンは消さない。
+      // 消すと、機内モードや電波の悪い場所で起動しただけで
+      // 再ログインを強いられる。
+      RaimLog.e('[AuthService] トークン更新の通信に失敗', e);
+      return currentTokens.isExpired ? null : currentTokens;
     }
 
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      // refresh token が本当に無効になったときだけ消す。
+      // 以前は 5xx や一時的な失敗でも消していたため、
+      // サーバー側の一瞬の不調で強制ログアウトになっていた。
+      final revoked = response.statusCode == 400 &&
+          response.body.contains('invalid_grant');
+
+      RaimLog.e(
+        '[AuthService] トークン更新に失敗 status=${response.statusCode} '
+        'revoked=$revoked',
+      );
+
+      if (revoked) {
+        await _storage.clearTokens();
+        return null;
+      }
+      return currentTokens.isExpired ? null : currentTokens;
+    }
+
+    final Map<String, dynamic> body;
+    try {
+      body = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      RaimLog.e('[AuthService] トークン更新の応答が JSON ではない', e);
+      return currentTokens.isExpired ? null : currentTokens;
+    }
+
     final refreshedTokens = _tokensFromResponse(
       body,
       fallbackRefreshToken: refreshToken,
@@ -229,9 +316,43 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    // 端末からトークンを消すだけでは Cognito 側のセッションと
+    // refresh token が生き続ける。revoke してから消す。
+    final tokens = await _storage.readTokens();
+    await _revokeRefreshToken(tokens?.refreshToken);
+
     await _browserLoginLauncher.closeLaunchedBrowser();
+    // Windows の認証用 Chrome プロファイルにセッション Cookie が残るため、
+    // 共用 PC で「ログアウトしたのに次の人が同じアカウントで入れる」状態を防ぐ。
+    await _browserLoginLauncher.clearSavedSession();
+
     await _storage.clearPkceState();
     await _storage.clearTokens();
+  }
+
+  /// refresh token を Cognito 側で無効化する。
+  ///
+  /// 失敗してもログアウト自体は続行する。端末側の削除のほうが重要なため。
+  Future<void> _revokeRefreshToken(String? refreshToken) async {
+    if (refreshToken == null || refreshToken.isEmpty) return;
+
+    try {
+      final revokeUri = Uri.parse('${RaimConfig.cognitoDomain}/oauth2/revoke');
+      final response = await http
+          .post(
+            revokeUri,
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: {
+              'token': refreshToken,
+              'client_id': RaimConfig.clientId,
+            },
+          )
+          .timeout(_httpTimeout);
+
+      RaimLog.d('[AuthService] revoke status=${response.statusCode}');
+    } catch (e) {
+      RaimLog.e('[AuthService] revoke に失敗（ログアウトは継続）', e);
+    }
   }
 
   Future<void> _handleIncomingUri(Uri uri) async {
@@ -283,23 +404,30 @@ class AuthService {
     required String codeVerifier,
   }) async {
     final tokenUri = Uri.parse('${RaimConfig.cognitoDomain}/oauth2/token');
-    final response = await http.post(
-      tokenUri,
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: {
-        'grant_type': 'authorization_code',
-        'client_id': RaimConfig.clientId,
-        'code': code,
-        'redirect_uri': _redirectUri,
-        'code_verifier': codeVerifier,
-      },
-    );
+    final response = await http
+        .post(
+          tokenUri,
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: {
+            'grant_type': 'authorization_code',
+            'client_id': RaimConfig.clientId,
+            'code': code,
+            'redirect_uri': _redirectUri,
+            'code_verifier': codeVerifier,
+          },
+        )
+        .timeout(_httpTimeout);
 
     if (response.statusCode != 200) {
       throw Exception('Token取得に失敗しました: ${response.statusCode}');
     }
 
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final Map<String, dynamic> body;
+    try {
+      body = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      throw Exception('Tokenレスポンスを解釈できませんでした。');
+    }
     return _tokensFromResponse(body);
   }
 

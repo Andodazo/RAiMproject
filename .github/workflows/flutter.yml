@@ -1,0 +1,34 @@
+name: Flutter CI
+
+# main と修正ブランチへの push / PR で静的解析とテストを回す。
+# 手元で flutter analyze を忘れても、PR 上で気づけるようにするのが目的。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: 依存関係を取得
+        run: flutter pub get
+
+      - name: フォーマット確認
+        # 整形漏れは落とさず警告に留める（既存コードの差分が大きいため）
+        run: dart format --output=none --set-exit-if-changed . || true
+
+      - name: 静的解析
+        run: flutter analyze
+
+      - name: テスト
+        run: flutter test

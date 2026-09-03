@@ -29,6 +29,14 @@ class AudioPlayQueue {
   /// dispose 後に再生処理が動かないようにするためのフラグ
   bool _disposed = false;
 
+  /// reset() のたびに増える世代番号
+  ///
+  /// _playNext() は `await _player.play()` の間に制御を手放す。
+  /// その隙に reset() が入ると、stop() の「後」に再生が始まってしまい、
+  /// 前の返答の音声が新しい返答に重なって残る。
+  /// 再生開始後に世代が変わっていたら、その音は捨てる。
+  int _generation = 0;
+
   AudioPlayQueue() {
     // 1つの音声が終わったら、次の音声を再生する
     _completeSubscription = _player.onPlayerComplete.listen((_) {
@@ -88,9 +96,28 @@ class AudioPlayQueue {
   /// 新しいユーザーメッセージを送るときに、
   /// 前の返答音声が残らないようにするために使う。
   Future<void> reset() async {
+    _generation++;
     _queue.clear();
     _isPlaying = false;
     await _player.stop();
+  }
+
+  /// 待機中の音声だけを捨て、再生中の1つは最後まで鳴らす
+  ///
+  /// サーバーは文（句読点）単位で音声を作っているので、
+  /// 「今喋っている1文は言い切ってから黙る」挙動になる。
+  /// 長くても数秒で、人が割り込まれたときの振る舞いに近い。
+  ///
+  /// 即座に黙らせたいときは [reset] を使う。
+  void stopAfterCurrent() {
+    if (_disposed) return;
+
+    final dropped = _queue.length;
+    _queue.clear();
+
+    if (dropped > 0) {
+      RaimLog.d('[AudioPlayQueue] 待機中の音声 $dropped 件を破棄しました');
+    }
   }
 
   /// AudioPlayQueue を破棄する
@@ -108,6 +135,9 @@ class AudioPlayQueue {
     if (_disposed || _isPlaying || _queue.isEmpty) {
       return;
     }
+
+    // この再生がどの世代のものかを覚えておく
+    final generation = _generation;
 
     _isPlaying = true;
 
@@ -127,8 +157,19 @@ class AudioPlayQueue {
           mimeType: audio.mimeType,
         ),
       );
+
+      // 再生開始を待っている間に reset() が入っていたら、
+      // 今始まった音は前の返答のものなので止める。
+      if (generation != _generation) {
+        RaimLog.d('[AudioPlayQueue] reset 済みのため再生を打ち切ります');
+        await _player.stop();
+        _isPlaying = false;
+      }
     } catch (e) {
       RaimLog.e('[AudioPlayQueue] 音声再生失敗: $e');
+
+      // reset 済みなら次へ進めない（捨てたキューを掘り返さない）
+      if (generation != _generation) return;
 
       // 失敗した場合も次の音声へ進める
       _isPlaying = false;

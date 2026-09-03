@@ -17,6 +17,7 @@ import 'package:raim_prototype/services/audio_chunk_assembler.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
 class ChatProvider extends ChangeNotifier implements ReassembleHandler {
@@ -93,6 +94,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   ChatProvider(this._llmService, this._unityBridge) {
     _audioAssembler = AudioChunkAssembler(
       onAudioReady: (audio) {
+        // キューは1つの AudioPlayer で直列に鳴らすので、
+        // 前の返答の言い残しと重なることはない。後ろに並ぶだけ。
         _audioQueue.enqueueBytes(bytes: audio.bytes, format: audio.format);
       },
     );
@@ -158,14 +161,14 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     // tool_call では検索などの外部処理中であることが通知される
     // description があればそれを表示し、無ければデフォルト文を表示する
     if (_currentStreamingMessage != null) {
-    _currentStreamingMessage = _currentStreamingMessage!.copyWith(
-      emotion: response.emotion,
-      intensity: response.intensity,
-      emotions: response.emotions,
-      overallIntensity: response.overallIntensity,
+    _replaceStreamingMessage(
+      _currentStreamingMessage!.copyWith(
+        emotion: response.emotion,
+        intensity: response.intensity,
+        emotions: response.emotions,
+        overallIntensity: response.overallIntensity,
+      ),
     );
-    // 会話履歴内のAIメッセージも更新する
-    _messages[_messages.length - 1] = _currentStreamingMessage!;
   }
     // Tool使用終了
     _isUsingTool = false;
@@ -330,11 +333,11 @@ _toolStatus = null;
   // すでにAIの吹き出しがある場合は、
   // 後続の text_chunk を既存の文章の後ろに追加する
   } else {
-    _currentStreamingMessage = _currentStreamingMessage!.copyWith(
-      text: _currentStreamingMessage!.text + response.text,
+    _replaceStreamingMessage(
+      _currentStreamingMessage!.copyWith(
+        text: _currentStreamingMessage!.text + response.text,
+      ),
     );
-     // List内の最後のAIメッセージを、追記後の内容に差し替える
-    _messages[_messages.length - 1] = _currentStreamingMessage!;
   }
   _unityBridge.sendText(text: response.text);
   notifyListeners();
@@ -642,10 +645,51 @@ _toolStatus = null;
     super.dispose();
   }
 //{List<String>? images}の追加
+  /// ストリーミング中のメッセージを差し替える。
+  ///
+  /// 以前は `_messages[_messages.length - 1]` と末尾決め打ちだったため、
+  /// スレッド切替で _messages が空になった直後にチャンクが届くと
+  /// index -1 で RangeError になり、末尾が別のメッセージに入れ替わって
+  /// いる場合は無関係な発言を上書きしていた。
+  /// 同一インスタンスを探して置き換え、見つからなければ何もしない。
+  void _replaceStreamingMessage(Message updated) {
+    final current = _currentStreamingMessage;
+    if (current == null) return;
+
+    final index = _messages.lastIndexWhere((m) => identical(m, current));
+    if (index < 0) {
+      // 画面が切り替わるなどで対象が消えている。積み直さずに諦める。
+      _currentStreamingMessage = null;
+      return;
+    }
+
+    _messages[index] = updated;
+    _currentStreamingMessage = updated;
+  }
+
+  /// 一度に送れる画像の合計サイズ（Base64 の文字数）
+  ///
+  /// 上限が無いと巨大 payload でサーバー側に弾かれるか、
+  /// 端末側のメモリを圧迫する。
+  static const int maxTotalImageBase64Chars = 4 * 1024 * 1024;
+
   Future<void> sendUserMessage(String text, {List<String>? images, List<String>? filePaths}) async {
-    // 新しい送信を始める前に、前回の音声・途中メッセージ・検索中表示をリセットする
+    // 応答の生成中は新しい送信を受け付けない。
+    // 受け付けると2つの応答が同じ吹き出しに混ざり、
+    // 片方の chat_end でもう片方が打ち切られる。
+    if (_isLoading) {
+      RaimLog.d('[ChatProvider] 応答生成中のため送信を無視しました');
+      return;
+    }
+
+    // 新しい送信を始める前に、途中メッセージと検索中表示をリセットする。
+    //
+    // 音声は即座に切らない。文の途中でブツッと切れると会話として不自然なので、
+    // 今喋っている1文だけ言い切らせて、待機中のぶんを捨てる。
+    // 生成に数秒かかるため、その1文は新しい音声が届く前に鳴り終わる。
+    // 万一残っていてもキューは直列なので、重ならず後ろに並ぶだけ。
     _audioAssembler.reset();
-    await _audioQueue.reset();
+    _audioQueue.stopAfterCurrent();
     _currentStreamingMessage = null;
     _toolStatus = null;
     // ここに追加
@@ -667,7 +711,17 @@ _toolStatus = null;
     //image
     final List<Map<String, String>> targetImages = [];
     if (images != null) {
+      var totalChars = 0;
       for (final base64Data in images) {
+        if (targetImages.length >= CameraProvider.maxImageCount) {
+          RaimLog.w('[ChatProvider] 画像の枚数上限を超えたぶんは送りません');
+          break;
+        }
+        if (totalChars + base64Data.length > maxTotalImageBase64Chars) {
+          RaimLog.w('[ChatProvider] 画像の合計サイズ上限を超えたぶんは送りません');
+          break;
+        }
+        totalChars += base64Data.length;
         targetImages.add({
           'data': base64Data,
           'media_type': 'image/jpeg',//JPEG指定（一般的なカメラ・ギャラリー画像はこれで通る）

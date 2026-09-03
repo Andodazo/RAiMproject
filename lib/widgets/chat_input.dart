@@ -68,6 +68,11 @@ class _ChatInputState extends State<ChatInput> {
   }
   
   void _sendMessage() {
+    final chatProvider = context.read<ChatProvider>();
+
+    // 生成中の二重送信を防ぐ。Enter キーからもここを通る。
+    if (chatProvider.isLoading) return;
+
     final text = _controller.text.trim();
     //CameraProviderの状態を取得
     final cameraProvider = context.read<CameraProvider>();
@@ -84,13 +89,14 @@ class _ChatInputState extends State<ChatInput> {
       '画像=${base64List?.length ?? 0}件',
     );
     //クリアされる前に、現在の画像パスのコピーを作成しておく（安全のため）
-    final pathsToSend = imagePaths != null ? List<String>.from(imagePaths) : null;
+    // selectedImagePaths は非 null なので null 判定は不要（常に真だった）
+    final pathsToSend = List<String>.from(imagePaths);
     // Base64 も同様にコピーする
     // sendUserMessage は async で、内部の最初の await で制御が戻る。
     // その隙に clearImage() が走るため、参照のまま渡すと空になる
     final base64ToSend = base64List != null ? List<String>.from(base64List) : null;
     // サーバーへ送信
-    context.read<ChatProvider>().sendUserMessage(
+    chatProvider.sendUserMessage(
       text,
       images: base64ToSend,
       filePaths: pathsToSend, //画面表示用のファイルパスをChatProviderに渡す
@@ -148,14 +154,14 @@ class _ChatInputState extends State<ChatInput> {
                     ),
 
                     hintStyle: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
+                      color: Colors.white.withValues(alpha: 0.5),
                     ),
                     filled: true,
-                    fillColor: Colors.white.withOpacity(0.15),
+                    fillColor: Colors.white.withValues(alpha: 0.15),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
                       borderSide: BorderSide(
-                        color: Colors.white.withOpacity(0.3),
+                        color: Colors.white.withValues(alpha: 0.3),
                         width: 1,
                       ),
                     ),
@@ -183,7 +189,7 @@ class _ChatInputState extends State<ChatInput> {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
+                      color: Colors.black.withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -224,7 +230,7 @@ class _SelectedImagePreview extends StatelessWidget {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: provider.selectedImagePaths.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
                 final imagePath = provider.selectedImagePaths[index];
 

@@ -17,6 +17,12 @@ class AuthTokens {
 
   /// 有効期限ぎりぎりで使うと WebSocket 接続直後に期限切れになる可能性があるため、
   /// 余裕を持って期限切れ扱いにします。
+  /// 実際に失効しているか。
+  ///
+  /// [isExpiringSoon] は「そろそろ更新したい」の判定なので、
+  /// 更新に失敗しても失効前ならまだ使える。両者を区別するために足した。
+  bool get isExpired => DateTime.now().isAfter(expiresAt);
+
   bool get isExpiringSoon {
     return DateTime.now().isAfter(
       expiresAt.subtract(const Duration(minutes: 5)),

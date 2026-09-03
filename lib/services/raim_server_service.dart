@@ -607,7 +607,7 @@ class RaimServerService implements LLMService {
       payload: {
         'type': 'thread.history',
         'threadId': threadId,
-        if (beforeIndex != null) 'beforeIndex': beforeIndex,
+        'beforeIndex': ?beforeIndex,
       },
       matches: (r) => r.isThreadHistory,
       label: 'thread.history',
