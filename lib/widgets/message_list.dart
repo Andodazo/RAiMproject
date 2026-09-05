@@ -5,10 +5,52 @@ import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/widgets/message_bubble.dart';
 import 'package:raim_prototype/models/message.dart';
+import 'package:raim_prototype/services/raim_log.dart';
 
-class MessageList extends StatelessWidget {
+class MessageList extends StatefulWidget {
   const MessageList({super.key});
-  
+
+  @override
+  State<MessageList> createState() => _MessageListState();
+}
+
+class _MessageListState extends State<MessageList> {
+  /// 最新のメッセージを追いかけるためのコントローラ。
+  ///
+  /// 以前はコントローラ自体が無く、返答が流れてきても画面が追従しなかった。
+  /// ユーザーは自分で下へスクロールし続ける必要があった。
+  final ScrollController _scrollController = ScrollController();
+
+  /// 末尾からこの距離以内にいれば「最新を追っている」とみなす。
+  ///
+  /// 過去を読み返している最中に勝手に下へ飛ばされると読めなくなるので、
+  /// 下端付近にいるときだけ追従する。
+  static const double _followThreshold = 120;
+
+  bool get _isNearBottom {
+    if (!_scrollController.hasClients) return true;
+
+    final position = _scrollController.position;
+    return position.maxScrollExtent - position.pixels <= _followThreshold;
+  }
+
+  /// 描画後に末尾へ寄せる。
+  ///
+  /// text_chunk のたびに再描画されるので、ストリーミング中も追従する。
+  /// アニメーションさせると細かく再生され続けて逆に見づらいため jumpTo にする。
+  void _scheduleFollow() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     //chatproviderの状態変化を監視
@@ -58,7 +100,15 @@ class MessageList extends StatelessWidget {
         final showLoadOlder = provider.hasMoreHistory;
         final loadOlderOffset = showLoadOlder ? 1 : 0;
 
+        // 判定は再描画の「前」の位置で行う。
+        // 「もっと見る」で先頭に差し込んだ直後はユーザーが上にいるので、
+        // 追従せず読んでいる位置が保たれる。
+        if (_isNearBottom) {
+          _scheduleFollow();
+        }
+
         return ListView.builder(
+          controller: _scrollController,
           padding: const EdgeInsets.all(8),
           itemCount: loadOlderOffset +
               messages.length +
@@ -168,8 +218,15 @@ class MessageList extends StatelessWidget {
                             image: DecorationImage(
                               image: FileImage(File(imagePath)),
                               fit: BoxFit.cover, // プレビューと同じく全体をカバー
+                              // 履歴の画像は端末のローカルパスを指している。
+                              // 再インストール後・別端末・元画像を消したあとは
+                              // 読み込めず、例外がログに出て枠だけが残っていた。
+                              onError: (error, stackTrace) {
+                                RaimLog.d('[MessageList] 画像を表示できません');
+                              },
                             ),
                           ),
+                          child: _MissingImageHint(path: imagePath),
                         );
                       }).toList(),
                     ),
@@ -251,3 +308,34 @@ class MessageList extends StatelessWidget {
         );
       }
     }
+
+/// 画像ファイルが見つからないときだけ見えるヒント。
+///
+/// DecorationImage が描けた場合はその下に隠れるので、
+/// 読み込めたときは何も見えない。
+class _MissingImageHint extends StatelessWidget {
+  const _MissingImageHint({required this.path});
+
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    if (File(path).existsSync()) return const SizedBox.shrink();
+
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.image_not_supported_outlined,
+              color: Colors.white38, size: 28),
+          SizedBox(height: 6),
+          Text(
+            '画像は端末に残っていません',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white38, fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+}
