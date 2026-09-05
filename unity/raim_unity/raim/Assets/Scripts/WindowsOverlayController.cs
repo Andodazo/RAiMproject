@@ -77,6 +77,10 @@ public class WindowsOverlayController : MonoBehaviour
     [Tooltip("Shift も必要にする。Ctrl+Q が他アプリと衝突するときに使う")]
     [SerializeField] private bool requireShift = false;
 
+    [Tooltip("カーソルがライムの上にあるときだけ終了ショートカットを受け付ける。" +
+             "他アプリで Ctrl+Q を押したときの誤爆を防ぐ")]
+    [SerializeField] private bool requireCursorOverCharacterToQuit = true;
+
     [Tooltip("Ctrl+Q で Flutter 側も一緒に終了させる")]
     [SerializeField] private bool quitFlutterToo = true;
 
@@ -90,6 +94,10 @@ public class WindowsOverlayController : MonoBehaviour
     [Header("常駐時のフレームレート")]
     [Tooltip("一日中動かすので抑える。0 で変更しない")]
     [SerializeField] private int targetFrameRate = 30;
+
+    [Tooltip("フォーカスが無いときのフレームレート。常駐中のCPUとバッテリーを抑える。" +
+             "動きがカクつくようなら targetFrameRate と同じ値にする")]
+    [SerializeField] private int unfocusedFrameRate = 15;
 
     [Header("デバッグ")]
     [Tooltip("起動時にウィンドウサイズ・座標・キャラの占有範囲をログに出す")]
@@ -137,6 +145,23 @@ public class WindowsOverlayController : MonoBehaviour
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetActiveWindow();
+
+    // 指定座標の最前面ウィンドウ。カーソル下にあるのが本当に自分かを見るため。
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(POINT point);
+
+    // 子ウィンドウから親のトップレベルウィンドウを辿る。
+    // WindowFromPoint は描画用の子ウィンドウを返すことがあるため。
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+
+    private const uint GA_ROOT = 2;
+
+    private static IntPtr GetAncestorRoot(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return IntPtr.Zero;
+        return GetAncestor(hwnd, GA_ROOT);
+    }
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
@@ -402,6 +427,17 @@ public class WindowsOverlayController : MonoBehaviour
             Application.targetFrameRate = targetFrameRate;
         }
 
+        // ToVirtualKey は A-Z / 0-9 / Escape しか変換できない。
+        // それ以外を指定すると IsKeyDown(0) が常に false になり、
+        // 終了ショートカットが何の警告も無く効かなくなる。
+        if (enableQuitShortcut && ToVirtualKey(quitKey) == 0)
+        {
+            Debug.LogWarning(
+                $"[Overlay] quitKey={quitKey} は未対応のキーです。" +
+                "終了ショートカットは動きません（A-Z / 0-9 / Escape のみ対応）"
+            );
+        }
+
         // 最小化されても Flutter からのメッセージを処理し続ける
         Application.runInBackground = true;
 #else
@@ -484,11 +520,42 @@ public class WindowsOverlayController : MonoBehaviour
     // 終了ショートカット
     // ============================================================
 
+    /// <summary>
+    /// フォーカスの有無でフレームレートを切り替える。
+    ///
+    /// runInBackground を有効にしているため、非フォーカスでも
+    /// 30fps で描画し続けていた。常駐アプリなので、ノートPCでは
+    /// バッテリーとファンに効いてくる。
+    ///
+    /// 透過ウィンドウはフォーカスを取りにくいので、
+    /// 動きがカクつくようなら unfocusedFrameRate を
+    /// targetFrameRate と同じ値にすれば元の挙動に戻る。
+    /// </summary>
+    private void OnApplicationFocus(bool hasFocus)
+    {
+        if (targetFrameRate <= 0) return;
+
+        Application.targetFrameRate =
+            hasFocus || unfocusedFrameRate <= 0
+                ? targetFrameRate
+                : unfocusedFrameRate;
+    }
+
     private void HandleQuitShortcut()
     {
         if (!enableQuitShortcut) return;
 
 #if UNITY_STANDALONE_WIN
+        // GetAsyncKeyState はフォーカスと無関係にキー状態を返す。
+        // つまり素通しだと事実上のグローバルホットキーになり、
+        // Firefox やエディタで Ctrl+Q（＝多くのアプリの終了）を押しただけで
+        // ライムが黙って消えていた。押した本人は別アプリを終了したつもりなので
+        // 原因に気づけない。
+        //
+        // 透過ウィンドウはフォーカスを取れないため、
+        // 「カーソルがライムの上にある」を代わりの条件にする。
+        if (requireCursorOverCharacterToQuit && !IsCursorOverCharacter()) return;
+
         bool ctrl = IsKeyDown(VK_CONTROL);
         bool shift = !requireShift || IsKeyDown(VK_SHIFT);
         bool key = IsKeyDown(ToVirtualKey(quitKey));
@@ -590,6 +657,21 @@ public class WindowsOverlayController : MonoBehaviour
     private bool IsCursorOverCharacter()
     {
         if (!GetCursorPos(out POINT p)) return false;
+
+        // カーソルの下にあるウィンドウが自分でなければ、そのクリックは
+        // 自分のものではない。
+        //
+        // 以前はウィンドウ矩形に入っているかだけを見ていたため、
+        // ブラウザなどがライムの手前に重なっているとき、
+        // その位置をクリックしただけで入力小窓が開いていた。
+        // Win32 でカーソルを直接読んでいる以上、
+        // 重なりは自分で確認しないと分からない。
+        IntPtr self = GetSelfWindow();
+        if (self == IntPtr.Zero) return false;
+
+        IntPtr under = WindowFromPoint(p);
+        if (under != self && GetAncestorRoot(under) != self) return false;
+
         if (!TryGetWindowRect(out RECT r)) return false;
 
         float localX = p.X - r.Left;
