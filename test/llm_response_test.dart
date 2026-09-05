@@ -22,13 +22,17 @@ void main() {
       expect(response.type, 'unknown');
     });
 
-    test('estimated_seconds が小数でも int として読める', () {
+    // サーバーが 3 ではなく 3.0 を返しても落ちないこと。
+    // as int? だと double で例外になり、メッセージ全体が捨てられる。
+    test('数値項目が小数で来ても int として読める', () {
       final response = LLMResponse.fromJson({
-        'type': 'tool_call',
-        'estimated_seconds': 3.0,
+        'type': 'audio_chunk',
+        'part_index': 0.0,
+        'part_count': 3.0,
       });
 
-      expect(response.estimatedSeconds, 3);
+      expect(response.partIndex, 0);
+      expect(response.partCount, 3);
     });
 
     test('文字列であるべき項目が別の型でも落ちない', () {

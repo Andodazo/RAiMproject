@@ -114,7 +114,6 @@ class LLMResponse {
 
   final String? tool;
   final String? description;
-  final int? estimatedSeconds;
 
   LLMResponse({
     this.type = 'chat',
@@ -138,7 +137,6 @@ class LLMResponse {
     this.raw = const {},
     this.tool,
     this.description,
-    this.estimatedSeconds,
   });
 
   /// JSON から LLMResponse を組み立てる
@@ -220,7 +218,6 @@ class LLMResponse {
       tool: _readString(json['tool']),
       description: _readString(json['description']),
       // サーバーが 3.0 のような数値を返しても落ちないよう num 経由で読む
-      estimatedSeconds: _readNullableInt(json['estimated_seconds']),
     );
   }
 

@@ -386,6 +386,29 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   // ---------- 入力バー ----------
 
+  /// 入力欄のプレースホルダに出す状態表示。
+  ///
+  /// 何も起きていないときは null を返す（通常のヒント文に戻る）。
+  String? _statusText(ChatProvider chat) {
+    if (chat.isOffline) return null;
+
+    // ツール実行中は、何を調べているかを出す。
+    if (chat.isUsingTool) {
+      final status = chat.toolStatus;
+      if (status != null && status.isNotEmpty) return status;
+      return '調べているよ…';
+    }
+
+    if (chat.isThinking) return '考えているよ…';
+
+    return null;
+  }
+
+  String _hintText(ChatProvider chat) {
+    if (chat.isOffline) return '接続待ち…';
+    return _statusText(chat) ?? '何でも話してね';
+  }
+
   Widget _buildBar() {
     final chat = context.watch<ChatProvider>();
 
@@ -415,8 +438,15 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                 cursorColor: _lime,
                 decoration: InputDecoration(
                   isDense: true,
-                  hintText: chat.isOffline ? '接続待ち…' : '何でも話してね',
-                  hintStyle: const TextStyle(color: _mut, fontSize: 13),
+                  // マスコットモードには状態表示の場所が無いため、
+                  // プレースホルダを状態表示に兼用する。
+                  // 「〇〇を調べています」はチャット画面（message_list）に
+                  // しか出ておらず、Windows では何も出ていなかった。
+                  hintText: _hintText(chat),
+                  hintStyle: TextStyle(
+                    color: _statusText(chat) != null ? _lime : _mut,
+                    fontSize: 13,
+                  ),
                   filled: true,
                   fillColor: _bg2,
                   contentPadding:
