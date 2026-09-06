@@ -11,6 +11,7 @@ import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/services/mascot_window_service.dart';
+import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
@@ -43,6 +44,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   final _mascot = MascotWindowService.instance;
 
   StreamSubscription<Map<String, dynamic>>? _unitySub;
+
+  /// マイク検証用。録音中かどうか。
+  bool _isRecordingDump = false;
   _PanelMode _mode = _PanelMode.none;
 
   /// 削除確認を出しているスレッド
@@ -272,6 +276,36 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     }
   }
 
+  /// マイク検証用のトグル。
+  ///
+  /// 押すと 16kHz/16bit/モノラルで録音を始め、もう一度押すと
+  /// wav にして保存する。保存した wav は tools/stt の Python
+  /// 検証スクリプトにそのまま渡せるので、
+  /// 「Flutter のマイク処理が正しいか」を Vosk と切り離して確認できる。
+  ///
+  /// ウェイクワード本体が入ったら、このボタンは音声入力に置き換える。
+  Future<void> _toggleMicDump() async {
+    final mic = MicStreamService.instance;
+    try {
+      if (_isRecordingDump) {
+        final path = await mic.stopDumpAndSave();
+        await mic.stop();
+        if (!mounted) return;
+        setState(() => _isRecordingDump = false);
+        RaimLog.i('[Mic] 保存${path == null ? "できませんでした" : "しました"}');
+      } else {
+        await mic.start();
+        mic.startDump();
+        if (!mounted) return;
+        setState(() => _isRecordingDump = true);
+      }
+    } catch (e) {
+      RaimLog.e('[Mic] 録音テストに失敗しました', e);
+      if (!mounted) return;
+      setState(() => _isRecordingDump = false);
+    }
+  }
+
   Future<void> _pickImage() async {
     await context.read<CameraProvider>().pickAndStoreImage(ImageSource.gallery);
   }
@@ -464,7 +498,11 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
               ),
             ),
             _iconButton(Icons.attach_file, '画像を送る', _pickImage),
-            _iconButton(Icons.mic_none, '音声入力（未実装）', null),
+            _iconButton(
+              _isRecordingDump ? Icons.stop_circle_outlined : Icons.mic_none,
+              _isRecordingDump ? 'マイク録音を止めて保存' : 'マイク録音テスト',
+              _toggleMicDump,
+            ),
             const SizedBox(width: 4),
             SizedBox(
               width: 32,

@@ -49,6 +49,18 @@ dependencies:
   shelf_web_socket: ^2.0.0
   web_socket_channel: ^3.0.0
   
+  # 音声入力（STT）用
+  # マイクの PCM ストリーム。Windows/Android/iOS すべてで pcm16bits に対応。
+  record: ^7.1.1
+  # ウェイクワード検知（オフライン）。ネイティブバイナリは
+  #   dart run vosk_flutter_service install -t windows
+  # で別途入れる（Android は同梱済み）。
+  vosk_flutter_service: ^0.1.2
+  # 音声機能の ON/OFF 設定の保存
+  shared_preferences: ^2.3.3
+  # デバッグ用 wav の保存先を得るため
+  path_provider: ^2.1.5
+
   cupertino_icons: ^1.0.8
   image: ^4.9.1
   window_manager: ^0.5.2
