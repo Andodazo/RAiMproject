@@ -4,6 +4,24 @@
 /// API Gateway API Key、AWS Secret、Bedrock/Mantle の API Key などの秘密情報は
 /// 絶対にクライアントへ持たせません。
 class RaimConfig {
+  /// Cognito User Pool / Identity Pool / 画像バケットのリージョン。
+  static const String cognitoRegion = 'ap-northeast-1';
+  static const String identityPoolRegion = 'ap-northeast-1';
+  static const String imageBucketRegion = 'ap-northeast-1';
+
+  /// 既存のCognito User Pool ID。
+  static const String userPoolId = 'ap-northeast-1_OMFV9fgsG';
+
+  /// 認証済みユーザー用のCognito Identity Pool。
+  static const String identityPoolId =
+      'ap-northeast-1:dafca2b0-ea69-4346-b292-3a60e144496d';
+
+  /// 画像アップロード先のS3バケット。
+  static const String imageBucketName = 'raim-images-dev-123456789012';
+
+  static const int maxImageCount = 10;
+  static const int maxImageTotalBytes = 10 * 1024 * 1024;
+
   /// Cognito Managed Login のドメイン。
   static const String cognitoDomain =
       'https://ap-northeast-1omfv9fgsg.auth.ap-northeast-1.amazoncognito.com';

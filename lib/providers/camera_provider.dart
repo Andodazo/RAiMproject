@@ -1,28 +1,25 @@
 //カメラ、画像の状態管理
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:raim_prototype/models/image_attachment.dart';
 import 'package:raim_prototype/services/camera_service.dart';
 
 
 class CameraProvider extends ChangeNotifier {
   /// 一度に添付できる画像の枚数上限。
   ///
-  /// 上限が無いと、ギャラリーで数十枚選ばれたときに
-  /// Base64 が肥大して送信も描画も詰まる。
-  static const int maxImageCount = 4;
+  /// ギャラリーから数十枚選ばれた場合でも、Coreの上限と一致させる。
+  static const int maxImageCount = 10;
 
   final CameraService _cameraService = CameraService();
-  // ★ 変更：単一のパス/Base64 ではなく、リストで管理する
-  final List<String> _selectedImagePaths = [];//端末で複数保持ための処理
-  final List<String> _base64ImagesData = [];//画像をテキストにする処理
-  //OSコマンドインジェクションのケア
-  List<String> get selectedImagePaths => _selectedImagePaths;//画面側から画像のパスを安全に取得するため
-  bool get hasImage => _selectedImagePaths.isNotEmpty;//画像をそもそも持っているかどうか
+  final List<PendingImage> _selectedImages = [];
 
-  //chat_provider等と連携するために利用するリスト型ゲッター
-  //画像があれば一緒に送る、なければ画像項目を送らない
-  List<String>? get selectedImagesBase64 =>
-      _base64ImagesData.isNotEmpty ? _base64ImagesData : null;
+  List<PendingImage> get selectedImages => List.unmodifiable(_selectedImages);
+  List<String> get selectedImagePaths =>
+      List.unmodifiable(_selectedImages.map((image) => image.localPath));
+  bool get hasImage => _selectedImages.isNotEmpty;
 
   /// 画像を取得してキープする（カメラかギャラリーかを引数で指定）
   Future<void> pickAndStoreImage(ImageSource source) async {
@@ -33,14 +30,16 @@ class CameraProvider extends ChangeNotifier {
       // 既存の選択に追加する。
       // 以前はコメントに「追加」と書きながら実際は代入で上書きしており、
       // 2回目の選択で1回目に選んだ画像が消えていた。
-      final remaining = maxImageCount - _selectedImagePaths.length;
+      final remaining = maxImageCount - _selectedImages.length;
       if (remaining <= 0) {
         return;
       }
 
       final accepted = results.take(remaining).toList();
-      _selectedImagePaths.addAll(accepted.map((e) => e['path']!));
-      _base64ImagesData.addAll(accepted.map((e) => e['base64']!));
+      _selectedImages.addAll(accepted);
+      for (final unused in results.skip(remaining)) {
+        _deleteUploadFile(unused.uploadPath);
+      }
 
       notifyListeners(); // 画面に「画像が選ばれたよ！」と通知してプレビュー表示させる
     }
@@ -48,17 +47,35 @@ class CameraProvider extends ChangeNotifier {
 
   /// 指定されたインデックスの画像だけを削除する
   void removeImageAt(int index) {
-    if (index >= 0 && index < _selectedImagePaths.length) {
-      _selectedImagePaths.removeAt(index);
-      _base64ImagesData.removeAt(index);
+    if (index >= 0 && index < _selectedImages.length) {
+      final removed = _selectedImages.removeAt(index);
+      _deleteUploadFile(removed.uploadPath);
       notifyListeners(); // 画面を再描画してプレビューから消す
     }
   }
 
-  /// 送信が終わったら画像をクリアする
-  void clearImage() {
-    _selectedImagePaths.clear();
-    _base64ImagesData.clear();
+  /// 選択状態をクリアする。
+  ///
+  /// 送信開始直後は、アップロード処理が一時ファイルを読むため
+  /// [deleteTemporaryFiles]をfalseにする（アップロード側が後で削除する）。
+  void clearImage({bool deleteTemporaryFiles = true}) {
+    if (deleteTemporaryFiles) {
+      for (final image in _selectedImages) {
+        _deleteUploadFile(image.uploadPath);
+      }
+    }
+    _selectedImages.clear();
     notifyListeners(); // 画面からプレビューを消す
+  }
+
+  void _deleteUploadFile(String path) {
+    // アップロードサービス側でも成功・失敗後に削除する。
+    // ここでは選択解除時の一時ファイルだけを掃除する。
+    unawaited(() async {
+      try {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }());
   }
 }

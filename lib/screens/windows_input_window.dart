@@ -219,6 +219,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   // ------------------------------------------------------------
 
   void _send() {
+    if (context.read<ChatProvider>().isLoading) return;
     final text = _controller.text.trim();
     final camera = context.read<CameraProvider>();
     final hasImage = camera.hasImage;
@@ -229,18 +230,17 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     // その隙に clearImage() が走るため、参照のまま渡すと空になる。
     // selectedImagePaths は非 null なので null 判定は不要（常に真だった）
     final paths = List<String>.from(camera.selectedImagePaths);
-    final base64 = camera.selectedImagesBase64 != null
-        ? List<String>.from(camera.selectedImagesBase64!)
-        : null;
+    final pendingImages = List.of(camera.selectedImages);
 
     context.read<ChatProvider>().sendUserMessage(
           text,
-          images: base64,
+          pendingImages: pendingImages,
           filePaths: paths,
         );
 
     _controller.clear();
-    camera.clearImage();
+    // 一時ファイルはアップロードサービスが読み終わってから削除する。
+    camera.clearImage(deleteTemporaryFiles: false);
   }
 
   // ------------------------------------------------------------

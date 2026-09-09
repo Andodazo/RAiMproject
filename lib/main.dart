@@ -29,6 +29,7 @@ import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/screens/splash_screen.dart';
 import 'package:raim_prototype/services/auth_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
+import 'package:raim_prototype/services/aws_image_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/noop_unity_bridge.dart';
 import 'package:raim_prototype/services/windows_unity_bridge.dart';
@@ -66,7 +67,8 @@ void main() async {
 
   // RAiM サーバー接続用のサービスを作成する。
   // 未認証状態で WebSocket 接続しないよう、connect() は SplashScreen で認証済みを確認してから呼ぶ。
-  final authProvider = AuthProvider(AuthService());
+  final authService = AuthService();
+  final authProvider = AuthProvider(authService);
   final raimService = RaimServerService(serverUrl: RaimConfig.serverUrl, accessTokenGetter: () => authProvider.getValidAccessToken(),);
   //RaimAppにraimServiceとunityBridgeを入れている
   runApp(
@@ -205,7 +207,12 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
         Provider<UnityCommunicator>.value(value: widget.unityBridge),
         //既存のChatProvider
         ChangeNotifierProvider(
-          create: (_) => ChatProvider(widget.raimService, widget.unityBridge),
+          create: (_) => ChatProvider(
+            widget.raimService,
+            widget.unityBridge,
+            imageService: AwsImageService(),
+            idTokenGetter: widget.authProvider.getValidIdToken,
+          ),
         ),
         //新しく追加するCameraProvider
         ChangeNotifierProvider(create: (_) => CameraProvider()),

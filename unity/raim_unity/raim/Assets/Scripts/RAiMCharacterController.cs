@@ -410,10 +410,11 @@ public class RAiMCharacterController : MonoBehaviour
             websocket = null;
         }
 
-        if (string.IsNullOrEmpty(bridgeToken))
-        {
-            bridgeToken = LoadBridgeToken();
-        }
+        // Flutterは起動するたびに合言葉を更新するため、
+        // Unityプロセスを再起動しなくても接続のたびに最新値を読む。
+        // 以前は空の場合だけ読み込んでいたため、Flutter再起動後も
+        // 古い合言葉を使い続け、認証に失敗していた。
+        bridgeToken = LoadBridgeToken();
 
         // ハンドラの中でフィールドではなくこのローカル変数を見る。
         // フィールドを見ると、差し替わった後の別インスタンスを

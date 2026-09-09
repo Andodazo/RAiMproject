@@ -315,6 +315,12 @@ class AuthService {
     return tokens?.accessToken;
   }
 
+  /// Identity Pool連携に使う、期限確認済みのUser Pool ID Tokenを返す。
+  Future<String?> getValidIdToken() async {
+    final tokens = await loadValidTokens();
+    return tokens?.idToken;
+  }
+
   Future<void> logout() async {
     // 端末からトークンを消すだけでは Cognito 側のセッションと
     // refresh token が生き続ける。revoke してから消す。

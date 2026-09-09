@@ -79,30 +79,27 @@ class _ChatInputState extends State<ChatInput> {
     final hasImage = cameraProvider.hasImage;
     // リスト型のゲッターをそのまま取得
     final imagePaths = cameraProvider.selectedImagePaths;
-    final base64List = cameraProvider.selectedImagesBase64;
+    final pendingImages = List.of(cameraProvider.selectedImages);
     //テキストも画像も両方空っぽなら何もせず終了
     if (text.isEmpty && !hasImage) return;
 
-    // 本文・画像パス・Base64 は出さない。件数と大きさだけ記録する。
+    // 本文・画像パス・画像データは出さない。件数だけ記録する。
     RaimLog.d(
       '[ChatInput] 送信 ${RaimLog.size(text)}, '
-      '画像=${base64List?.length ?? 0}件',
+      '画像=${pendingImages.length}件',
     );
     //クリアされる前に、現在の画像パスのコピーを作成しておく（安全のため）
     // selectedImagePaths は非 null なので null 判定は不要（常に真だった）
     final pathsToSend = List<String>.from(imagePaths);
-    // Base64 も同様にコピーする
-    // sendUserMessage は async で、内部の最初の await で制御が戻る。
-    // その隙に clearImage() が走るため、参照のまま渡すと空になる
-    final base64ToSend = base64List != null ? List<String>.from(base64List) : null;
     // サーバーへ送信
     chatProvider.sendUserMessage(
       text,
-      images: base64ToSend,
+      pendingImages: pendingImages,
       filePaths: pathsToSend, //画面表示用のファイルパスをChatProviderに渡す
       );
     _controller.clear();
-    cameraProvider.clearImage(); //キープされていた画像とプレビューをクリア
+    // 一時ファイルはアップロードサービスが読み終わってから削除する。
+    cameraProvider.clearImage(deleteTemporaryFiles: false);
   }
   
   @override
