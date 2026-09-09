@@ -1,6 +1,5 @@
 //画像の「選択・撮影」と「送信用の軽量化・変換」の処理
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
@@ -70,7 +69,7 @@ class CameraService {
 
       // 重い処理なので別 isolate で回す（UIを止めないため）。
       final compressedBytes = await compute(
-        processImageInput,
+        _processImageInput,
         _ImageProcessingInput(
           bytes: imageBytes,
           contentType: format.contentType,
@@ -105,7 +104,7 @@ class _ImageProcessingInput {
   });
 }
 
-Uint8List processImageInput(_ImageProcessingInput input) {
+Uint8List _processImageInput(_ImageProcessingInput input) {
   return processImageBytes(input.bytes, input.contentType);
 }
 

@@ -174,7 +174,7 @@ class AuthService {
 
     try {
       final callbackUri = await loopbackCallback;
-      return handleCallback(callbackUri);
+      return await handleCallback(callbackUri);
     } finally {
       await _browserLoginLauncher.closeLaunchedBrowser();
     }
