@@ -6,6 +6,7 @@
 // - 既存の Stream ベース sendMessage はそのまま
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/models/llm_response.dart';
@@ -19,6 +20,9 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/models/image_attachment.dart';
+import 'package:raim_prototype/services/aws_image_service.dart';
+import 'package:raim_prototype/config/raim_config.dart';
 
 class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // ============================================================
@@ -29,6 +33,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
 
   final LLMService _llmService;
   final UnityCommunicator _unityBridge;
+  final AwsImageService _imageService;
+  final Future<String?> Function() _idTokenGetter;
   // サーバーから届いた audio_chunk を順番に再生するキュー
   final AudioPlayQueue _audioQueue = AudioPlayQueue();
   late final AudioChunkAssembler _audioAssembler;
@@ -91,7 +97,13 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   RaimConnectionState _connectionState = RaimConnectionState.connected;
   StreamSubscription<RaimConnectionState>? _stateSubscription;
   //ここは使わない
-  ChatProvider(this._llmService, this._unityBridge) {
+  ChatProvider(
+    this._llmService,
+    this._unityBridge, {
+    AwsImageService? imageService,
+    Future<String?> Function()? idTokenGetter,
+  })  : _imageService = imageService ?? AwsImageService(),
+        _idTokenGetter = idTokenGetter ?? (() async => null) {
     _audioAssembler = AudioChunkAssembler(
       onAudioReady: (audio) {
         // キューは1つの AudioPlayer で直列に鳴らすので、
@@ -644,7 +656,7 @@ _toolStatus = null;
     unawaited(_audioQueue.dispose());
     super.dispose();
   }
-//{List<String>? images}の追加
+// 画像付き送信ではS3参照形式のPendingImageを受け取る。
   /// ストリーミング中のメッセージを差し替える。
   ///
   /// 以前は `_messages[_messages.length - 1]` と末尾決め打ちだったため、
@@ -667,13 +679,16 @@ _toolStatus = null;
     _currentStreamingMessage = updated;
   }
 
-  /// 一度に送れる画像の合計サイズ（Base64 の文字数）
-  ///
-  /// 上限が無いと巨大 payload でサーバー側に弾かれるか、
-  /// 端末側のメモリを圧迫する。
-  static const int maxTotalImageBase64Chars = 4 * 1024 * 1024;
+  /// Mantleの画像込みリクエスト上限を超えないためのクライアント側目安。
+  /// S3/Core側の正本となる上限は10MiBだが、CoreでBase64化するため
+  /// クライアントでは安全側に2MiBを適用する。
+  static const int maxTotalImageBytes = 2 * 1024 * 1024;
 
-  Future<void> sendUserMessage(String text, {List<String>? images, List<String>? filePaths}) async {
+  Future<void> sendUserMessage(
+    String text, {
+    List<PendingImage>? pendingImages,
+    List<String>? filePaths,
+  }) async {
     // 応答の生成中は新しい送信を受け付けない。
     // 受け付けると2つの応答が同じ吹き出しに混ざり、
     // 片方の chat_end でもう片方が打ち切られる。
@@ -706,47 +721,68 @@ _toolStatus = null;
     notifyListeners();
     // ────────────────────────────
 
-    //サーバーが受け取るための画像配列を準備（中身がnullならからの配列に）
-    //  修正：サーバーの仕様に合わせ、Base64文字列を [ { "data": "...", "media_type": "image/jpeg" } ] の構造に変換
-    //image
-    final List<Map<String, String>> targetImages = [];
-    if (images != null) {
-      var totalChars = 0;
-      for (final base64Data in images) {
-        if (targetImages.length >= CameraProvider.maxImageCount) {
-          RaimLog.w('[ChatProvider] 画像の枚数上限を超えたぶんは送りません');
-          break;
-        }
-        if (totalChars + base64Data.length > maxTotalImageBase64Chars) {
-          RaimLog.w('[ChatProvider] 画像の合計サイズ上限を超えたぶんは送りません');
-          break;
-        }
-        totalChars += base64Data.length;
-        targetImages.add({
-          'data': base64Data,
-          'media_type': 'image/jpeg',//JPEG指定（一般的なカメラ・ギャラリー画像はこれで通る）
-        });
-      }
+    final imagesToUpload = pendingImages == null
+        ? const <PendingImage>[]
+        : List<PendingImage>.from(pendingImages);
+    if (imagesToUpload.length > CameraProvider.maxImageCount) {
+      _addLocalError('画像は10枚まで添付できます。');
+      unawaited(_imageService.cleanupPendingImages(imagesToUpload));
+      return;
     }
+    final totalBytes = imagesToUpload.fold<int>(
+      0,
+      (total, image) => total + image.sizeBytes,
+    );
+    if (totalBytes > RaimConfig.maxImageTotalBytes) {
+      _addLocalError('画像の合計サイズは10MiB以下にしてください。');
+      unawaited(_imageService.cleanupPendingImages(imagesToUpload));
+      return;
+    }
+    if (totalBytes > maxTotalImageBytes) {
+      _addLocalError('画像の合計サイズが大きすぎます。');
+      unawaited(_imageService.cleanupPendingImages(imagesToUpload));
+      return;
+    }
+
+    final requestId = imagesToUpload.isEmpty ? null : const Uuid().v4();
+    List<Map<String, dynamic>>? targetImages;
     // ロード中状態に切り替える
     _isLoading = true;
     // ロード中状態に変わったことを画面側に知らせて、再描画させる
     notifyListeners();
     //直近の会話履歴を送る
     try {
+      if (imagesToUpload.isNotEmpty) {
+        final idToken = await _idTokenGetter();
+        if (idToken == null || idToken.isEmpty) {
+          throw const FormatException('画像アップロードにはログインが必要です。');
+        }
+        final userSub = _subFromIdToken(idToken);
+        final uploaded = await _imageService.uploadImages(
+          idToken: idToken,
+          images: imagesToUpload,
+          userSub: userSub,
+          requestId: requestId!,
+        );
+        targetImages = uploaded.map((image) => image.toJson()).toList();
+        RaimLog.d(
+          '[ChatProvider] S3画像アップロード完了: '
+          'requestId=$requestId, count=${targetImages.length}, bytes=$totalBytes',
+        );
+      }
       //20のmessageまで履歴に残す
       final recentHistory = _messages.length > 21
           ? _messages.sublist(_messages.length - 21, _messages.length - 1)
           : _messages.sublist(0, _messages.length - 1);
       //chatがかえってきているかの有無
       bool chatReceived = false;
-      // 引数の images にtargetImages を渡します
       // AIに text・履歴・画像を送る
       // v2.2では返答が複数回に分かれて届くため、await for で順番に受け取る
       await for (final response in _llmService.sendMessage(
         text,
         history: recentHistory,
         images: targetImages,
+        requestId: requestId,
         threadId: _currentThreadId,
       )) {
 
@@ -776,9 +812,44 @@ _toolStatus = null;
       ));
       //成功・失敗に関わらず必ず実行される後処理
     } finally {
+      await _imageService.cleanupPendingImages(imagesToUpload);
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  String _subFromIdToken(String idToken) {
+    final parts = idToken.split('.');
+    if (parts.length != 3) {
+      throw const FormatException('ID Tokenの形式が不正です。');
+    }
+    try {
+      final normalized = base64Url.normalize(parts[1]);
+      final payload = jsonDecode(utf8.decode(base64Url.decode(normalized)));
+      if (payload is! Map || payload['sub'] is! String) {
+        throw const FormatException('ID Tokenにsubがありません。');
+      }
+      final sub = payload['sub'] as String;
+      if (sub.isEmpty || sub.contains('/') || sub.contains('\\')) {
+        throw const FormatException('ID Tokenのsubが不正です。');
+      }
+      return sub;
+    } on FormatException {
+      rethrow;
+    } catch (_) {
+      throw const FormatException('ID Tokenを解釈できませんでした。');
+    }
+  }
+
+  void _addLocalError(String text) {
+    _messages.add(Message(
+      text: text,
+      role: MessageRole.assistant,
+      timestamp: DateTime.now(),
+      emotion: 'sad',
+      intensity: 0.5,
+    ));
+    notifyListeners();
   }
 
   // ============================================================

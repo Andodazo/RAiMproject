@@ -480,6 +480,7 @@ class RaimServerService implements LLMService {
     String userInput, {
     List<Message> history = const [],
     List<Map<String, dynamic>>? images,
+    String? requestId,
     String? threadId,
   }) async* {
     // オフラインまたは切断中なら、送信前に再接続を試す
@@ -498,8 +499,13 @@ class RaimServerService implements LLMService {
     final payload = <String, dynamic>{
       'text': userInput,
     };
-     // 画像がある場合は payload に追加する
+    // 画像がある場合は、S3参照形式と画像付きリクエストの識別子を追加する。
     if (images != null && images.isNotEmpty) {
+      if (requestId == null || requestId.isEmpty) {
+        throw const FormatException('画像付きメッセージにはrequestIdが必要です。');
+      }
+      payload['type'] = 'user_message';
+      payload['requestId'] = requestId;
       payload['images'] = images;
     }
     // session_id がある場合は送信に含める

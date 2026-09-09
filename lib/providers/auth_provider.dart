@@ -105,6 +105,10 @@ class AuthProvider extends ChangeNotifier {
     return _authService.getValidAccessToken();
   }
 
+  Future<String?> getValidIdToken() {
+    return _authService.getValidIdToken();
+  }
+
   Future<void> logout() async {
     await _authService.logout();
     _tokens = null;

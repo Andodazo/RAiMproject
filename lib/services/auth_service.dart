@@ -174,7 +174,7 @@ class AuthService {
 
     try {
       final callbackUri = await loopbackCallback;
-      return handleCallback(callbackUri);
+      return await handleCallback(callbackUri);
     } finally {
       await _browserLoginLauncher.closeLaunchedBrowser();
     }
@@ -313,6 +313,12 @@ class AuthService {
   Future<String?> getValidAccessToken() async {
     final tokens = await loadValidTokens();
     return tokens?.accessToken;
+  }
+
+  /// Identity Pool連携に使う、期限確認済みのUser Pool ID Tokenを返す。
+  Future<String?> getValidIdToken() async {
+    final tokens = await loadValidTokens();
+    return tokens?.idToken;
   }
 
   Future<void> logout() async {

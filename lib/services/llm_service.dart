@@ -17,6 +17,7 @@ abstract class LLMService {
     String userInput, {
     List<Message> history = const [],
     List<Map<String, dynamic>>? images, // ★ オプション引数に画像配列を追加
+    String? requestId,
     String? threadId, // 会話スレッドの指定（省略時はサーバー側が判断）
   });
 }
@@ -30,6 +31,7 @@ class MockLLMService implements LLMService {
     String userInput, {
     List<Message> history = const [],
     List<Map<String, dynamic>>? images, // ★ 型を合わせるために追加
+    String? requestId,
     String? threadId, // インターフェースに合わせる（この実装では未使用）
   }) async* {
     await Future.delayed(const Duration(seconds: 1));
