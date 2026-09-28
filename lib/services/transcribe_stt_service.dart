@@ -391,7 +391,10 @@ class SttSession {
       // 権限不足（403）もここに来る。キャッシュした認証情報が古い可能性も
       // あるので捨てておく。次回は取り直す。
       _service._credentials.clear();
-      RaimLog.e('[STT] Transcribe に接続できませんでした', e.runtimeType);
+      RaimLog.e(
+        '[STT] Transcribe に接続できませんでした',
+        '${e.runtimeType}${_handshakeStatus(e)}',
+      );
       await _end(SttEndReason.failed, 'Transcribe に接続できませんでした');
       return;
     }
@@ -462,8 +465,11 @@ class SttSession {
               _lastTextAt = _service._clock();
               _onPartial?.call(now);
             }
-          case TranscribeFailure(:final type):
+          case TranscribeFailure(:final type, :final message):
             RaimLog.e('[STT] Transcribe がエラーを返しました: $type');
+            // 説明文は「15秒間音声が届かなかった」などの理由で、
+            // 話した内容は含まれない。原因を追うために debug で出す。
+            if (message.isNotEmpty) RaimLog.d('[STT] $message');
             unawaited(_end(SttEndReason.failed, _describeFailure(type)));
           case null:
             break;
@@ -542,6 +548,17 @@ class SttSession {
       '(${seconds.toStringAsFixed(1)}秒)',
     );
     if (!_outcome.isCompleted) _outcome.complete(outcome);
+  }
+
+  /// 接続時の HTTP ステータスだけを取り出す（` (HTTP 403)` の形）。
+  ///
+  /// 例外のメッセージには署名付き URL（一時認証情報入り）がそのまま
+  /// 入っているので、全体は出さない。403 なら権限か時計のずれ、
+  /// 取れなければ通信の問題、と切り分けられる。
+  static String _handshakeStatus(Object e) {
+    final code =
+        RegExp(r'status code:?\s*(\d{3})').firstMatch(e.toString())?.group(1);
+    return code == null ? '' : ' (HTTP $code)';
   }
 
   String _describeFailure(String type) {

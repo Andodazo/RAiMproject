@@ -22,7 +22,6 @@ import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/models/image_attachment.dart';
 import 'package:raim_prototype/services/aws_image_service.dart';
-import 'package:raim_prototype/config/raim_config.dart';
 
 class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // ============================================================
@@ -106,6 +105,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
         _idTokenGetter = idTokenGetter ?? (() async => null) {
     _audioAssembler = AudioChunkAssembler(
       onAudioReady: (audio) {
+        // ユーザーが話し始めて止めた返答の、残りの音声は鳴らさない
+        if (_voiceMuted) return;
         // キューは1つの AudioPlayer で直列に鳴らすので、
         // 前の返答の言い残しと重なることはない。後ろに並ぶだけ。
         _audioQueue.enqueueBytes(bytes: audio.bytes, format: audio.format);
@@ -130,6 +131,23 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   ///
   /// ウェイクワード検知が、ライム自身の声で反応しないように使う。
   ValueListenable<bool> get isSpeaking => _audioQueue.playing;
+
+  /// [stopSpeaking] で止めたか。次に送信するまで音声を鳴らさない。
+  bool _voiceMuted = false;
+
+  /// ライムの声をすぐに止める。
+  ///
+  /// ユーザーが声で話し始めたときに使う。Windows ではマイクの
+  /// エコーキャンセルが効かないので、ライムが喋ったままだと、その声を
+  /// マイクが拾ってユーザーの発言として文字にしてしまう。
+  ///
+  /// 返答の途中なら残りの音声も届き続けるので、次に送信するまでは
+  /// 届いても鳴らさない。
+  void stopSpeaking() {
+    _voiceMuted = true;
+    _audioAssembler.reset();
+    unawaited(_audioQueue.reset());
+  }
 
   /// 「寝てる」状態か（UI で立ち絵切替などに使用予定）
   bool get isOffline => _connectionState == RaimConnectionState.offline;
@@ -710,6 +728,8 @@ _toolStatus = null;
     // 万一残っていてもキューは直列なので、重ならず後ろに並ぶだけ。
     _audioAssembler.reset();
     _audioQueue.stopAfterCurrent();
+    // 新しい返答の音声は鳴らす
+    _voiceMuted = false;
     _currentStreamingMessage = null;
     _toolStatus = null;
     // ここに追加
@@ -738,13 +758,14 @@ _toolStatus = null;
       0,
       (total, image) => total + image.sizeBytes,
     );
-    if (totalBytes > RaimConfig.maxImageTotalBytes) {
-      _addLocalError('画像の合計サイズは10MiB以下にしてください。');
-      unawaited(_imageService.cleanupPendingImages(imagesToUpload));
-      return;
-    }
+    // 10MiB の確認は 2MiB の確認に含まれるので1つにまとめた。
+    // 以前は両方あり、10MiB 側の文言（「10MiB以下に」）は出ることがなかった。
     if (totalBytes > maxTotalImageBytes) {
-      _addLocalError('画像の合計サイズが大きすぎます。');
+      _addLocalError(
+        '画像の合計サイズが大きすぎます'
+        '（${maxTotalImageBytes ~/ (1024 * 1024)}MB まで）。'
+        '枚数を減らしてください。',
+      );
       unawaited(_imageService.cleanupPendingImages(imagesToUpload));
       return;
     }

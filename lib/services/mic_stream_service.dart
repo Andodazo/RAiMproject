@@ -84,14 +84,33 @@ class MicStreamService {
     ];
   }
 
+  /// 開いている途中のもの。
+  Future<Stream<Uint8List>>? _starting;
+
   /// マイクを開く。既に開いていれば同じストリームを返す。
   ///
   /// 返るのはブロードキャストなので、ウェイクワード検知と録音の
   /// 両方が同時に listen できる。
-  Future<Stream<Uint8List>> start() async {
+  ///
+  /// 開いている途中にもう一度呼ばれたら、同じ結果を待つ。
+  /// 以前は開き終わるまで「開いていない」扱いだったため、ウェイクワードの
+  /// 起動とマイクボタンが重なると、マイクを2回開こうとしていた。
+  Future<Stream<Uint8List>> start() {
     final existing = _controller;
-    if (existing != null) return existing.stream;
+    if (existing != null) return Future.value(existing.stream);
 
+    final pending = _starting;
+    if (pending != null) return pending;
+
+    late final Future<Stream<Uint8List>> future;
+    future = _open().whenComplete(() {
+      if (identical(_starting, future)) _starting = null;
+    });
+    _starting = future;
+    return future;
+  }
+
+  Future<Stream<Uint8List>> _open() async {
     if (!await hasPermission()) {
       throw StateError('マイクの使用が許可されていません');
     }
@@ -147,6 +166,17 @@ class MicStreamService {
   }
 
   Future<void> stop() async {
+    // 開いている途中なら、開き終わるのを待ってから閉じる。
+    // 待たないと、閉じたあとで開き終わってマイクが開いたまま残る。
+    final pending = _starting;
+    if (pending != null) {
+      try {
+        await pending;
+      } catch (_) {
+        // 開けなかったのなら閉じるものも無い
+      }
+    }
+
     final sub = _sub;
     final controller = _controller;
     _sub = null;

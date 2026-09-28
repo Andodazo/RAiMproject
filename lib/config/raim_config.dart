@@ -28,7 +28,6 @@ class RaimConfig {
   static const String transcribeLanguageCode = 'ja-JP';
 
   static const int maxImageCount = 10;
-  static const int maxImageTotalBytes = 10 * 1024 * 1024;
 
   /// Cognito Managed Login のドメイン。
   static const String cognitoDomain =

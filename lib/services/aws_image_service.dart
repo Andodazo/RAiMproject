@@ -83,10 +83,67 @@ class AwsImageService {
       throw const FormatException('アップロード対象画像のサイズが一致しません。');
     }
 
+    var response = await _signedPut(
+      credentials: credentials,
+      key: key,
+      image: image,
+      bytes: bytes,
+    );
+
+    // 端末の時計が15分以上ずれていると、S3 は署名を拒否する。
+    // 応答に S3 側の時刻が入っているので、それに合わせて1回だけ送り直す。
+    if (response.statusCode == 403 &&
+        _s3Error(response.body).code == 'RequestTimeTooSkewed') {
+      final serverTime = _s3ServerTime(response.body);
+      if (serverTime != null) {
+        AwsClock.calibrate(serverTime);
+      } else {
+        AwsClock.calibrateFromHttpDate(response.headers['date']);
+      }
+      RaimLog.w('[AwsImageService] 端末の時計がずれていたため送り直します');
+      response = await _signedPut(
+        credentials: credentials,
+        key: key,
+        image: image,
+        bytes: bytes,
+      );
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      // S3 はエラーの理由を XML の本文で返す。
+      //   SignatureDoesNotMatch … 署名の組み立て違い
+      //   AccessDenied          … Identity Pool のロールに権限が無い
+      //   RequestTimeTooSkewed  … 端末の時計のずれ
+      //   ExpiredToken          … 一時認証情報の期限切れ
+      // 以前はステータスコードしか出しておらず、どれなのか分からなかった。
+      final error = _s3Error(response.body);
+      RaimLog.e(
+        '[AwsImageService] S3 PutObject failed: '
+        '${response.statusCode} ${error.code}',
+      );
+      // 説明文にはロールの ARN（アカウント ID 入り）が含まれることがあるので
+      // debug のみ。画像の中身や認証情報は含まれない。
+      if (error.message.isNotEmpty) {
+        RaimLog.d('[AwsImageService] ${error.message}');
+      }
+      // 権限エラーなら使い回している認証情報が古い可能性がある。
+      // 次回は取り直す。
+      if (response.statusCode == 403) _credentials.clear();
+      throw Exception('画像をS3へアップロードできませんでした。');
+    }
+  }
+
+  Future<http.Response> _signedPut({
+    required AwsCredentials credentials,
+    required String key,
+    required PendingImage image,
+    required Uint8List bytes,
+  }) {
     final host = '${RaimConfig.imageBucketName}.s3.${RaimConfig.imageBucketRegion}.amazonaws.com';
     final canonicalUri = '/${AwsSigV4.uriEncodePath(key)}';
     final payloadHash = sha256.convert(bytes).toString();
-    final now = DateTime.now().toUtc();
+    // 端末の時計ではなく、AWS に合わせて補正した時刻で署名する
+    final now = AwsClock.now();
     final amzDate = AwsSigV4.amzDate(now);
     final date = amzDate.substring(0, 8);
     final canonicalHeaders =
@@ -121,7 +178,7 @@ class AwsImageService {
     );
     final signature = AwsSigV4.sign(signingKey, stringToSign);
 
-    final response = await http
+    return http
         .put(
           // canonicalUriは署名にも使ったエンコード済みパスなので、
           // Uri.httpsで再エンコードしない。
@@ -138,14 +195,25 @@ class AwsImageService {
           body: bytes,
         )
         .timeout(_timeout);
+  }
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      RaimLog.e('[AwsImageService] S3 PutObject failed: ${response.statusCode}');
-      // 権限エラーなら使い回している認証情報が古い可能性がある。
-      // 次回は取り直す。
-      if (response.statusCode == 403) _credentials.clear();
-      throw Exception('画像をS3へアップロードできませんでした。');
-    }
+  /// S3 のエラー XML から Code と Message を取り出す。
+  ///
+  /// SignatureDoesNotMatch の本文には StringToSign や CanonicalRequest も
+  /// 入っているが、それらは取り出さない（ログに出さない）。
+  static ({String code, String message}) _s3Error(String body) {
+    String? tag(String name) =>
+        RegExp('<$name>([^<]*)</$name>').firstMatch(body)?.group(1);
+    return (
+      code: tag('Code') ?? 'UnknownError',
+      message: tag('Message') ?? '',
+    );
+  }
+
+  /// RequestTimeTooSkewed の本文にある S3 側の時刻。
+  static DateTime? _s3ServerTime(String body) {
+    final raw = RegExp('<ServerTime>([^<]*)</ServerTime>').firstMatch(body)?.group(1);
+    return raw == null ? null : DateTime.tryParse(raw)?.toUtc();
   }
 
   String _createImageKey({

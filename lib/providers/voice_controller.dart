@@ -49,11 +49,13 @@ class VoiceController extends ChangeNotifier {
     required VoiceSettingsProvider settings,
     required AuthProvider auth,
     required ValueListenable<bool> speaking,
+    VoidCallback? stopSpeaking,
     WakeWordService? wakeWord,
     TranscribeSttService? stt,
   })  : _settings = settings,
         _auth = auth,
         _speaking = speaking,
+        _stopSpeaking = stopSpeaking,
         _wake = wakeWord ?? WakeWordService.instance,
         _stt = stt {
     _settings.addListener(_onInputsChanged);
@@ -92,6 +94,10 @@ class VoiceController extends ChangeNotifier {
   final VoiceSettingsProvider _settings;
   final AuthProvider _auth;
   final ValueListenable<bool> _speaking;
+
+  /// ライムの声を止める。聞き取りを始めるときに呼ぶ。
+  final VoidCallback? _stopSpeaking;
+
   final WakeWordService _wake;
 
   /// 呼ばれたあとの聞き取り。null なら窓を開くだけ。
@@ -359,6 +365,11 @@ class VoiceController extends ChangeNotifier {
     Uint8List? initialAudio,
   }) async {
     _cancelSession();
+
+    // ライムが喋っている（またはこれから返答の続きを喋る）と、
+    // その声をマイクが拾って、ユーザーの発言として文字にしてしまう。
+    // 話しかけられたら黙る。
+    _stopSpeaking?.call();
 
     late final SttSession session;
     session = stt.listen(

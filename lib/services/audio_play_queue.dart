@@ -52,12 +52,53 @@ class AudioPlayQueue {
   /// 再生開始後に世代が変わっていたら、その音は捨てる。
   int _generation = 0;
 
+  /// play() の完了を待っている間は true。
+  ///
+  /// 読み込み中の失敗は play() が例外で知らせるので、そちらで扱う。
+  /// 再生が始まった後の失敗は play() では分からず、イベントでだけ届く。
+  bool _starting = false;
+
+  /// 続けて再生に失敗した回数。ログが同じ失敗で埋まらないようにするため。
+  int _consecutiveFailures = 0;
+
   AudioPlayQueue() {
     // 1つの音声が終わったら、次の音声を再生する
-    _completeSubscription = _player.onPlayerComplete.listen((_) {
-      _setPlaying(false);
-      _playNext();
-    });
+    _completeSubscription = _player.onPlayerComplete.listen(
+      (_) {
+        _setPlaying(false);
+        _playNext();
+      },
+      // audioplayers は再生の失敗を、全部の購読者にエラーとして流す。
+      // ここに onError が無いと、その都度 Unhandled Exception になっていた。
+      onError: (Object e, StackTrace _) {
+        // 読み込み中の失敗は _playNext の catch が受け取る
+        if (_starting) return;
+        // 再生の途中で失敗した（デバイスが外れた など）。
+        // 完了の通知は来ないので、ここで次へ進めないとキューが止まる。
+        _onPlaybackFailed(e);
+        if (_disposed) return;
+        _setPlaying(false);
+        _playNext();
+      },
+    );
+  }
+
+  void _onPlaybackFailed(Object e) {
+    _consecutiveFailures++;
+    if (_consecutiveFailures == 1) {
+      RaimLog.e('[AudioPlayQueue] 音声再生失敗', e);
+    } else {
+      RaimLog.d('[AudioPlayQueue] 音声再生失敗（$_consecutiveFailures 回連続）');
+    }
+    if (_consecutiveFailures == 3) {
+      // 「オーディオ再生デバイスは現在使用中」などで全部の文が失敗するとき。
+      // RAiM 側では直せないので、何を確かめればよいかを残す。
+      RaimLog.w(
+        '[AudioPlayQueue] 音声を続けて再生できません。'
+        '出力先のスピーカーを他のアプリが占有していないか'
+        '（サウンド設定の「排他モード」）を確認してください',
+      );
+    }
   }
 
   /// audio_chunk をキューに追加する
@@ -167,12 +208,22 @@ class AudioPlayQueue {
 
     try {
       // バイト列から音声を再生する
-      await _player.play(
-        BytesSource(
-          audio.bytes,
-          mimeType: audio.mimeType,
-        ),
-      );
+      _starting = true;
+      try {
+        await _player.play(
+          BytesSource(
+            audio.bytes,
+            mimeType: audio.mimeType,
+          ),
+        );
+      } finally {
+        _starting = false;
+      }
+
+      if (_consecutiveFailures > 1) {
+        RaimLog.i('[AudioPlayQueue] 再生が復帰しました');
+      }
+      _consecutiveFailures = 0;
 
       // 再生開始を待っている間に reset() が入っていたら、
       // 今始まった音は前の返答のものなので止める。
@@ -182,7 +233,7 @@ class AudioPlayQueue {
         _setPlaying(false);
       }
     } catch (e) {
-      RaimLog.e('[AudioPlayQueue] 音声再生失敗: $e');
+      _onPlaybackFailed(e);
 
       // reset 済みなら次へ進めない（捨てたキューを掘り返さない）
       if (generation != _generation) return;

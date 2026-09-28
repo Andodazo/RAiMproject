@@ -475,6 +475,16 @@ class RaimServerService implements LLMService {
   bool _isTerminalResponse(LLMResponse response) {
     return response.isChatEnd || response.isChat || response.isError;
   }
+
+  /// スレッドの一覧・履歴・削除への応答か。
+  ///
+  /// 会話と同じ WebSocket に届くので、会話の応答を待っている間に
+  /// 一覧を取り直すと、会話の側にも流れてくる。
+  bool _isThreadResponse(LLMResponse response) {
+    return response.isThreadList ||
+        response.isThreadHistory ||
+        response.isThreadDeleted;
+  }
  @override
   Stream<LLMResponse> sendMessage(
     String userInput, {
@@ -542,11 +552,16 @@ class RaimServerService implements LLMService {
       // text_chunk / audio_chunk / tool_call などを順番に返す
       while (hasResponse) {
         final response = iterator.current;
-        // ChatProvider 側へ1件ずつ渡す
-        yield response;
-        // chat_end / chat / error が来たら1回分の応答完了
-        if (_isTerminalResponse(response)) {
-          break;
+        // スレッド操作への応答は会話の応答ではないので渡さない。
+        // 以前はそのまま渡しており、ChatProvider が
+        // 「未対応のメッセージ type: thread_list」を出していた。
+        if (!_isThreadResponse(response)) {
+          // ChatProvider 側へ1件ずつ渡す
+          yield response;
+          // chat_end / chat / error が来たら1回分の応答完了
+          if (_isTerminalResponse(response)) {
+            break;
+          }
         }
         // 次の応答を待つ
         hasResponse = await iterator.moveNext().timeout(

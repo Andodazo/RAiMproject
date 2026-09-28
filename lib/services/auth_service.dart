@@ -6,6 +6,7 @@ import 'package:app_links/app_links.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:raim_prototype/services/aws/cognito_credentials_provider.dart';
 import 'package:raim_prototype/config/raim_config.dart';
 import 'package:raim_prototype/models/auth_tokens.dart';
 import 'package:raim_prototype/services/browser_login_launcher.dart';
@@ -334,6 +335,11 @@ class AuthService {
 
     await _storage.clearPkceState();
     await _storage.clearTokens();
+
+    // S3・Transcribe 用の AWS 一時認証情報もメモリから捨てる。
+    // 残っていると、ログアウト後も最大1時間は前のユーザーの権限で
+    // AWS を呼べる状態がアプリ内に残る。
+    CognitoCredentialsProvider.instance.clear();
   }
 
   /// refresh token を Cognito 側で無効化する。
