@@ -24,6 +24,13 @@
 // 落ちた。`[unk]` を除いた単語列の中に、ウェイクワードの単語列が
 // 連続して現れるかで判定する。
 // デコイがあるため、この緩和をしても誤検知は増えない。
+//
+// 【続けて話されたとき】
+// Vosk は発話の切れ目（無音）で結果を返す。「ねえライム、今日の天気は」と
+// 間を空けずに言うと、検知した時点で質問まで言い終わっている。
+// そこから Transcribe につないでも質問は聞けないので、Vosk に渡した音を
+// 少し溜めておき、ウェイクワードの後ろに続きがあった場合はその発話の音を
+// まるごと検知結果に付けて渡す（WakeWordDetection.utterance）。
 
 import 'dart:async';
 import 'dart:convert';
@@ -109,6 +116,23 @@ class WakeWordService {
   /// 直前の結果の末尾と今回の結果をつないで判定するために持っておく。
   List<String> _carry = const [];
   DateTime? _carryAt;
+
+  /// Vosk に渡した音の直近ぶん。続けて話された発話を取り出すために持つ。
+  final List<Uint8List> _ring = [];
+  int _ringBytes = 0;
+
+  /// [_ring] の先頭が、渡し始めから数えて何バイト目か。
+  int _ringStartFed = 0;
+
+  /// 渡し始めてからの合計バイト数。
+  int _fedBytes = 0;
+
+  /// 今の発話（Vosk の区切りから次の区切りまで）が始まった位置。
+  int _roundStartFed = 0;
+
+  /// 溜めておく長さ。1回の発話としては十分に長い。
+  static const int _ringLimit =
+      MicStreamService.sampleRate * MicStreamService.bytesPerSample * 12;
 
   /// 前の結果とつなげてよい間隔。これより空いたら別の発話とみなす。
   static const Duration _carryWindow = Duration(seconds: 2);
@@ -201,6 +225,7 @@ class WakeWordService {
     _pendingBytes = 0;
     _suspended = false;
     _clearCarry();
+    _clearRing();
   }
 
   /// 検知を一時停止する。マイク自体は開けたままにする。
@@ -217,6 +242,8 @@ class WakeWordService {
     _pending.clear();
     _pendingBytes = 0;
     _clearCarry();
+    // 溜めた音にライムの声が混ざらないよう捨てる
+    _clearRing();
     unawaited(_recognizer?.reset());
   }
 
@@ -262,6 +289,7 @@ class WakeWordService {
     if (_suspended) return;
 
     try {
+      _remember(frame);
       final ready = await recognizer.acceptWaveformBytes(frame);
       // await の間に stop() / start() で認識器が差し替わっていたら触らない
       if (!ready || !identical(recognizer, _recognizer)) return;
@@ -269,7 +297,10 @@ class WakeWordService {
       final result = await recognizer.getResult();
       if (!identical(recognizer, _recognizer)) return;
       final text = _textOf(result);
-      if (text.isEmpty) return;
+      if (text.isEmpty) {
+        _roundStartFed = _fedBytes;
+        return;
+      }
 
       final tokens = _tokensOf(text);
       final now = DateTime.now();
@@ -285,24 +316,39 @@ class WakeWordService {
       final matched = _matchedWakeWord(joined);
       if (matched == null) {
         _rememberCarry(tokens, now);
+        _roundStartFed = _fedBytes;
         RaimLog.d('[WakeWord] 非検知');
         return;
       }
 
+      // ウェイクワードの後ろに続きがあれば、この発話の音をまるごと渡す
+      final continued = hasSpeechAfterWakeWord(text, matched);
+
       // 検知したら状態を捨てる。残っていると次の判定に混ざり、
       // 同じ発話で二重に発火することがある。
       await recognizer.reset();
+
+      // reset を待つ間にマイクから届いた分（_pending）も含めたいので、
+      // 捨てる直前に取り出す
+      final utterance = continued ? _utteranceAudio() : null;
       _pending.clear();
       _pendingBytes = 0;
       _clearCarry();
+      _clearRing();
 
-      RaimLog.i('[WakeWord] 検知しました');
+      RaimLog.i(
+        utterance == null
+            ? '[WakeWord] 検知しました'
+            : '[WakeWord] 検知しました（続けて話された '
+                '${(utterance.length / (MicStreamService.sampleRate * MicStreamService.bytesPerSample)).toStringAsFixed(1)}秒）',
+      );
       if (!_detections.isClosed) {
         _detections.add(
           WakeWordDetection(
             phrase: matched,
             preroll: MicStreamService.instance.takePreroll(),
             at: DateTime.now(),
+            utterance: utterance,
           ),
         );
       }
@@ -347,6 +393,42 @@ class WakeWordService {
     _carryAt = null;
   }
 
+  /// Vosk に渡した音を覚えておく。古いものから捨てる。
+  void _remember(Uint8List frame) {
+    _ring.add(frame);
+    _ringBytes += frame.length;
+    _fedBytes += frame.length;
+    while (_ring.isNotEmpty && _ringBytes - _ring.first.length >= _ringLimit) {
+      final old = _ring.removeAt(0);
+      _ringBytes -= old.length;
+      _ringStartFed += old.length;
+    }
+  }
+
+  void _clearRing() {
+    _ring.clear();
+    _ringBytes = 0;
+    _ringStartFed = _fedBytes;
+    _roundStartFed = _fedBytes;
+  }
+
+  /// 今の発話の始まりから今までの音（まだ Vosk に渡していない分も含む）。
+  Uint8List _utteranceAudio() {
+    final out = BytesBuilder(copy: false);
+    var skip = _roundStartFed - _ringStartFed;
+    if (skip < 0) skip = 0;
+    for (final chunk in _ring) {
+      if (skip >= chunk.length) {
+        skip -= chunk.length;
+        continue;
+      }
+      out.add(skip == 0 ? chunk : Uint8List.sublistView(chunk, skip));
+      skip = 0;
+    }
+    out.add(_pending.toBytes());
+    return out.takeBytes();
+  }
+
   String? _matchedWakeWord(List<String> tokens) =>
       matchWakeWord(tokens, _wakeWords);
 }
@@ -356,6 +438,19 @@ List<String> wakeTokensOf(String text) => text
     .split(RegExp(r'\s+'))
     .where((t) => t.isNotEmpty && t != '[unk]')
     .toList();
+
+/// 認識結果の中で、ウェイクワードの後ろに何か続いているか。
+///
+/// 「ねえ ライム [unk] [unk]」のように、ウェイクワードの最後の語より
+/// 後ろに語（[unk] を含む）があれば true。[unk] も数えるのは、文法に無い
+/// 普通の言葉（「今日の天気は」など）は [unk] として出てくるため。
+bool hasSpeechAfterWakeWord(String text, String wakeWord) {
+  final raw = text.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+  final want = wakeTokensOf(wakeWord);
+  if (want.isEmpty) return false;
+  final last = raw.lastIndexOf(want.last);
+  return last >= 0 && last < raw.length - 1;
+}
 
 /// 単語列の中に、ウェイクワードの単語列が連続して現れるか。
 /// 一致したウェイクワードを返す。無ければ null。
@@ -392,10 +487,15 @@ class WakeWordDetection {
     required this.phrase,
     required this.preroll,
     required this.at,
+    this.utterance,
   });
 
   /// 一致したウェイクワード。
   final String phrase;
+
+  /// 「ねえライム、今日の天気は」のように続けて話されたときの、その発話の
+  /// 音声（16bit PCM、ウェイクワードの部分も含む）。続きが無ければ null。
+  final Uint8List? utterance;
 
   /// 検知の直前までの音声（16bit PCM）。
   ///

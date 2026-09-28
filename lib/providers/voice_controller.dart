@@ -25,6 +25,10 @@
 //   → listening に戻る
 // 聞き取り中はウェイクワードの検知を止めている。自分の話の中の
 // 「ライム」で呼び直されないようにするため。
+//
+// 【マイクボタン】
+// toggleTalk() で、呼ばずに聞き取りだけを始められる。Vosk を使わないので
+// ウェイクワードが OFF でも、iOS でも使える。
 
 import 'dart:async';
 import 'dart:io' show Platform;
@@ -65,6 +69,9 @@ class VoiceController extends ChangeNotifier {
   /// 「ねえライム」と言われても二重に反応しないようにするため。
   static const Duration awakeDuration = Duration(seconds: 8);
 
+  /// マイクを替えるときに、閉じてから開き直すまで待つ時間。
+  static const Duration micReopenDelay = Duration(milliseconds: 300);
+
   /// ライムが喋り終わってから検知を再開するまでの待ち時間。
   ///
   /// TTS は1文ずつ再生されるので、文と文の間に一瞬だけ
@@ -94,6 +101,10 @@ class VoiceController extends ChangeNotifier {
   final StreamController<String> _utterances =
       StreamController<String>.broadcast();
   String? _sttError;
+  Timer? _sttErrorTimer;
+
+  /// 聞き取りの失敗を表示しておく時間。
+  static const Duration sttErrorDuration = Duration(seconds: 6);
 
   late final StreamSubscription<WakeWordDetection> _detectionSub;
   final StreamController<WakeWordDetection> _wakeEvents =
@@ -153,7 +164,7 @@ class VoiceController extends ChangeNotifier {
   /// 応答の生成中は、送らずに入力欄へ入れる方がよいため。
   Stream<String> get utterances => _utterances.stream;
 
-  /// 直前の聞き取りが失敗したときの説明。成功すれば null に戻る。
+  /// 直前の聞き取りが失敗したときの説明。しばらくすると null に戻る。
   String? get sttError => _sttError;
 
   // ─── 起動と停止 ───
@@ -192,6 +203,10 @@ class VoiceController extends ChangeNotifier {
     if (running && micChanged) {
       await _wake.stop();
       await _releaseMic();
+      // 閉じた直後に開き直すと、Windows のオーディオ側の後片付けが
+      // 終わる前に次を開くことになる。少しだけ待つ。
+      await Future<void>.delayed(micReopenDelay);
+      if (_disposed) return;
     }
     await _start(words);
   }
@@ -294,11 +309,55 @@ class VoiceController extends ChangeNotifier {
       _awakeTimer = Timer(awakeDuration, _endAwake);
       return;
     }
-    unawaited(_listen(stt));
+    // 「ねえライム、今日の天気は」と続けて言われていたら、その音から始める
+    unawaited(_listen(stt, initialAudio: detection.utterance));
   }
 
-  /// 呼ばれたあとの一言を聞き取る。
-  Future<void> _listen(TranscribeSttService stt) async {
+  // ─── マイクボタン ───
+
+  /// マイクボタンで話しかけられるか。
+  ///
+  /// ウェイクワードと違い iOS でも使える（Vosk を使わないため）。
+  bool get canTalk =>
+      !kIsWeb &&
+      _stt != null &&
+      _settings.manualMicEnabled &&
+      _auth.isAuthenticated &&
+      _state != VoiceState.starting;
+
+  /// マイクボタンが押された。聞き取り中なら話し終わりにし、そうでなければ始める。
+  Future<void> toggleTalk() async {
+    final session = _session;
+    if (session != null) {
+      session.finish();
+      return;
+    }
+    final stt = _stt;
+    if (stt == null || !canTalk) return;
+
+    _awakeTimer?.cancel();
+    _awakeTimer = null;
+    if (_state == VoiceState.listening) {
+      // 聞き取りの間はウェイクワードを止める（呼ばれたときと同じ扱い）
+      _resumeTimer?.cancel();
+      _resumeTimer = null;
+      _wake.suspend();
+      _setState(VoiceState.awake);
+    }
+    // ウェイクワードを使っていなければマイクはまだ開いていない。
+    // 開くときは設定で選んだマイクを使う。
+    final mic = MicStreamService.instance;
+    if (!mic.isRunning) mic.deviceId = _settings.micDeviceId;
+
+    RaimLog.i('[Voice] マイクボタンで聞き取りを始めます');
+    await _listen(stt);
+  }
+
+  /// 呼ばれたあと（またはマイクボタンのあと）の一言を聞き取る。
+  Future<void> _listen(
+    TranscribeSttService stt, {
+    Uint8List? initialAudio,
+  }) async {
     _cancelSession();
 
     late final SttSession session;
@@ -306,6 +365,8 @@ class VoiceController extends ChangeNotifier {
       onPartial: (text) {
         if (identical(_session, session)) _heard.value = text;
       },
+      initialAudio: initialAudio,
+      stripWakePhrase: initialAudio != null,
     );
     _session = session;
     _heard.value = '';
@@ -321,15 +382,28 @@ class VoiceController extends ChangeNotifier {
     switch (outcome.reason) {
       case SttEndReason.completed:
       case SttEndReason.maxDuration:
-        _sttError = null;
+        _setSttError(null);
       case SttEndReason.noSpeech:
-        _sttError = null;
+        _setSttError(null);
         RaimLog.d('[Voice] 何も話されませんでした');
       case SttEndReason.failed:
-        _sttError = outcome.error ?? '聞き取りに失敗しました';
+        _setSttError(outcome.error ?? '聞き取りに失敗しました');
       case SttEndReason.cancelled:
         break;
     }
+
+    // ウェイクワードを使っていないときにマイクボタンで開いたマイクは閉じる。
+    // 起動・停止と同じ列に並べる。並べないと、ちょうど ON にされて
+    // ウェイクワードが開いたマイクをここで閉じてしまうことがある。
+    _op = _op.then((_) async {
+      // 列で待っている間に次のマイクボタン聞き取りが始まっていたら閉じない
+      if (_session == null &&
+          (_state == VoiceState.off || _state == VoiceState.error)) {
+        await _releaseMic();
+      }
+    }).catchError((Object e) {
+      RaimLog.e('[Voice] マイクを閉じられませんでした', e);
+    });
 
     if (outcome.text.isNotEmpty && !_utterances.isClosed) {
       RaimLog.i('[Voice] 聞き取りました ${outcome.text.length}文字');
@@ -340,6 +414,21 @@ class VoiceController extends ChangeNotifier {
     // 状態が変わらなかった場合（既に listening 等）も、
     // isTranscribing と sttError の変化を画面に伝える
     if (!_disposed) notifyListeners();
+  }
+
+  /// 聞き取りの失敗を少しの間だけ見せる。
+  ///
+  /// 出しっぱなしだと、次に成功するまで入力欄に失敗の表示が残る。
+  void _setSttError(String? message) {
+    _sttErrorTimer?.cancel();
+    _sttErrorTimer = null;
+    _sttError = message;
+    if (message == null) return;
+    _sttErrorTimer = Timer(sttErrorDuration, () {
+      _sttErrorTimer = null;
+      _sttError = null;
+      if (!_disposed) notifyListeners();
+    });
   }
 
   /// 聞き取りを取り消す。聞き取った分は捨てる。
@@ -441,6 +530,7 @@ class VoiceController extends ChangeNotifier {
     _speaking.removeListener(_onSpeakingChanged);
     _cancelTimers();
     _cancelSession();
+    _sttErrorTimer?.cancel();
     _heard.dispose();
     unawaited(_detectionSub.cancel());
     unawaited(_wakeEvents.close());
@@ -448,4 +538,21 @@ class VoiceController extends ChangeNotifier {
     unawaited(_wake.stop());
     super.dispose();
   }
+}
+
+/// 聞き取った文を入力欄へどう入れるかを決める。
+///
+/// 入力欄が空で、ライムが返事を作っていなければそのまま送る（[send] が true）。
+/// 書きかけの文があるときや返事の生成中は、送らずに入力欄の末尾へ足す。
+/// 書きかけを消したり、送れずに聞き取った内容が消えたりしないようにするため。
+///
+/// Windows の入力小窓とスマホの入力欄の両方で同じ動きにするため、ここに置く。
+({String text, bool send}) placeUtterance({
+  required String typed,
+  required String heard,
+  required bool busy,
+}) {
+  final current = typed.trim();
+  if (current.isEmpty && !busy) return (text: heard, send: true);
+  return (text: current.isEmpty ? heard : '$current $heard', send: false);
 }

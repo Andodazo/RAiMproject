@@ -253,6 +253,36 @@ void main() {
       expect(socket.audioBytes, 6400);
     });
 
+    test('続けて話された音から始め、先頭の呼びかけを落とす', () async {
+      socket = _FakeSocket();
+      final stt = TranscribeSttService(
+        presign: () => presign.future,
+        connect: (_) => socket,
+        openMic: () async => mic.stream,
+        timing: _fast,
+      );
+      final partials = <String>[];
+      final session = stt.listen(
+        onPartial: partials.add,
+        initialAudio: Uint8List(8000),
+        stripWakePhrase: true,
+      );
+      presign.complete(Uri.parse('wss://example.com'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      // 溜めておいた音を先に送っている（100ms 単位、端数は後で）
+      expect(socket.audioBytes, 6400);
+
+      socket.reply([_r('a', 'ねえ、ライム', partial: true)]);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      socket.reply([_r('a', 'ねえ、ライム、今日の天気は？')]);
+
+      final outcome = await session.outcome;
+      expect(outcome.text, '今日の天気は？');
+      // 呼びかけだけの途中経過は出さない
+      expect(partials, ['今日の天気は？']);
+    });
+
     test('何も話されなければ noSpeech で閉じる', () async {
       final session = service().listen();
       presign.complete(Uri.parse('wss://example.com'));

@@ -204,6 +204,17 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
             '（Amazon Transcribe）へ送ります。',
           ),
 
+          // ─── マイクボタン ───
+          _divider(),
+          _switchRow(
+            title: 'マイクボタンで話しかける',
+            subtitle: settings.manualMicEnabled
+                ? '入力欄のマイクを押して話し、もう一度押すか黙ると送ります'
+                : 'マイクボタンを出しません',
+            value: settings.manualMicEnabled,
+            onChanged: voice.hasStt ? settings.setManualMicEnabled : null,
+          ),
+
           // ─── マイク ───
           if (supported) ...[
             _divider(),
@@ -228,61 +239,62 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
     };
   }
 
+  /// マイクの選択。
+  ///
+  /// ドロップダウンは使わない。ドロップダウンは別のルート（ポップアップ）を
+  /// 開くが、Windows の入力小窓は枠なしの小さな窓で、ポップアップが
+  /// 窓の外にはみ出したり裏に回ったりする（PopupMenuButton で同じ問題が
+  /// 出ていた）。一覧をそのまま並べて選ばせる。
   Widget _micSelector(VoiceSettingsProvider settings) {
-    final devices = _devices ?? const <MicDevice>[];
+    final devices = _devices;
     final selected = settings.micDeviceId;
-    final missing =
-        selected != null && _devices != null && !devices.any((d) => d.id == selected);
-
-    final items = <DropdownMenuItem<String?>>[
-      DropdownMenuItem<String?>(
-        value: null,
-        child: _itemText('OS の既定のマイク'),
-      ),
-      for (final d in devices)
-        DropdownMenuItem<String?>(
-          value: d.id,
-          child: _itemText(d.label.isEmpty ? '（名前なし）' : d.label),
-        ),
-      if (missing)
-        DropdownMenuItem<String?>(
-          value: selected,
-          child: _itemText('（前に選んだマイク・見つかりません）'),
-        ),
-    ];
+    final missing = selected != null &&
+        devices != null &&
+        !devices.any((d) => d.id == selected);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _choiceRow(
+          title: 'OS の既定のマイク',
+          selected: selected == null,
+          enabled: true,
+          onTap: () => settings.setMicDeviceId(null),
+        ),
+        if (devices != null)
+          for (final d in devices)
+            _choiceRow(
+              title: d.label.isEmpty ? '（名前なし）' : d.label,
+              selected: selected == d.id,
+              enabled: true,
+              onTap: () => settings.setMicDeviceId(d.id),
+            ),
+        if (missing)
+          _choiceRow(
+            title: '前に選んだマイク（見つかりません）',
+            selected: true,
+            enabled: true,
+            onTap: () {},
+          ),
         Row(
           children: [
-            Expanded(
-              child: DropdownButton<String?>(
-                // 一覧を読み込む前は、保存値が items に無くて落ちるので既定を出す
-                value: _devices == null ? null : selected,
-                items: items,
-                isExpanded: true,
-                dropdownColor: _p.surface,
-                iconEnabledColor: _p.muted,
-                underline: Container(height: 1, color: _p.line),
-                onChanged: _devices == null
-                    ? null
-                    : (id) => settings.setMicDeviceId(id),
+            if (_loadingDevices)
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: _p.muted,
+                ),
               ),
-            ),
-            IconButton(
-              tooltip: 'マイクの一覧を読み直す',
-              icon: _loadingDevices
-                  ? SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: _p.muted,
-                      ),
-                    )
-                  : Icon(Icons.refresh, size: 18, color: _p.muted),
+            const Spacer(),
+            TextButton.icon(
               onPressed: _loadingDevices ? null : _loadDevices,
+              icon: Icon(Icons.refresh, size: 15, color: _p.muted),
+              label: Text(
+                '一覧を読み直す',
+                style: TextStyle(color: _p.muted, fontSize: 11.5 * _fs),
+              ),
             ),
           ],
         ),
@@ -292,12 +304,6 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
   }
 
   // ─── 部品 ───
-
-  Widget _itemText(String text) => Text(
-        text,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: _p.text, fontSize: 13 * _fs),
-      );
 
   Widget _label(String text) => Padding(
         padding: const EdgeInsets.only(top: 4, bottom: 2),

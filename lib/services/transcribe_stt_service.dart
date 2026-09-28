@@ -249,8 +249,19 @@ class TranscribeSttService {
   /// 聞き取りを始める。
   ///
   /// [onPartial] には、話している途中の文字が変わるたびに今の全文が届く。
-  SttSession listen({void Function(String text)? onPartial}) {
-    final session = SttSession._(this, onPartial);
+  ///
+  /// [initialAudio] は、マイクより先に送る音声。「ねえライム、今日の天気は」と
+  /// 続けて話されたとき、既に話し終えた部分を渡す。
+  /// [stripWakePhrase] なら、結果の先頭の「ねえライム」を取り除く。
+  SttSession listen({
+    void Function(String text)? onPartial,
+    Uint8List? initialAudio,
+    bool stripWakePhrase = false,
+  }) {
+    final session = SttSession._(this, onPartial, stripWakePhrase);
+    if (initialAudio != null && initialAudio.isNotEmpty) {
+      session._audio.add(initialAudio);
+    }
     unawaited(session._start());
     return session;
   }
@@ -273,10 +284,11 @@ class TranscribeSttService {
 
 /// 1回ぶんの聞き取り。
 class SttSession {
-  SttSession._(this._service, this._onPartial);
+  SttSession._(this._service, this._onPartial, this._strip);
 
   final TranscribeSttService _service;
   final void Function(String text)? _onPartial;
+  final bool _strip;
 
   final Completer<SttOutcome> _outcome = Completer<SttOutcome>();
   final TranscriptAccumulator _transcript = TranscriptAccumulator();
@@ -303,7 +315,8 @@ class SttSession {
   Future<SttOutcome> get outcome => _outcome.future;
 
   /// 今の時点で聞き取れている文字。
-  String get text => _transcript.text;
+  String get text =>
+      _strip ? stripWakePhrase(_transcript.text) : _transcript.text;
 
   bool get isDone => _outcome.isCompleted;
 
@@ -364,7 +377,7 @@ class SttSession {
           // 途中で切られた。聞き取れた分があればそれを使う。
           RaimLog.w('[STT] Transcribe から接続が閉じられました');
           unawaited(_end(
-            _transcript.text.isEmpty
+            text.isEmpty
                 ? SttEndReason.failed
                 : SttEndReason.completed,
             'Transcribe との接続が閉じられました',
@@ -442,9 +455,9 @@ class SttSession {
         final event = TranscribeEvent.parse(message);
         switch (event) {
           case TranscriptEvent(:final results):
-            final before = _transcript.text;
+            final before = text;
             results.forEach(_transcript.add);
-            final now = _transcript.text;
+            final now = text;
             if (now != before && now.isNotEmpty) {
               _lastTextAt = _service._clock();
               _onPartial?.call(now);
@@ -520,12 +533,12 @@ class SttSession {
       // 既に閉じている
     }
 
-    final text = reason == SttEndReason.cancelled ? '' : _transcript.text;
-    final outcome = SttOutcome(text: text, reason: reason, error: error);
+    final heard = reason == SttEndReason.cancelled ? '' : text;
+    final outcome = SttOutcome(text: heard, reason: reason, error: error);
     final seconds =
         _service._clock().difference(_startedAt).inMilliseconds / 1000;
     RaimLog.i(
-      '[STT] 終了 ${reason.name} ${text.length}文字 '
+      '[STT] 終了 ${reason.name} ${heard.length}文字 '
       '(${seconds.toStringAsFixed(1)}秒)',
     );
     if (!_outcome.isCompleted) _outcome.complete(outcome);
@@ -543,3 +556,21 @@ class SttSession {
     }
   }
 }
+
+/// 先頭の呼びかけ（「ねえライム」など）を取り除く。
+///
+/// 「ねえライム、今日の天気は」を続けて話したときは発話全体を Transcribe に
+/// 送るので、結果の頭に呼びかけが付いてくる。そのまま送るとライムへの
+/// 質問に「ねえライム」が混ざるので落とす。
+/// 表記は Transcribe の出方に合わせて幅を持たせる（ねえ／ねぇ／ねー、
+/// 読点の有無、ライム／らいむ／RAiM）。
+String stripWakePhrase(String text) {
+  final stripped = text.replaceFirst(_wakePrefix, '');
+  return stripped.trim();
+}
+
+final RegExp _wakePrefix = RegExp(
+  r'^\s*(?:ねえ|ねぇ|ねー|ね)?[、,，\s]*(?:ライム|らいむ|raim)(?:さん|ちゃん)?'
+  r'[、。,，.!！?？\s]*',
+  caseSensitive: false,
+);

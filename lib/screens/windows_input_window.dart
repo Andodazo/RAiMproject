@@ -59,11 +59,33 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   bool _isRecordingDump = false;
   _PanelMode _mode = _PanelMode.none;
 
+  /// 窓を伸ばしている最中の、これから開くパネル。
+  _PanelMode? _pendingMode;
+
+  /// パネル操作の通し番号。窓のリサイズを待つ間に次の操作が来たら、
+  /// 古い方は結果を反映しない。
+  int _modeSeq = 0;
+
   /// 削除確認を出しているスレッド
   String? _confirmingDeleteId;
 
   /// 前フレームで画像を選んでいたか（ウィンドウの高さ調整用）
   bool _hadImages = false;
+
+  /// 画像の列を描くか。
+  ///
+  /// 窓が伸びきる前に描くと、バーだけの高さ（58px）に画像の列（54px）が
+  /// 入りきらず RenderFlex overflow になる。伸ばし終えてから出す。
+  bool _showImageStrip = false;
+
+  /// この窓の中で最後にクリックされた時刻。
+  ///
+  /// パネルを開くと窓が上に伸びてライムに重なる。Unity はカーソルの位置で
+  /// ライムへのクリックを判定しているので、重なった部分のクリックが
+  /// 「ライムがクリックされた」として届き、窓が閉じてしまうことがある。
+  /// 直前にこちらでクリックを受けていたら、Unity からの通知は無視する。
+  DateTime? _lastLocalPointer;
+  static const Duration _localClickWindow = Duration(milliseconds: 800);
 
   // ---- 開発検証用: 接続先切り替え ----
   // chat_input.dart の ChatMenuButton と同じ手順。URL は RaimConfig に集約。
@@ -114,21 +136,20 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   void _onUtterance(String text) {
     if (!mounted) return;
 
-    final typed = _controller.text.trim();
-    final busy = context.read<ChatProvider>().isLoading;
-
-    if (typed.isEmpty && !busy) {
-      _controller.text = text;
-      _send();
-      return;
-    }
-
-    final joined = typed.isEmpty ? text : '$typed $text';
-    _controller.value = TextEditingValue(
-      text: joined,
-      selection: TextSelection.collapsed(offset: joined.length),
+    final placed = placeUtterance(
+      typed: _controller.text,
+      heard: text,
+      busy: context.read<ChatProvider>().isLoading,
     );
-    if (_mascot.isVisible) _focusNode.requestFocus();
+    _controller.value = TextEditingValue(
+      text: placed.text,
+      selection: TextSelection.collapsed(offset: placed.text.length),
+    );
+    if (placed.send) {
+      _send();
+    } else if (_mascot.isVisible) {
+      _focusNode.requestFocus();
+    }
   }
 
   // ------------------------------------------------------------
@@ -179,6 +200,19 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     _unitySub = bridge.unityEvents.listen((event) async {
       switch (event['type']) {
         case 'unity.clicked':
+          // こちらの窓の中のクリックが、重なったライムへのクリックとして
+          // 届いたもの。閉じずに無視する。
+          // Unity からの通知の方が先に着くこともあるので、少しだけ待って
+          // こちらのクリックが記録されるのを待ってから比べる。
+          await Future<void>.delayed(const Duration(milliseconds: 60));
+          if (!mounted) return;
+          final last = _lastLocalPointer;
+          if (_mascot.isVisible &&
+              last != null &&
+              DateTime.now().difference(last) < _localClickWindow) {
+            RaimLog.d('[WindowsInputWindow] 小窓の中のクリックなので無視しました');
+            break;
+          }
           // ライムをクリックするたびに入力小窓を開閉する
           if (_mascot.isVisible) {
             await _closeWindow();
@@ -247,30 +281,53 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   // ------------------------------------------------------------
 
   Future<void> _setMode(_PanelMode mode) async {
-    if (_mode == mode) mode = _PanelMode.none;
+    // 伸ばしている最中に押された場合も、これから開こうとしている方と比べる
+    if ((_pendingMode ?? _mode) == mode) mode = _PanelMode.none;
+    final seq = ++_modeSeq;
 
-    setState(() {
-      _mode = mode;
-      _confirmingDeleteId = null;
-    });
+    // 伸ばすときは窓を伸ばしてから中身を出し、縮めるときは中身を消してから
+    // 窓を縮める。逆にすると、狭い窓に大きな中身が一瞬入って
+    // RenderFlex overflow になる。
+    if (mode == _PanelMode.none) {
+      _pendingMode = null;
+      setState(() {
+        _mode = mode;
+        _confirmingDeleteId = null;
+      });
+      await _mascot.collapse();
+    } else {
+      _pendingMode = mode;
+      switch (mode) {
+        case _PanelMode.log:
+          await _mascot.expandLog();
+        case _PanelMode.menu:
+        case _PanelMode.credits:
+        case _PanelMode.settings:
+        case _PanelMode.none:
+          await _mascot.expandPanel();
+      }
+      // 待っている間に別の操作（もう一度押す、Esc、閉じる）があれば、そちらが勝つ
+      if (!mounted || seq != _modeSeq) return;
+      _pendingMode = null;
+      setState(() {
+        _mode = mode;
+        _confirmingDeleteId = null;
+      });
+      if (mode == _PanelMode.menu) {
+        unawaited(context.read<ChatProvider>().loadThreads());
+      }
+    }
 
-    switch (mode) {
-      case _PanelMode.none:
-        await _mascot.collapse();
-        break;
-      case _PanelMode.menu:
-        await _mascot.expandPanel();
-        if (mounted) unawaited(context.read<ChatProvider>().loadThreads());
-        break;
-      case _PanelMode.log:
-        await _mascot.expandLog();
-        break;
-      case _PanelMode.credits:
-      case _PanelMode.settings:
-        await _mascot.expandPanel();
-        break;
+    // 窓の大きさを変えた直後に描き直されず、中身が消えたように見えることが
+    // あるので、もう1フレーム描かせる。
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
     }
   }
+
+
 
   // ------------------------------------------------------------
   // 送信（chat_input.dart と同じ手順）
@@ -406,14 +463,25 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     if (_hadImages == hasImages) return;
     _hadImages = hasImages;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _mascot.setHasImages(hasImages);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!hasImages) {
+        // 先に列を消してから縮める（逆だと一瞬はみ出す）
+        if (mounted) setState(() => _showImageStrip = false);
+        await _mascot.setHasImages(false);
+        return;
+      }
+      await _mascot.setHasImages(true);
+      // 待っている間に画像が外されていたら出さない
+      if (mounted && _hadImages) setState(() => _showImageStrip = true);
     });
   }
 
   /// パネルを畳んでから隠す。
   /// 畳まずに隠すと、次に開いたときの高さと状態がずれる。
   Future<void> _closeWindow() async {
+    // 伸ばしている途中のパネル操作を無効にする
+    _modeSeq++;
+    _pendingMode = null;
     if (_mode != _PanelMode.none) {
       setState(() {
         _mode = _PanelMode.none;
@@ -439,7 +507,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   Widget build(BuildContext context) {
     _syncImageStripHeight(context.watch<CameraProvider>().hasImage);
 
-    return Scaffold(
+    return Listener(
+      onPointerDown: (_) => _lastLocalPointer = DateTime.now(),
+      onPointerUp: (_) => _lastLocalPointer = DateTime.now(),
+      child: Scaffold(
       backgroundColor: Colors.transparent,
       body: KeyboardListener(
         focusNode: _windowFocusNode,
@@ -466,10 +537,11 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                   _PanelMode.none => const SizedBox.shrink(),
                 },
               ),
-            const _SelectedImageStrip(),
+            if (_showImageStrip) const _SelectedImageStrip(),
             _buildBar(),
           ],
         ),
+      ),
       ),
       ),
     );
@@ -538,11 +610,15 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                     // しか出ておらず、Windows では何も出ていなかった。
                     hintText: voice.isTranscribing
                         ? (heard.isEmpty ? '聞いてるよ…' : _tail(heard))
-                        : _hintText(chat),
+                        : voice.sttError != null
+                            ? '聞き取れませんでした（${voice.sttError}）'
+                            : _hintText(chat),
                     hintStyle: TextStyle(
                       color: voice.isTranscribing || _statusText(chat) != null
                           ? _lime
-                          : _mut,
+                          : voice.sttError != null
+                              ? const Color(0xFFE06C6C)
+                              : _mut,
                       fontSize: 13,
                     ),
                     filled: true,
@@ -563,11 +639,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
               ),
             ),
             _iconButton(Icons.attach_file, '画像を送る', _pickImage),
-            _iconButton(
-              _isRecordingDump ? Icons.stop_circle_outlined : Icons.mic_none,
-              _isRecordingDump ? 'マイク録音を止めて保存' : 'マイク録音テスト',
-              _toggleMicDump,
-            ),
+            _buildTalkButton(voice),
             const SizedBox(width: 4),
             SizedBox(
               width: 32,
@@ -601,6 +673,20 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   /// 長い文は末尾だけ見せる。話している最中は今の言葉が見えてほしいため。
   static String _tail(String text, {int max = 26}) =>
       text.length <= max ? text : '…${text.substring(text.length - max)}';
+
+  /// マイクボタン。押すと聞き取りを始め、もう一度押すと話し終わりにする。
+  Widget _buildTalkButton(VoiceController voice) {
+    final talking = voice.isTranscribing;
+    if (!talking && !context.watch<VoiceSettingsProvider>().manualMicEnabled) {
+      return const SizedBox.shrink();
+    }
+    return _iconButton(
+      talking ? Icons.stop_circle_outlined : Icons.mic_none,
+      talking ? '話し終わり' : 'マイクで話しかける',
+      talking || voice.canTalk ? () => voice.toggleTalk() : null,
+      active: talking,
+    );
+  }
 
   OutlineInputBorder _border(Color color) => OutlineInputBorder(
         borderRadius: const BorderRadius.all(Radius.circular(8)),
@@ -672,6 +758,13 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         _sectionLabel('アプリ'),
         _buildWakeWordRow(),
         _buildServerRow(),
+        // 開発用: マイクに入っている音を wav に保存して耳で確かめる
+        _menuRow(
+          _isRecordingDump ? Icons.stop_circle_outlined : Icons.graphic_eq,
+          _isRecordingDump ? 'マイク録音テストを止めて保存' : 'マイク録音テスト（開発用）',
+          _toggleMicDump,
+          color: _isRecordingDump ? _lime : _text,
+        ),
         _menuRow(Icons.settings_outlined, '設定',
             () => _setMode(_PanelMode.settings)),
         _menuRow(Icons.record_voice_over, 'クレジット表記',
