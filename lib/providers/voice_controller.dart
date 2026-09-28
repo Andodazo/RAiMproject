@@ -12,11 +12,19 @@
 //   off       … 使わない（設定 OFF、未ログイン、非対応プラットフォーム）
 //   starting  … モデル読み込み中。初回は zip の展開で数秒かかる
 //   listening … 「ねえライム」を待っている
-//   awake     … 呼ばれた直後。STT（タスク6）が入るまでは入力小窓を開くだけ
+//   awake     … 呼ばれた直後。続けて話された内容を Transcribe で聞き取る
 //   error     … 起動に失敗した（モデルが無い、マイクが使えない など）
 //
 // ライムが喋っている間は listening のまま検知だけ止める（suspend）。
 // 状態を分けないのは、喋り終われば何もしなくても listening に戻るため。
+//
+// 【呼ばれたあと】
+//   「ねえライム」→ 入力小窓が開く（wakeEvents）
+//   → 続けて話した内容を Transcribe で文字にする（heardText に途中経過）
+//   → 聞き取れたら utterances に流す。送信するかは画面側が決める
+//   → listening に戻る
+// 聞き取り中はウェイクワードの検知を止めている。自分の話の中の
+// 「ライム」で呼び直されないようにするため。
 
 import 'dart:async';
 import 'dart:io' show Platform;
@@ -27,6 +35,7 @@ import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/transcribe_stt_service.dart';
 import 'package:raim_prototype/services/wake_word_service.dart';
 
 enum VoiceState { off, starting, listening, awake, error }
@@ -37,10 +46,12 @@ class VoiceController extends ChangeNotifier {
     required AuthProvider auth,
     required ValueListenable<bool> speaking,
     WakeWordService? wakeWord,
+    TranscribeSttService? stt,
   })  : _settings = settings,
         _auth = auth,
         _speaking = speaking,
-        _wake = wakeWord ?? WakeWordService.instance {
+        _wake = wakeWord ?? WakeWordService.instance,
+        _stt = stt {
     _settings.addListener(_onInputsChanged);
     _auth.addListener(_onInputsChanged);
     _speaking.addListener(_onSpeakingChanged);
@@ -48,11 +59,10 @@ class VoiceController extends ChangeNotifier {
     _onInputsChanged();
   }
 
-  /// 呼ばれてから待機に戻るまでの時間。
+  /// 聞き取りを使わない場合に、呼ばれてから待機に戻るまでの時間。
   ///
-  /// STT が入るまでは「入力小窓を開く」だけなので、その間は
-  /// 検知を止めておく。開いた直後にもう一度「ねえライム」と
-  /// 言われても二重に反応しないようにするため。
+  /// その間は検知を止めておく。窓が開いた直後にもう一度
+  /// 「ねえライム」と言われても二重に反応しないようにするため。
   static const Duration awakeDuration = Duration(seconds: 8);
 
   /// ライムが喋り終わってから検知を再開するまでの待ち時間。
@@ -77,6 +87,14 @@ class VoiceController extends ChangeNotifier {
   final ValueListenable<bool> _speaking;
   final WakeWordService _wake;
 
+  /// 呼ばれたあとの聞き取り。null なら窓を開くだけ。
+  final TranscribeSttService? _stt;
+  SttSession? _session;
+  final ValueNotifier<String> _heard = ValueNotifier<String>('');
+  final StreamController<String> _utterances =
+      StreamController<String>.broadcast();
+  String? _sttError;
+
   late final StreamSubscription<WakeWordDetection> _detectionSub;
   final StreamController<WakeWordDetection> _wakeEvents =
       StreamController<WakeWordDetection>.broadcast();
@@ -87,6 +105,13 @@ class VoiceController extends ChangeNotifier {
 
   Timer? _awakeTimer;
   Timer? _resumeTimer;
+
+  /// 認証情報を切らさないための定期的な取り直し。
+  Timer? _warmTimer;
+
+  /// Cognito の一時認証情報は約1時間で切れる。切れた状態で呼ばれると
+  /// 取り直しで接続が数秒遅れるので、それより短い間隔で取っておく。
+  static const Duration _warmInterval = Duration(minutes: 20);
 
   /// start / stop を1本の列に並べる。設定の ON/OFF を連打されても
   /// 前の処理が終わる前に次が走らないようにするため。
@@ -104,6 +129,24 @@ class VoiceController extends ChangeNotifier {
   ///
   /// Windows では入力小窓がこれを購読して窓を開く。
   Stream<WakeWordDetection> get wakeEvents => _wakeEvents.stream;
+
+  /// 聞き取り中か。
+  bool get isTranscribing => _session != null;
+
+  /// 聞き取り中の途中経過。聞き取り中でなければ空。
+  ///
+  /// 話している間は1秒に数回変わる。ChangeNotifier で流すと
+  /// 購読している画面すべてが作り直されるので、別にしてある。
+  ValueListenable<String> get heardText => _heard;
+
+  /// 聞き取れた一言。
+  ///
+  /// 送信するかどうかは画面側で決める。入力欄に書きかけの文があるときや
+  /// 応答の生成中は、送らずに入力欄へ入れる方がよいため。
+  Stream<String> get utterances => _utterances.stream;
+
+  /// 直前の聞き取りが失敗したときの説明。成功すれば null に戻る。
+  String? get sttError => _sttError;
 
   // ─── 起動と停止 ───
 
@@ -143,6 +186,7 @@ class VoiceController extends ChangeNotifier {
       _activeWords = List.unmodifiable(words);
       _errorMessage = null;
       _setState(VoiceState.listening);
+      _startWarmUp();
 
       // 起動した時点でライムが喋っていれば、すぐ止める
       if (isSpeaking) _wake.suspend();
@@ -156,6 +200,7 @@ class VoiceController extends ChangeNotifier {
 
   Future<void> _stop() async {
     _cancelTimers();
+    _cancelSession();
     await _wake.stop();
     await _releaseMic();
     _activeWords = const [];
@@ -191,14 +236,80 @@ class VoiceController extends ChangeNotifier {
     _setState(VoiceState.awake);
     if (!_wakeEvents.isClosed) _wakeEvents.add(detection);
 
-    _awakeTimer?.cancel();
-    _awakeTimer = Timer(awakeDuration, _endAwake);
+    final stt = _stt;
+    if (stt == null) {
+      _awakeTimer?.cancel();
+      _awakeTimer = Timer(awakeDuration, _endAwake);
+      return;
+    }
+    unawaited(_listen(stt));
+  }
+
+  /// 呼ばれたあとの一言を聞き取る。
+  Future<void> _listen(TranscribeSttService stt) async {
+    _cancelSession();
+
+    late final SttSession session;
+    session = stt.listen(
+      onPartial: (text) {
+        if (identical(_session, session)) _heard.value = text;
+      },
+    );
+    _session = session;
+    _heard.value = '';
+    notifyListeners();
+
+    final outcome = await session.outcome;
+
+    // 途中で OFF にされた、またはもう次の聞き取りが始まっている
+    if (!identical(_session, session)) return;
+    _session = null;
+    _heard.value = '';
+
+    switch (outcome.reason) {
+      case SttEndReason.completed:
+      case SttEndReason.maxDuration:
+        _sttError = null;
+      case SttEndReason.noSpeech:
+        _sttError = null;
+        RaimLog.d('[Voice] 何も話されませんでした');
+      case SttEndReason.failed:
+        _sttError = outcome.error ?? '聞き取りに失敗しました';
+      case SttEndReason.cancelled:
+        break;
+    }
+
+    if (outcome.text.isNotEmpty && !_utterances.isClosed) {
+      RaimLog.i('[Voice] 聞き取りました ${outcome.text.length}文字');
+      _utterances.add(outcome.text);
+    }
+
+    _endAwake();
+    // 状態が変わらなかった場合（既に listening 等）も、
+    // isTranscribing と sttError の変化を画面に伝える
+    if (!_disposed) notifyListeners();
+  }
+
+  /// 聞き取りを取り消す。聞き取った分は捨てる。
+  void _cancelSession() {
+    final session = _session;
+    _session = null;
+    _heard.value = '';
+    session?.cancel();
   }
 
   /// 呼ばれた状態を終えて待機に戻る。
   ///
-  /// 今は時間切れで戻るだけ。STT が入ったら「聞き取り終わり」で呼ぶ。
-  void endAwake() => _endAwake();
+  /// 聞き取り中なら、そこまでで話し終わったことにする
+  /// （聞き取れた分は utterances に流れる）。
+  void endAwake() {
+    final session = _session;
+    if (session != null) {
+      session.finish();
+      return;
+    }
+    _endAwake();
+  }
 
   void _endAwake() {
     _awakeTimer?.cancel();
@@ -235,11 +346,21 @@ class VoiceController extends ChangeNotifier {
 
   // ─── 後始末 ───
 
+  void _startWarmUp() {
+    final stt = _stt;
+    if (stt == null) return;
+    _warmTimer?.cancel();
+    unawaited(stt.warmUp());
+    _warmTimer = Timer.periodic(_warmInterval, (_) => unawaited(stt.warmUp()));
+  }
+
   void _cancelTimers() {
     _awakeTimer?.cancel();
     _awakeTimer = null;
     _resumeTimer?.cancel();
     _resumeTimer = null;
+    _warmTimer?.cancel();
+    _warmTimer = null;
   }
 
   void _setState(VoiceState next) {
@@ -267,8 +388,11 @@ class VoiceController extends ChangeNotifier {
     _auth.removeListener(_onInputsChanged);
     _speaking.removeListener(_onSpeakingChanged);
     _cancelTimers();
+    _cancelSession();
+    _heard.dispose();
     unawaited(_detectionSub.cancel());
     unawaited(_wakeEvents.close());
+    unawaited(_utterances.close());
     unawaited(_wake.stop());
     super.dispose();
   }

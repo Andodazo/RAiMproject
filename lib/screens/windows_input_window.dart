@@ -51,6 +51,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   /// 「ねえライム」で呼ばれたときの通知
   StreamSubscription<WakeWordDetection>? _wakeSub;
 
+  /// 呼ばれたあとに聞き取れた一言
+  StreamSubscription<String>? _utteranceSub;
+
   /// マイク検証用。録音中かどうか。
   bool _isRecordingDump = false;
   _PanelMode _mode = _PanelMode.none;
@@ -91,13 +94,40 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   /// 「ねえライム」と呼ばれたら入力小窓を開く。
   ///
-  /// ライムをクリックしたときと同じ動き。STT（タスク6）が入るまでは
-  /// 窓を開いて入力欄にフォーカスするところまで。
+  /// ライムをクリックしたときと同じ動き。続けて話した内容は
+  /// 聞き取り中に入力欄のプレースホルダへ出し、聞き取れたら送る。
   void _listenWakeWord() {
-    _wakeSub = context.read<VoiceController>().wakeEvents.listen((_) async {
+    final voice = context.read<VoiceController>();
+    _wakeSub = voice.wakeEvents.listen((_) async {
       await _mascot.showAtCharacter();
       if (mounted && _mascot.isVisible) _focusNode.requestFocus();
     });
+    _utteranceSub = voice.utterances.listen(_onUtterance);
+  }
+
+  /// 聞き取れた一言を送る。
+  ///
+  /// 入力欄に書きかけの文があるとき、応答の生成中のときは送らずに
+  /// 入力欄へ足すだけにする。書きかけを消したり、送れずに
+  /// 聞き取った内容が消えたりしないようにするため。
+  void _onUtterance(String text) {
+    if (!mounted) return;
+
+    final typed = _controller.text.trim();
+    final busy = context.read<ChatProvider>().isLoading;
+
+    if (typed.isEmpty && !busy) {
+      _controller.text = text;
+      _send();
+      return;
+    }
+
+    final joined = typed.isEmpty ? text : '$typed $text';
+    _controller.value = TextEditingValue(
+      text: joined,
+      selection: TextSelection.collapsed(offset: joined.length),
+    );
+    if (_mascot.isVisible) _focusNode.requestFocus();
   }
 
   // ------------------------------------------------------------
@@ -204,6 +234,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     trayManager.removeListener(this);
     _unitySub?.cancel();
     _wakeSub?.cancel();
+    _utteranceSub?.cancel();
     _controller.dispose();
     _focusNode.dispose();
     _windowFocusNode.dispose();
@@ -468,6 +499,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   Widget _buildBar() {
     final chat = context.watch<ChatProvider>();
+    final voice = context.watch<VoiceController>();
 
     // 高さを固定しない。
     //
@@ -487,37 +519,44 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
               active: _mode == _PanelMode.menu,
             ),
             Expanded(
-              child: TextField(
-                controller: _controller,
-                focusNode: _focusNode,
-                enabled: !chat.isOffline,
-                style: const TextStyle(color: _text, fontSize: 13),
-                cursorColor: _lime,
-                decoration: InputDecoration(
-                  isDense: true,
-                  // マスコットモードには状態表示の場所が無いため、
-                  // プレースホルダを状態表示に兼用する。
-                  // 「〇〇を調べています」はチャット画面（message_list）に
-                  // しか出ておらず、Windows では何も出ていなかった。
-                  hintText: _hintText(chat),
-                  hintStyle: TextStyle(
-                    color: _statusText(chat) != null ? _lime : _mut,
-                    fontSize: 13,
+              child: ValueListenableBuilder<String>(
+                valueListenable: voice.heardText,
+                builder: (context, heard, _) => TextField(
+                  controller: _controller,
+                  focusNode: _focusNode,
+                  enabled: !chat.isOffline,
+                  style: const TextStyle(color: _text, fontSize: 13),
+                  cursorColor: _lime,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    // マスコットモードには状態表示の場所が無いため、
+                    // プレースホルダを状態表示に兼用する。
+                    // 「〇〇を調べています」はチャット画面（message_list）に
+                    // しか出ておらず、Windows では何も出ていなかった。
+                    hintText: voice.isTranscribing
+                        ? (heard.isEmpty ? '聞いてるよ…' : _tail(heard))
+                        : _hintText(chat),
+                    hintStyle: TextStyle(
+                      color: voice.isTranscribing || _statusText(chat) != null
+                          ? _lime
+                          : _mut,
+                      fontSize: 13,
+                    ),
+                    filled: true,
+                    fillColor: _bg2,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+                    border: _border(_line),
+                    enabledBorder: _border(_line),
+                    focusedBorder: _border(_lime),
+                    disabledBorder: _border(_line),
                   ),
-                  filled: true,
-                  fillColor: _bg2,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-                  border: _border(_line),
-                  enabledBorder: _border(_line),
-                  focusedBorder: _border(_lime),
-                  disabledBorder: _border(_line),
+                  // 生成中は Enter でも送らない（ボタンは既に無効化済み）
+                  onSubmitted: (_) {
+                    if (context.read<ChatProvider>().isLoading) return;
+                    _send();
+                  },
                 ),
-                // 生成中は Enter でも送らない（ボタンは既に無効化済み）
-                onSubmitted: (_) {
-                  if (context.read<ChatProvider>().isLoading) return;
-                  _send();
-                },
               ),
             ),
             _iconButton(Icons.attach_file, '画像を送る', _pickImage),
@@ -555,6 +594,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         ),
     );
   }
+
+  /// 長い文は末尾だけ見せる。話している最中は今の言葉が見えてほしいため。
+  static String _tail(String text, {int max = 26}) =>
+      text.length <= max ? text : '…${text.substring(text.length - max)}';
 
   OutlineInputBorder _border(Color color) => OutlineInputBorder(
         borderRadius: const BorderRadius.all(Radius.circular(8)),
@@ -841,6 +884,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     final label = switch (voice.state) {
       VoiceState.starting => '「ねえライム」で呼ぶ: 準備中…',
       VoiceState.error => '「ねえライム」: ${voice.errorMessage ?? "起動できません"}',
+      // 入力バーは高さに余裕が無いので、聞き取りの失敗はここに出す
+      VoiceState.listening when voice.sttError != null =>
+        '「ねえライム」: ON（前回: ${voice.sttError}）',
       VoiceState.off ||
       VoiceState.listening ||
       VoiceState.awake =>
@@ -849,6 +895,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
     final color = switch (voice.state) {
       VoiceState.error => const Color(0xFFE06C6C),
+      VoiceState.listening when voice.sttError != null =>
+        const Color(0xFFE06C6C),
       _ when enabled => _lime,
       _ => _text,
     };

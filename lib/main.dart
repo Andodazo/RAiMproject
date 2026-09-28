@@ -30,6 +30,7 @@ import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/screens/splash_screen.dart';
 import 'package:raim_prototype/services/auth_service.dart';
+import 'package:raim_prototype/services/transcribe_stt_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/aws_image_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
@@ -242,6 +243,9 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
             settings: widget.voiceSettings,
             auth: widget.authProvider,
             speaking: context.read<ChatProvider>().isSpeaking,
+            stt: TranscribeSttService(
+              idTokenGetter: widget.authProvider.getValidIdToken,
+            ),
           ),
         ),
       ],
