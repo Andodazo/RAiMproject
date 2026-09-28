@@ -247,4 +247,3 @@ ios/Runner.xcworkspace/xcuserdata/
 # テスト用一時ファイル
 **/test_temp/
 **/*.tmp
-assets/models/*.zip

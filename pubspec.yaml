@@ -104,11 +104,14 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/images/
-    # Vosk の日本語モデル（約48MB）。
-    # 展開済みディレクトリではなく zip を1ファイル同梱し、
+    # Vosk の日本語モデル（約48MB の zip）を置くフォルダ。
     # 初回起動時に ModelLoader がアプリ専用領域へ展開する。
     # 入手方法は assets/models/README.md を参照。
-    - assets/models/vosk-model-small-ja-0.22.zip
+    #
+    # zip はリポジトリに含めている（47MB。GitHub の警告が出る 50MB 未満）。
+    # フォルダで指定しているので、万一 zip が無くてもビルドは通り、
+    # ウェイクワードだけが「音声モデルが見つかりません」になる。
+    - assets/models/
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

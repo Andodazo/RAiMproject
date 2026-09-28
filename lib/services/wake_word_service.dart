@@ -27,9 +27,9 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
-import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:vosk_flutter/vosk_flutter.dart';
 
@@ -76,7 +76,12 @@ class WakeWordService {
       200 ~/
       1000;
 
-  final VoskFlutterPlugin _vosk = VoskFlutterPlugin.instance();
+  /// Vosk 本体。
+  ///
+  /// フィールド初期化で作らないこと。本家 vosk_flutter は iOS に対応して
+  /// おらず、instance() の時点で UnsupportedError を投げる。
+  /// 初期化で作ると、ウェイクワードを使わない設定でも iOS で起動時に落ちる。
+  VoskFlutterPlugin get _vosk => VoskFlutterPlugin.instance();
 
   Model? _model;
   Recognizer? _recognizer;
@@ -90,6 +95,23 @@ class WakeWordService {
 
   List<String> _wakeWords = const [];
   bool _suspended = false;
+
+  /// 認識器への投入を1本の列に並べるためのもの。
+  ///
+  /// acceptWaveformBytes は Future を返す（Android では MethodChannel を
+  /// 通る）。並行に投げると結果の取り出し順が前後しうるので直列にする。
+  Future<void> _feeding = Future.value();
+
+  /// 直前の結果の末尾の単語。
+  ///
+  /// 「ねえ、ライム」と間を空けて言うと、Vosk が発話の区切りと判断して
+  /// 「ねえ」と「ライム」を別々の結果で返すことがある。
+  /// 直前の結果の末尾と今回の結果をつないで判定するために持っておく。
+  List<String> _carry = const [];
+  DateTime? _carryAt;
+
+  /// 前の結果とつなげてよい間隔。これより空いたら別の発話とみなす。
+  static const Duration _carryWindow = Duration(seconds: 2);
 
   /// ウェイクワードを検知したときに流れる。
   Stream<WakeWordDetection> get detections => _detections.stream;
@@ -109,7 +131,7 @@ class WakeWordService {
     if (_model != null) return;
 
     final support = await getApplicationSupportDirectory();
-    final storage = p.join(support.path, 'vosk');
+    final storage = '${support.path}${Platform.pathSeparator}vosk';
 
     final loader = ModelLoader(modelStorage: storage);
     final started = DateTime.now();
@@ -150,6 +172,13 @@ class WakeWordService {
     _micSub = stream.listen(
       _onChunk,
       onError: (Object e) => RaimLog.e('[WakeWord] マイクでエラー', e),
+      onDone: () {
+        // 誰かがマイクを閉じた。待機中のつもりで止まっているのを避ける。
+        if (_micSub != null) {
+          RaimLog.w('[WakeWord] マイクが閉じられたため待機を終了しました');
+          _micSub = null;
+        }
+      },
     );
 
     RaimLog.i('[WakeWord] 待機開始 words=$_wakeWords');
@@ -160,12 +189,18 @@ class WakeWordService {
     _micSub = null;
     await sub?.cancel();
 
-    await _recognizer?.dispose();
+    // 列に残っている投入が終わるのを待ってから認識器を破棄する。
+    // Windows では Vosk を FFI で直接呼んでいるため、破棄したあとに
+    // 残りの投入が走ると解放済みのメモリを触ってアプリごと落ちる。
+    final recognizer = _recognizer;
     _recognizer = null;
+    await _feeding.catchError((Object _) {});
+    await recognizer?.dispose();
 
     _pending.clear();
     _pendingBytes = 0;
     _suspended = false;
+    _clearCarry();
   }
 
   /// 検知を一時停止する。マイク自体は開けたままにする。
@@ -181,6 +216,7 @@ class WakeWordService {
     _suspended = true;
     _pending.clear();
     _pendingBytes = 0;
+    _clearCarry();
     unawaited(_recognizer?.reset());
   }
 
@@ -214,22 +250,41 @@ class WakeWordService {
       _pendingBytes = buffer.length - feedable;
     }
 
-    unawaited(_feed(frame));
+    _feeding = _feeding.then((_) => _feed(frame));
   }
 
   Future<void> _feed(Uint8List frame) async {
     final recognizer = _recognizer;
     if (recognizer == null) return;
 
+    // 直列の列に並んでいる間に suspend() されたぶんは捨てる。
+    // ライムが喋り出す直前の音が遅れて届くことがあるため。
+    if (_suspended) return;
+
     try {
       final ready = await recognizer.acceptWaveformBytes(frame);
-      if (!ready) return;
+      // await の間に stop() / start() で認識器が差し替わっていたら触らない
+      if (!ready || !identical(recognizer, _recognizer)) return;
 
-      final text = _textOf(await recognizer.getResult());
+      final result = await recognizer.getResult();
+      if (!identical(recognizer, _recognizer)) return;
+      final text = _textOf(result);
       if (text.isEmpty) return;
 
-      final matched = _matchedWakeWord(text);
+      final tokens = _tokensOf(text);
+      final now = DateTime.now();
+
+      // 直前の結果が近ければ、その末尾とつないで判定する。
+      // 直前の結果だけでは一致しなかった（一致していれば発火済み）ので、
+      // つないで一致した場合は必ず今回の結果にまたがっている。
+      final carryAt = _carryAt;
+      final joined = (carryAt != null && now.difference(carryAt) <= _carryWindow)
+          ? [..._carry, ...tokens]
+          : tokens;
+
+      final matched = _matchedWakeWord(joined);
       if (matched == null) {
+        _rememberCarry(tokens, now);
         RaimLog.d('[WakeWord] 非検知');
         return;
       }
@@ -239,6 +294,7 @@ class WakeWordService {
       await recognizer.reset();
       _pending.clear();
       _pendingBytes = 0;
+      _clearCarry();
 
       RaimLog.i('[WakeWord] 検知しました');
       if (!_detections.isClosed) {
@@ -265,35 +321,69 @@ class WakeWordService {
     }
   }
 
-  /// [unk] を除いた単語列に、ウェイクワードの単語列が含まれるか。
+  List<String> _tokensOf(String text) => wakeTokensOf(text);
+
+  /// 次の結果とつなぐために、今回の末尾を覚えておく。
   ///
-  /// 部分文字列ではなく単語単位で比べるのが要点。文字列で見ると
-  /// 「ライムライト」が「ライム」に一致してしまうが、単語列なら
-  /// ['ライムライト'] と ['ライム'] で一致しない。
-  String? _matchedWakeWord(String text) {
-    final tokens = text
-        .split(RegExp(r'\s+'))
-        .where((t) => t.isNotEmpty && t != '[unk]')
-        .toList();
-    if (tokens.isEmpty) return null;
-
-    for (final wake in _wakeWords) {
-      final want = wake.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
-      if (want.isEmpty || want.length > tokens.length) continue;
-
-      for (var i = 0; i + want.length <= tokens.length; i++) {
-        var hit = true;
-        for (var j = 0; j < want.length; j++) {
-          if (tokens[i + j] != want[j]) {
-            hit = false;
-            break;
-          }
-        }
-        if (hit) return wake;
-      }
+  /// 取っておくのは「ウェイクワードの単語数 - 1」個だけ。
+  /// それ以上前の単語は、つないでも一致に関わらない。
+  void _rememberCarry(List<String> tokens, DateTime at) {
+    final keep = _wakeWords
+            .map((w) => _tokensOf(w).length)
+            .fold<int>(1, (a, b) => a > b ? a : b) -
+        1;
+    if (keep <= 0 || tokens.isEmpty) {
+      _clearCarry();
+      return;
     }
-    return null;
+    _carry = tokens.length <= keep
+        ? List.unmodifiable(tokens)
+        : List.unmodifiable(tokens.sublist(tokens.length - keep));
+    _carryAt = at;
   }
+
+  void _clearCarry() {
+    _carry = const [];
+    _carryAt = null;
+  }
+
+  String? _matchedWakeWord(List<String> tokens) =>
+      matchWakeWord(tokens, _wakeWords);
+}
+
+/// 認識結果を単語列にする。[unk] は判定の邪魔になるので除く。
+List<String> wakeTokensOf(String text) => text
+    .split(RegExp(r'\s+'))
+    .where((t) => t.isNotEmpty && t != '[unk]')
+    .toList();
+
+/// 単語列の中に、ウェイクワードの単語列が連続して現れるか。
+/// 一致したウェイクワードを返す。無ければ null。
+///
+/// 部分文字列ではなく単語単位で比べるのが要点。文字列で見ると
+/// 「ライムライト」が「ライム」に一致してしまうが、単語列なら
+/// ['ライムライト'] と ['ライム'] で一致しない。
+///
+/// Vosk に依存しない純粋な関数にしてあるのはテストするため。
+String? matchWakeWord(List<String> tokens, List<String> wakeWords) {
+  if (tokens.isEmpty) return null;
+
+  for (final wake in wakeWords) {
+    final want = wakeTokensOf(wake);
+    if (want.isEmpty || want.length > tokens.length) continue;
+
+    for (var i = 0; i + want.length <= tokens.length; i++) {
+      var hit = true;
+      for (var j = 0; j < want.length; j++) {
+        if (tokens[i + j] != want[j]) {
+          hit = false;
+          break;
+        }
+      }
+      if (hit) return wake;
+    }
+  }
+  return null;
 }
 
 /// ウェイクワードを検知したことを表す。

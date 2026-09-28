@@ -26,6 +26,7 @@ import 'package:raim_prototype/config/raim_config.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
+import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/screens/splash_screen.dart';
 import 'package:raim_prototype/services/auth_service.dart';
@@ -230,6 +231,19 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
         ChangeNotifierProvider(create: (_) => CameraProvider()),
         // 音声機能の ON/OFF。main() で読み込み済みのものを渡す。
         ChangeNotifierProvider.value(value: widget.voiceSettings),
+        // 音声呼び出しの状態。設定・ログイン状態・ライムの発話を見て
+        // ウェイクワード検知を動かしたり止めたりする。
+        //
+        // lazy: false にしているのは、画面から参照されるまで作られないと
+        // 起動直後に「ねえライム」が効かないため。
+        ChangeNotifierProvider(
+          lazy: false,
+          create: (context) => VoiceController(
+            settings: widget.voiceSettings,
+            auth: widget.authProvider,
+            speaking: context.read<ChatProvider>().isSpeaking,
+          ),
+        ),
       ],
 
       // [旧] Ollama 直接接続（HTTP）に戻したい時は ↓

@@ -10,8 +10,11 @@ import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
+import 'package:raim_prototype/providers/voice_controller.dart';
+import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/services/mascot_window_service.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
+import 'package:raim_prototype/services/wake_word_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
@@ -45,6 +48,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   StreamSubscription<Map<String, dynamic>>? _unitySub;
 
+  /// 「ねえライム」で呼ばれたときの通知
+  StreamSubscription<WakeWordDetection>? _wakeSub;
+
   /// マイク検証用。録音中かどうか。
   bool _isRecordingDump = false;
   _PanelMode _mode = _PanelMode.none;
@@ -77,7 +83,21 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     // ここで呼んでも無害。ログアウト→再ログインの経路で効く。
     await TrayService.instance.setup();
 
-    if (mounted) _listenUnity();
+    if (mounted) {
+      _listenUnity();
+      _listenWakeWord();
+    }
+  }
+
+  /// 「ねえライム」と呼ばれたら入力小窓を開く。
+  ///
+  /// ライムをクリックしたときと同じ動き。STT（タスク6）が入るまでは
+  /// 窓を開いて入力欄にフォーカスするところまで。
+  void _listenWakeWord() {
+    _wakeSub = context.read<VoiceController>().wakeEvents.listen((_) async {
+      await _mascot.showAtCharacter();
+      if (mounted && _mascot.isVisible) _focusNode.requestFocus();
+    });
   }
 
   // ------------------------------------------------------------
@@ -183,6 +203,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   void dispose() {
     trayManager.removeListener(this);
     _unitySub?.cancel();
+    _wakeSub?.cancel();
     _controller.dispose();
     _focusNode.dispose();
     _windowFocusNode.dispose();
@@ -289,7 +310,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     try {
       if (_isRecordingDump) {
         final path = await mic.stopDumpAndSave();
-        await mic.stop();
+        // ウェイクワードが同じマイクを使っているなら閉じない。
+        // 閉じると待ち受けまで止まってしまう。
+        if (!WakeWordService.instance.isListening) await mic.stop();
         if (!mounted) return;
         setState(() => _isRecordingDump = false);
         RaimLog.i('[Mic] 保存${path == null ? "できませんでした" : "しました"}');
@@ -601,6 +624,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         _menuRow(Icons.close, '入力欄を閉じる', _closeWindow),
         const Divider(color: _line, height: 13),
         _sectionLabel('アプリ'),
+        _buildWakeWordRow(),
         _buildServerRow(),
         _menuRow(Icons.settings_outlined, '設定', () {
           RaimLog.d('[WindowsInputWindow] 設定が押されました');
@@ -803,6 +827,39 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
           style: const TextStyle(color: _mut, fontSize: 10.5, letterSpacing: 1),
         ),
       );
+
+  /// 「ねえライム」で呼び出すかどうかの切り替え。
+  ///
+  /// 設定画面を開かずにその場で切れるように、☰ に直接置く。
+  /// 文化祭で近くのスピーカーから動画の「ねえ、ライム」が流れるときなど、
+  /// すぐ止めたい場面があるため。
+  Widget _buildWakeWordRow() {
+    final settings = context.watch<VoiceSettingsProvider>();
+    final voice = context.watch<VoiceController>();
+    final enabled = settings.wakeWordEnabled;
+
+    final label = switch (voice.state) {
+      VoiceState.starting => '「ねえライム」で呼ぶ: 準備中…',
+      VoiceState.error => '「ねえライム」: ${voice.errorMessage ?? "起動できません"}',
+      VoiceState.off ||
+      VoiceState.listening ||
+      VoiceState.awake =>
+        '「ねえライム」で呼ぶ: ${enabled ? "ON" : "OFF"}',
+    };
+
+    final color = switch (voice.state) {
+      VoiceState.error => const Color(0xFFE06C6C),
+      _ when enabled => _lime,
+      _ => _text,
+    };
+
+    return _menuRow(
+      enabled ? Icons.hearing : Icons.hearing_disabled,
+      label,
+      () => settings.setWakeWordEnabled(!enabled),
+      color: color,
+    );
+  }
 
   Widget _menuRow(
     IconData icon,
