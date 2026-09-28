@@ -16,8 +16,75 @@
 // ログに出さないこと。RaimLog にも渡さない。
 
 import 'dart:convert';
+import 'dart:io' show HttpDate;
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
+import 'package:raim_prototype/services/raim_log.dart';
+
+/// AWS 側の時刻に合わせた「今」。
+///
+/// 【なぜ要るか】
+/// SigV4 の署名には端末の時刻が入る。AWS は自分の時刻と15分以上
+/// ずれた署名を拒否する（S3 は RequestTimeTooSkewed の 403）。
+/// PC の時計が狂っていると、画像のアップロードも Transcribe への接続も
+/// 全部失敗し、しかも原因が分かりにくい。
+///
+/// AWS の応答には Date ヘッダが付くので、そこから端末とのずれを覚えて、
+/// 署名に使う時刻を補正する。Cognito Identity への問い合わせは署名が
+/// 要らず時計が狂っていても通るので、認証情報を取るたびに補正できる。
+class AwsClock {
+  AwsClock._();
+
+  /// これより小さいずれは無視する。
+  ///
+  /// Date ヘッダは秒単位で、通信の往復ぶん遅れて届く。AWS は15分まで
+  /// 許すので、1分程度のずれを追いかける必要はない。
+  static const Duration tolerance = Duration(minutes: 1);
+
+  static Duration _offset = Duration.zero;
+
+  /// 端末の時計に足している補正。
+  static Duration get offset => _offset;
+
+  /// 補正済みの現在時刻（UTC）。
+  static DateTime now() => DateTime.now().toUtc().add(_offset);
+
+  /// HTTP の Date ヘッダ（`Tue, 29 Sep 2026 01:23:45 GMT`）から補正する。
+  static void calibrateFromHttpDate(String? value, {DateTime? localNow}) {
+    if (value == null || value.isEmpty) return;
+    final DateTime server;
+    try {
+      server = HttpDate.parse(value);
+    } catch (_) {
+      return;
+    }
+    calibrate(server, localNow: localNow);
+  }
+
+  /// AWS 側の時刻 [server] から補正する。
+  static void calibrate(DateTime server, {DateTime? localNow}) {
+    final local = (localNow ?? DateTime.now()).toUtc();
+    final diff = server.toUtc().difference(local);
+    final next = diff.abs() < tolerance ? Duration.zero : diff;
+    if (next == _offset) return;
+
+    // 1秒単位の揺れで毎回ログが出ないよう、変わったときだけ出す
+    if ((next - _offset).abs() >= tolerance || next == Duration.zero) {
+      RaimLog.w(
+        next == Duration.zero
+            ? '[AwsClock] 端末の時計のずれが解消しました'
+            : '[AwsClock] 端末の時計が AWS と ${next.inSeconds} 秒ずれています。'
+                '署名の時刻を補正します',
+      );
+    }
+    _offset = next;
+  }
+
+  @visibleForTesting
+  static void reset() => _offset = Duration.zero;
+}
 
 /// Cognito Identity Pool から受け取る一時認証情報。
 ///
@@ -44,7 +111,7 @@ class AwsCredentials {
   bool expiresWithin(Duration margin, {DateTime? now}) {
     final exp = expiration;
     if (exp == null) return false;
-    return !(now ?? DateTime.now().toUtc()).add(margin).isBefore(exp);
+    return !(now ?? AwsClock.now()).add(margin).isBefore(exp);
   }
 
   /// 認証情報が文字列に出ないようにする（ログへの出力事故の防止）。
@@ -152,7 +219,7 @@ class AwsSigV4 {
     DateTime? now,
     String payloadHash = '',
   }) {
-    final time = (now ?? DateTime.now()).toUtc();
+    final time = (now ?? AwsClock.now()).toUtc();
     final date8601 = amzDate(time);
     final date = date8601.substring(0, 8);
     final scope = '$date/$region/$service/aws4_request';

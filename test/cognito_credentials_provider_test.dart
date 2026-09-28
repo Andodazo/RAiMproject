@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io' show HttpDate;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:raim_prototype/services/aws/aws_sigv4.dart';
 import 'package:raim_prototype/services/aws/cognito_credentials_provider.dart';
 
 /// Cognito への問い合わせ回数を数えながら、使い回しの動きを確かめる。
@@ -122,5 +124,58 @@ void main() {
     fail = false;
     final c = await p.getCredentials('id-token');
     expect(c.accessKeyId, 'a');
+  });
+
+  test('取得中に別の ID トークンで呼ばれたら、そちらは別に取りに行く', () async {
+    final p = build();
+    final a = p.getCredentials('user-a');
+    final b = p.getCredentials('user-b');
+    final results = await Future.wait([a, b]);
+    expect(identical(results[0], results[1]), isFalse);
+    expect(calls, 4);
+  });
+
+  test('取得中に clear されたら、届いた認証情報をキャッシュしない', () async {
+    final p = build();
+    final pending = p.getCredentials('id-token');
+    p.clear();
+    await pending;
+    await p.getCredentials('id-token');
+    expect(calls, 4);
+  });
+
+  test('Cognito の応答の Date ヘッダで時計のずれを補正する', () async {
+    addTearDown(AwsClock.reset);
+    final client = MockClient((request) async {
+      final target = request.headers['X-Amz-Target'];
+      // 端末より1時間進んだ時刻を返す
+      final date = HttpDate.format(
+        DateTime.now().toUtc().add(const Duration(hours: 1)),
+      );
+      if (target == 'AWSCognitoIdentityService.GetId') {
+        return http.Response(
+          jsonEncode({'IdentityId': 'x'}),
+          200,
+          headers: {'date': date},
+        );
+      }
+      return http.Response(
+        jsonEncode({
+          'Credentials': {
+            'AccessKeyId': 'a',
+            'SecretKey': 's',
+            'SessionToken': 't',
+          },
+        }),
+        200,
+        headers: {'date': date},
+      );
+    });
+    final p = CognitoCredentialsProvider(httpClient: client, clock: () => now);
+    await p.getCredentials('id-token');
+    expect(
+      AwsClock.offset.inMinutes,
+      inInclusiveRange(59, 60),
+    );
   });
 }

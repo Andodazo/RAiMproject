@@ -143,4 +143,50 @@ void main() {
       expect(c.toString(), isNot(contains('TOKEN')));
     });
   });
+
+  group('AwsClock', () {
+    final local = DateTime.utc(2026, 9, 29, 12);
+
+    tearDown(AwsClock.reset);
+
+    test('AWS の時刻とのずれを覚える', () {
+      // 端末が20分遅れている
+      AwsClock.calibrate(
+        local.add(const Duration(minutes: 20)),
+        localNow: local,
+      );
+      expect(AwsClock.offset, const Duration(minutes: 20));
+    });
+
+    test('1分未満のずれは無視する', () {
+      AwsClock.calibrate(
+        local.add(const Duration(seconds: 40)),
+        localNow: local,
+      );
+      expect(AwsClock.offset, Duration.zero);
+    });
+
+    test('ずれが直ったら補正をやめる', () {
+      AwsClock.calibrate(
+        local.add(const Duration(minutes: 20)),
+        localNow: local,
+      );
+      AwsClock.calibrate(local, localNow: local);
+      expect(AwsClock.offset, Duration.zero);
+    });
+
+    test('HTTP の Date ヘッダから読み取る', () {
+      AwsClock.calibrateFromHttpDate(
+        'Tue, 29 Sep 2026 12:30:00 GMT',
+        localNow: local,
+      );
+      expect(AwsClock.offset, const Duration(minutes: 30));
+    });
+
+    test('読めない Date ヘッダは無視する', () {
+      AwsClock.calibrateFromHttpDate('not a date', localNow: local);
+      AwsClock.calibrateFromHttpDate(null, localNow: local);
+      expect(AwsClock.offset, Duration.zero);
+    });
+  });
 }
