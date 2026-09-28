@@ -1,4 +1,5 @@
 //送信処理・画像添付状態の取得・送信後のリセット・ボタンのデザイン
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/services.dart';
@@ -7,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
+import 'package:raim_prototype/providers/voice_controller.dart';
+import 'package:raim_prototype/providers/voice_settings_provider.dart';
 // 開発検証用
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
@@ -25,12 +28,41 @@ class _ChatInputState extends State<ChatInput> {
   // Windows版で Enter / Shift + Enter を判定するためのフォーカス管理
   final FocusNode _inputFocusNode = FocusNode();
 
+  /// 声で聞き取れた一言（「ねえライム」やマイクボタンのあと）
+  StreamSubscription<String>? _utteranceSub;
+
   @override
   void initState() {
     super.initState();
 
   // 入力欄にフォーカスがあるときのキー入力を監視する
     _inputFocusNode.onKeyEvent = _handleInputKeyEvent;
+
+    _utteranceSub =
+        context.read<VoiceController>().utterances.listen(_onUtterance);
+  }
+
+  /// 聞き取れた一言を送る。書きかけがあるときや返事の生成中は入力欄に足すだけ。
+  void _onUtterance(String text) {
+    if (!mounted) return;
+    final placed = placeUtterance(
+      typed: _controller.text,
+      heard: text,
+      busy: context.read<ChatProvider>().isLoading,
+    );
+    _controller.value = TextEditingValue(
+      text: placed.text,
+      selection: TextSelection.collapsed(offset: placed.text.length),
+    );
+    if (placed.send) _sendMessage();
+  }
+
+  /// 入力欄のプレースホルダ。聞き取り中は途中経過を出す。
+  String _hint(VoiceController voice, String heard) {
+    if (voice.isTranscribing) return heard.isEmpty ? '聞いてるよ…' : heard;
+    final error = voice.sttError;
+    if (error != null) return '聞き取れませんでした（$error）';
+    return '何でも話してね';
   }
 
   // Windows版のみ:
@@ -59,6 +91,8 @@ class _ChatInputState extends State<ChatInput> {
 
   @override
   void dispose() {
+    _utteranceSub?.cancel();
+
     // 使い終わった FocusNode を破棄する
     _inputFocusNode.dispose();
 
@@ -104,6 +138,10 @@ class _ChatInputState extends State<ChatInput> {
   
   @override
   Widget build(BuildContext context) {
+  final voice = context.watch<VoiceController>();
+  final manualMic = context.watch<VoiceSettingsProvider>().manualMicEnabled;
+  final talking = voice.isTranscribing;
+
   return TapRegion(
     // 追加：入力欄の外を押したときにキーボードを閉じる
     onTapOutside: (_) {
@@ -121,57 +159,69 @@ class _ChatInputState extends State<ChatInput> {
           child: Row(
             children: [
               Expanded(
-                child: TextField(
-                  // Enterキーの処理を受け取るために FocusNode を設定する
-                  focusNode: _inputFocusNode,
-                  controller: _controller,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                  minLines: 1,
-                  maxLines: 4,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                  ),
-                  cursorColor: Colors.white,
-                  decoration: InputDecoration(
-                    hintText: '何でも話してね',
+                child: ValueListenableBuilder<String>(
+                  valueListenable: voice.heardText,
+                  builder: (context, heard, _) => TextField(
+                    // Enterキーの処理を受け取るために FocusNode を設定する
+                    focusNode: _inputFocusNode,
+                    controller: _controller,
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
+                    minLines: 1,
+                    maxLines: 4,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                    ),
+                    cursorColor: Colors.white,
+                    decoration: InputDecoration(
+                      hintText: _hint(voice, heard),
 
-                    // マイクボタン
-                    suffixIcon: IconButton(
-                      icon: const Icon(
-                        Icons.mic_rounded,
-                        color: Colors.white70,
-                      ),
-                      onPressed: () {
-                        RaimLog.d(
-                          '[ChatInput] 音声入力ボタンが押されました',
-                        );
-                      },
-                    ),
+                      // マイクボタン。押して話し、もう一度押すか黙ると送る
+                      suffixIcon: !manualMic && !talking
+                          ? null
+                          : IconButton(
+                              tooltip: talking ? '話し終わり' : 'マイクで話しかける',
+                              icon: Icon(
+                                talking
+                                    ? Icons.stop_circle_rounded
+                                    : Icons.mic_rounded,
+                                color: talking
+                                    ? const Color(0xFFB7F35A)
+                                    : Colors.white70,
+                              ),
+                              onPressed: talking || voice.canTalk
+                                  ? () => voice.toggleTalk()
+                                  : null,
+                            ),
 
-                    hintStyle: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
-                    ),
-                    filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.15),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.3),
-                        width: 1,
+                      hintStyle: TextStyle(
+                        color: talking
+                            ? const Color(0xFFB7F35A)
+                            : voice.sttError != null
+                                ? const Color(0xFFFF8A80)
+                                : Colors.white.withValues(alpha: 0.5),
                       ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: const BorderSide(
-                        color: Colors.white,
-                        width: 1.5,
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.15),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.3),
+                          width: 1,
+                        ),
                       ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: const BorderSide(
+                          color: Colors.white,
+                          width: 1.5,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
                     ),
                   ),
                 ),

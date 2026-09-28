@@ -19,6 +19,14 @@ class RaimConfig {
   /// 画像アップロード先のS3バケット。
   static const String imageBucketName = 'raim-images-dev-123456789012';
 
+  /// Amazon Transcribe（音声の文字起こし）。
+  ///
+  /// Identity Pool の認証済みロールに
+  /// transcribe:StartStreamTranscriptionWebSocket の権限が必要。
+  /// 東京リージョンは日本語のストリーミングに対応している。
+  static const String transcribeRegion = 'ap-northeast-1';
+  static const String transcribeLanguageCode = 'ja-JP';
+
   static const int maxImageCount = 10;
   static const int maxImageTotalBytes = 10 * 1024 * 1024;
 

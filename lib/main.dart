@@ -26,8 +26,11 @@ import 'package:raim_prototype/config/raim_config.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
+import 'package:raim_prototype/providers/voice_controller.dart';
+import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/screens/splash_screen.dart';
 import 'package:raim_prototype/services/auth_service.dart';
+import 'package:raim_prototype/services/transcribe_stt_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/aws_image_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
@@ -36,6 +39,7 @@ import 'package:raim_prototype/services/windows_unity_bridge.dart';
 import 'package:raim_prototype/services/embed_unity_bridge.dart';
 import 'package:raim_prototype/services/mascot_window_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
+import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
 
@@ -67,8 +71,13 @@ void main() async {
 
   // RAiM サーバー接続用のサービスを作成する。
   // 未認証状態で WebSocket 接続しないよう、connect() は SplashScreen で認証済みを確認してから呼ぶ。
-  final authService = AuthService();
-  final authProvider = AuthProvider(authService);
+  // 音声機能の設定は runApp より前に読み込む。
+  // 起動直後の画面がウェイクワードの ON/OFF を参照するため、
+  // 非同期で後から入ると一瞬 OFF の状態が描画される。
+  final voiceSettings = VoiceSettingsProvider();
+  await voiceSettings.load();
+
+  final authProvider = AuthProvider(AuthService());
   final raimService = RaimServerService(serverUrl: RaimConfig.serverUrl, accessTokenGetter: () => authProvider.getValidAccessToken(),);
   //RaimAppにraimServiceとunityBridgeを入れている
   runApp(
@@ -76,6 +85,7 @@ void main() async {
       authProvider: authProvider,
       raimService: raimService,
       unityBridge: unityBridge,
+      voiceSettings: voiceSettings,
     ),
   );
 }
@@ -108,12 +118,14 @@ class RaimApp extends StatefulWidget {
   final AuthProvider authProvider;
   final RaimServerService raimService;
   final UnityCommunicator unityBridge;
+  final VoiceSettingsProvider voiceSettings;
   //Raimappのコンストラクタ
   const RaimApp({
     super.key,
     required this.authProvider,
     required this.raimService,
     required this.unityBridge,
+    required this.voiceSettings,
   });
 
   @override
@@ -180,6 +192,8 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
     _unitySub?.cancel();
     widget.authProvider.disposeService();
     unawaited(widget.raimService.dispose());
+    // マイクを掴んだままにすると、他アプリから使えなくなる。
+    unawaited(MicStreamService.instance.dispose());
     super.dispose();
   }
 
@@ -216,6 +230,24 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
         ),
         //新しく追加するCameraProvider
         ChangeNotifierProvider(create: (_) => CameraProvider()),
+        // 音声機能の ON/OFF。main() で読み込み済みのものを渡す。
+        ChangeNotifierProvider.value(value: widget.voiceSettings),
+        // 音声呼び出しの状態。設定・ログイン状態・ライムの発話を見て
+        // ウェイクワード検知を動かしたり止めたりする。
+        //
+        // lazy: false にしているのは、画面から参照されるまで作られないと
+        // 起動直後に「ねえライム」が効かないため。
+        ChangeNotifierProvider(
+          lazy: false,
+          create: (context) => VoiceController(
+            settings: widget.voiceSettings,
+            auth: widget.authProvider,
+            speaking: context.read<ChatProvider>().isSpeaking,
+            stt: TranscribeSttService(
+              idTokenGetter: widget.authProvider.getValidIdToken,
+            ),
+          ),
+        ),
       ],
 
       // [旧] Ollama 直接接続（HTTP）に戻したい時は ↓

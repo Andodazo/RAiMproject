@@ -49,8 +49,33 @@ dependencies:
   shelf_web_socket: ^2.0.0
   web_socket_channel: ^3.0.0
   
+  # 音声入力（STT）用
+  # マイクの PCM ストリーム。Windows/Android/iOS すべてで pcm16bits に対応。
+  record: ^7.1.1
+  # ウェイクワード検知（オフライン）。Vosk 本家（alphacep）のプラグイン。
+  #
+  # pub.dev 公開版（0.3.48）は http ^0.13.5 に固定されていて RAiM の
+  # http ^1.2.0 と解決できない。master では http ^1.2.2 に上がっているが
+  # 未公開のため、コミットを固定して git から取る。
+  # 公開版が追いついたら `vosk_flutter: ^0.3.49` 等に戻す。
+  #
+  # ネイティブバイナリは別途入れる（Android は同梱済み）:
+  #   dart run vosk_flutter install -t windows
+  vosk_flutter:
+    git:
+      url: https://github.com/alphacep/vosk-flutter.git
+      ref: e655a96f0ce0dadb5ea8900aa1ba23260c3ec904
+  # 音声機能の ON/OFF 設定の保存
+  shared_preferences: ^2.3.3
+  # デバッグ用 wav の保存先を得るため
+  path_provider: ^2.1.5
+
   cupertino_icons: ^1.0.8
-  image: ^4.9.1
+  # image 4.9 以降は archive ^4 を要求し、vosk_flutter の archive ^3 と
+  # 解決できない。camera_service で使っているのは decodeImage /
+  # copyResize / encodeJpg の3つだけで 4.3 にも存在するため、
+  # 下げても影響が無いことを確認したうえで制約を緩めている。
+  image: ^4.3.0
   window_manager: ^0.5.2
   tray_manager: ^0.5.3
 
@@ -79,6 +104,14 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/images/
+    # Vosk の日本語モデル（約48MB の zip）を置くフォルダ。
+    # 初回起動時に ModelLoader がアプリ専用領域へ展開する。
+    # 入手方法は assets/models/README.md を参照。
+    #
+    # zip はリポジトリに含めている（47MB。GitHub の警告が出る 50MB 未満）。
+    # フォルダで指定しているので、万一 zip が無くてもビルドは通り、
+    # ウェイクワードだけが「音声モデルが見つかりません」になる。
+    - assets/models/
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

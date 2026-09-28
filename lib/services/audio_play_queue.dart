@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
 /// サーバーから届いた audio_chunk を順番に再生するためのクラス
@@ -26,6 +26,21 @@ class AudioPlayQueue {
   /// 現在、音声を再生中かどうか
   bool _isPlaying = false;
 
+  /// 再生中かどうかを外から監視するためのもの。
+  ///
+  /// ウェイクワード検知が「ライムが喋っている間は止める」ために使う。
+  /// Windows ではマイクのエコーキャンセルが効かず、ライムの声を
+  /// マイクが拾って自分で自分を呼び出してしまうため。
+  ///
+  /// 1文ごとに false → true と揺れるので、使う側で少し待ってから
+  /// 判断すること（VoiceController は 0.7 秒待っている）。
+  final ValueNotifier<bool> playing = ValueNotifier<bool>(false);
+
+  void _setPlaying(bool value) {
+    _isPlaying = value;
+    if (!_disposed) playing.value = value;
+  }
+
   /// dispose 後に再生処理が動かないようにするためのフラグ
   bool _disposed = false;
 
@@ -40,7 +55,7 @@ class AudioPlayQueue {
   AudioPlayQueue() {
     // 1つの音声が終わったら、次の音声を再生する
     _completeSubscription = _player.onPlayerComplete.listen((_) {
-      _isPlaying = false;
+      _setPlaying(false);
       _playNext();
     });
   }
@@ -98,7 +113,7 @@ class AudioPlayQueue {
   Future<void> reset() async {
     _generation++;
     _queue.clear();
-    _isPlaying = false;
+    _setPlaying(false);
     await _player.stop();
   }
 
@@ -128,6 +143,7 @@ class AudioPlayQueue {
     _queue.clear();
     await _completeSubscription.cancel();
     await _player.dispose();
+    playing.dispose();
   }
 
   /// キューの先頭にある音声を1つ再生する
@@ -139,7 +155,7 @@ class AudioPlayQueue {
     // この再生がどの世代のものかを覚えておく
     final generation = _generation;
 
-    _isPlaying = true;
+    _setPlaying(true);
 
     // キューの先頭から音声を取り出す
     final audio = _queue.removeFirst();
@@ -163,7 +179,7 @@ class AudioPlayQueue {
       if (generation != _generation) {
         RaimLog.d('[AudioPlayQueue] reset 済みのため再生を打ち切ります');
         await _player.stop();
-        _isPlaying = false;
+        _setPlaying(false);
       }
     } catch (e) {
       RaimLog.e('[AudioPlayQueue] 音声再生失敗: $e');
@@ -172,7 +188,7 @@ class AudioPlayQueue {
       if (generation != _generation) return;
 
       // 失敗した場合も次の音声へ進める
-      _isPlaying = false;
+      _setPlaying(false);
       _playNext();
     }
   }

@@ -10,6 +10,7 @@ import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
 import 'package:raim_prototype/widgets/thread_selector_menu.dart';
+import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
 class ChatScreen extends StatelessWidget {
@@ -105,9 +106,7 @@ class ChatScreen extends StatelessWidget {
       child: Row(
         children: [
           ChatMenuButton(
-            onSettings: () {
-              RaimLog.d('[ChatScreen] 設定が押されました');
-            },
+            onSettings: () => showVoiceSettingsSheet(context),
             onLogout: () {
               _confirmLogoutAndClose(context);
             },
@@ -275,9 +274,7 @@ class ChatScreen extends StatelessWidget {
           left: 130,
           child: ChatMenuButton(
             isWide: true,
-            onSettings: () {
-              RaimLog.d('[ChatScreen] 設定が押されました');
-            },
+            onSettings: () => showVoiceSettingsSheet(context),
             onLogout: () {
               _confirmLogoutAndClose(context);
             },

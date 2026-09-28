@@ -126,6 +126,11 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   RaimConnectionState get connectionState => _connectionState;
   bool get isUsingTool => _isUsingTool;
 
+  /// ライムが喋っている（TTS を再生中）か。
+  ///
+  /// ウェイクワード検知が、ライム自身の声で反応しないように使う。
+  ValueListenable<bool> get isSpeaking => _audioQueue.playing;
+
   /// 「寝てる」状態か（UI で立ち絵切替などに使用予定）
   bool get isOffline => _connectionState == RaimConnectionState.offline;
   void _bindConnectionState() {

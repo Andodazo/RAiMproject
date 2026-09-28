@@ -10,11 +10,16 @@ import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
+import 'package:raim_prototype/providers/voice_controller.dart';
+import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/services/mascot_window_service.dart';
+import 'package:raim_prototype/services/mic_stream_service.dart';
+import 'package:raim_prototype/services/wake_word_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/config/raim_config.dart';
 
 /// Windows のデスクトップマスコット用の入力小窓。
@@ -33,7 +38,7 @@ class WindowsInputWindow extends StatefulWidget {
   State<WindowsInputWindow> createState() => _WindowsInputWindowState();
 }
 
-enum _PanelMode { none, menu, log, credits }
+enum _PanelMode { none, menu, log, credits, settings }
 
 class _WindowsInputWindowState extends State<WindowsInputWindow>
     with TrayListener {
@@ -43,13 +48,44 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   final _mascot = MascotWindowService.instance;
 
   StreamSubscription<Map<String, dynamic>>? _unitySub;
+
+  /// 「ねえライム」で呼ばれたときの通知
+  StreamSubscription<WakeWordDetection>? _wakeSub;
+
+  /// 呼ばれたあとに聞き取れた一言
+  StreamSubscription<String>? _utteranceSub;
+
+  /// マイク検証用。録音中かどうか。
+  bool _isRecordingDump = false;
   _PanelMode _mode = _PanelMode.none;
+
+  /// 窓を伸ばしている最中の、これから開くパネル。
+  _PanelMode? _pendingMode;
+
+  /// パネル操作の通し番号。窓のリサイズを待つ間に次の操作が来たら、
+  /// 古い方は結果を反映しない。
+  int _modeSeq = 0;
 
   /// 削除確認を出しているスレッド
   String? _confirmingDeleteId;
 
   /// 前フレームで画像を選んでいたか（ウィンドウの高さ調整用）
   bool _hadImages = false;
+
+  /// 画像の列を描くか。
+  ///
+  /// 窓が伸びきる前に描くと、バーだけの高さ（58px）に画像の列（54px）が
+  /// 入りきらず RenderFlex overflow になる。伸ばし終えてから出す。
+  bool _showImageStrip = false;
+
+  /// この窓の中で最後にクリックされた時刻。
+  ///
+  /// パネルを開くと窓が上に伸びてライムに重なる。Unity はカーソルの位置で
+  /// ライムへのクリックを判定しているので、重なった部分のクリックが
+  /// 「ライムがクリックされた」として届き、窓が閉じてしまうことがある。
+  /// 直前にこちらでクリックを受けていたら、Unity からの通知は無視する。
+  DateTime? _lastLocalPointer;
+  static const Duration _localClickWindow = Duration(milliseconds: 800);
 
   // ---- 開発検証用: 接続先切り替え ----
   // chat_input.dart の ChatMenuButton と同じ手順。URL は RaimConfig に集約。
@@ -73,7 +109,47 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     // ここで呼んでも無害。ログアウト→再ログインの経路で効く。
     await TrayService.instance.setup();
 
-    if (mounted) _listenUnity();
+    if (mounted) {
+      _listenUnity();
+      _listenWakeWord();
+    }
+  }
+
+  /// 「ねえライム」と呼ばれたら入力小窓を開く。
+  ///
+  /// ライムをクリックしたときと同じ動き。続けて話した内容は
+  /// 聞き取り中に入力欄のプレースホルダへ出し、聞き取れたら送る。
+  void _listenWakeWord() {
+    final voice = context.read<VoiceController>();
+    _wakeSub = voice.wakeEvents.listen((_) async {
+      await _mascot.showAtCharacter();
+      if (mounted && _mascot.isVisible) _focusNode.requestFocus();
+    });
+    _utteranceSub = voice.utterances.listen(_onUtterance);
+  }
+
+  /// 聞き取れた一言を送る。
+  ///
+  /// 入力欄に書きかけの文があるとき、応答の生成中のときは送らずに
+  /// 入力欄へ足すだけにする。書きかけを消したり、送れずに
+  /// 聞き取った内容が消えたりしないようにするため。
+  void _onUtterance(String text) {
+    if (!mounted) return;
+
+    final placed = placeUtterance(
+      typed: _controller.text,
+      heard: text,
+      busy: context.read<ChatProvider>().isLoading,
+    );
+    _controller.value = TextEditingValue(
+      text: placed.text,
+      selection: TextSelection.collapsed(offset: placed.text.length),
+    );
+    if (placed.send) {
+      _send();
+    } else if (_mascot.isVisible) {
+      _focusNode.requestFocus();
+    }
   }
 
   // ------------------------------------------------------------
@@ -124,6 +200,19 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     _unitySub = bridge.unityEvents.listen((event) async {
       switch (event['type']) {
         case 'unity.clicked':
+          // こちらの窓の中のクリックが、重なったライムへのクリックとして
+          // 届いたもの。閉じずに無視する。
+          // Unity からの通知の方が先に着くこともあるので、少しだけ待って
+          // こちらのクリックが記録されるのを待ってから比べる。
+          await Future<void>.delayed(const Duration(milliseconds: 60));
+          if (!mounted) return;
+          final last = _lastLocalPointer;
+          if (_mascot.isVisible &&
+              last != null &&
+              DateTime.now().difference(last) < _localClickWindow) {
+            RaimLog.d('[WindowsInputWindow] 小窓の中のクリックなので無視しました');
+            break;
+          }
           // ライムをクリックするたびに入力小窓を開閉する
           if (_mascot.isVisible) {
             await _closeWindow();
@@ -179,6 +268,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   void dispose() {
     trayManager.removeListener(this);
     _unitySub?.cancel();
+    _wakeSub?.cancel();
+    _utteranceSub?.cancel();
     _controller.dispose();
     _focusNode.dispose();
     _windowFocusNode.dispose();
@@ -190,29 +281,53 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   // ------------------------------------------------------------
 
   Future<void> _setMode(_PanelMode mode) async {
-    if (_mode == mode) mode = _PanelMode.none;
+    // 伸ばしている最中に押された場合も、これから開こうとしている方と比べる
+    if ((_pendingMode ?? _mode) == mode) mode = _PanelMode.none;
+    final seq = ++_modeSeq;
 
-    setState(() {
-      _mode = mode;
-      _confirmingDeleteId = null;
-    });
+    // 伸ばすときは窓を伸ばしてから中身を出し、縮めるときは中身を消してから
+    // 窓を縮める。逆にすると、狭い窓に大きな中身が一瞬入って
+    // RenderFlex overflow になる。
+    if (mode == _PanelMode.none) {
+      _pendingMode = null;
+      setState(() {
+        _mode = mode;
+        _confirmingDeleteId = null;
+      });
+      await _mascot.collapse();
+    } else {
+      _pendingMode = mode;
+      switch (mode) {
+        case _PanelMode.log:
+          await _mascot.expandLog();
+        case _PanelMode.menu:
+        case _PanelMode.credits:
+        case _PanelMode.settings:
+        case _PanelMode.none:
+          await _mascot.expandPanel();
+      }
+      // 待っている間に別の操作（もう一度押す、Esc、閉じる）があれば、そちらが勝つ
+      if (!mounted || seq != _modeSeq) return;
+      _pendingMode = null;
+      setState(() {
+        _mode = mode;
+        _confirmingDeleteId = null;
+      });
+      if (mode == _PanelMode.menu) {
+        unawaited(context.read<ChatProvider>().loadThreads());
+      }
+    }
 
-    switch (mode) {
-      case _PanelMode.none:
-        await _mascot.collapse();
-        break;
-      case _PanelMode.menu:
-        await _mascot.expandPanel();
-        if (mounted) unawaited(context.read<ChatProvider>().loadThreads());
-        break;
-      case _PanelMode.log:
-        await _mascot.expandLog();
-        break;
-      case _PanelMode.credits:
-        await _mascot.expandPanel();
-        break;
+    // 窓の大きさを変えた直後に描き直されず、中身が消えたように見えることが
+    // あるので、もう1フレーム描かせる。
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
     }
   }
+
+
 
   // ------------------------------------------------------------
   // 送信（chat_input.dart と同じ手順）
@@ -272,6 +387,38 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     }
   }
 
+  /// マイク検証用のトグル。
+  ///
+  /// 押すと 16kHz/16bit/モノラルで録音を始め、もう一度押すと
+  /// wav にして保存する。保存した wav は tools/stt の Python
+  /// 検証スクリプトにそのまま渡せるので、
+  /// 「Flutter のマイク処理が正しいか」を Vosk と切り離して確認できる。
+  ///
+  /// ウェイクワード本体が入ったら、このボタンは音声入力に置き換える。
+  Future<void> _toggleMicDump() async {
+    final mic = MicStreamService.instance;
+    try {
+      if (_isRecordingDump) {
+        final path = await mic.stopDumpAndSave();
+        // ウェイクワードが同じマイクを使っているなら閉じない。
+        // 閉じると待ち受けまで止まってしまう。
+        if (!WakeWordService.instance.isListening) await mic.stop();
+        if (!mounted) return;
+        setState(() => _isRecordingDump = false);
+        RaimLog.i('[Mic] 保存${path == null ? "できませんでした" : "しました"}');
+      } else {
+        await mic.start();
+        mic.startDump();
+        if (!mounted) return;
+        setState(() => _isRecordingDump = true);
+      }
+    } catch (e) {
+      RaimLog.e('[Mic] 録音テストに失敗しました', e);
+      if (!mounted) return;
+      setState(() => _isRecordingDump = false);
+    }
+  }
+
   Future<void> _pickImage() async {
     await context.read<CameraProvider>().pickAndStoreImage(ImageSource.gallery);
   }
@@ -316,14 +463,25 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     if (_hadImages == hasImages) return;
     _hadImages = hasImages;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _mascot.setHasImages(hasImages);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!hasImages) {
+        // 先に列を消してから縮める（逆だと一瞬はみ出す）
+        if (mounted) setState(() => _showImageStrip = false);
+        await _mascot.setHasImages(false);
+        return;
+      }
+      await _mascot.setHasImages(true);
+      // 待っている間に画像が外されていたら出さない
+      if (mounted && _hadImages) setState(() => _showImageStrip = true);
     });
   }
 
   /// パネルを畳んでから隠す。
   /// 畳まずに隠すと、次に開いたときの高さと状態がずれる。
   Future<void> _closeWindow() async {
+    // 伸ばしている途中のパネル操作を無効にする
+    _modeSeq++;
+    _pendingMode = null;
     if (_mode != _PanelMode.none) {
       setState(() {
         _mode = _PanelMode.none;
@@ -349,7 +507,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   Widget build(BuildContext context) {
     _syncImageStripHeight(context.watch<CameraProvider>().hasImage);
 
-    return Scaffold(
+    return Listener(
+      onPointerDown: (_) => _lastLocalPointer = DateTime.now(),
+      onPointerUp: (_) => _lastLocalPointer = DateTime.now(),
+      child: Scaffold(
       backgroundColor: Colors.transparent,
       body: KeyboardListener(
         focusNode: _windowFocusNode,
@@ -372,13 +533,15 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                   _PanelMode.menu => _buildMenu(),
                   _PanelMode.log => _buildLog(),
                   _PanelMode.credits => _buildCredits(),
+                  _PanelMode.settings => _buildSettings(),
                   _PanelMode.none => const SizedBox.shrink(),
                 },
               ),
-            const _SelectedImageStrip(),
+            if (_showImageStrip) const _SelectedImageStrip(),
             _buildBar(),
           ],
         ),
+      ),
       ),
       ),
     );
@@ -411,6 +574,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   Widget _buildBar() {
     final chat = context.watch<ChatProvider>();
+    final voice = context.watch<VoiceController>();
 
     // 高さを固定しない。
     //
@@ -430,41 +594,52 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
               active: _mode == _PanelMode.menu,
             ),
             Expanded(
-              child: TextField(
-                controller: _controller,
-                focusNode: _focusNode,
-                enabled: !chat.isOffline,
-                style: const TextStyle(color: _text, fontSize: 13),
-                cursorColor: _lime,
-                decoration: InputDecoration(
-                  isDense: true,
-                  // マスコットモードには状態表示の場所が無いため、
-                  // プレースホルダを状態表示に兼用する。
-                  // 「〇〇を調べています」はチャット画面（message_list）に
-                  // しか出ておらず、Windows では何も出ていなかった。
-                  hintText: _hintText(chat),
-                  hintStyle: TextStyle(
-                    color: _statusText(chat) != null ? _lime : _mut,
-                    fontSize: 13,
+              child: ValueListenableBuilder<String>(
+                valueListenable: voice.heardText,
+                builder: (context, heard, _) => TextField(
+                  controller: _controller,
+                  focusNode: _focusNode,
+                  enabled: !chat.isOffline,
+                  style: const TextStyle(color: _text, fontSize: 13),
+                  cursorColor: _lime,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    // マスコットモードには状態表示の場所が無いため、
+                    // プレースホルダを状態表示に兼用する。
+                    // 「〇〇を調べています」はチャット画面（message_list）に
+                    // しか出ておらず、Windows では何も出ていなかった。
+                    hintText: voice.isTranscribing
+                        ? (heard.isEmpty ? '聞いてるよ…' : _tail(heard))
+                        : voice.sttError != null
+                            ? '聞き取れませんでした（${voice.sttError}）'
+                            : _hintText(chat),
+                    hintStyle: TextStyle(
+                      color: voice.isTranscribing || _statusText(chat) != null
+                          ? _lime
+                          : voice.sttError != null
+                              ? const Color(0xFFE06C6C)
+                              : _mut,
+                      fontSize: 13,
+                    ),
+                    filled: true,
+                    fillColor: _bg2,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+                    border: _border(_line),
+                    enabledBorder: _border(_line),
+                    focusedBorder: _border(_lime),
+                    disabledBorder: _border(_line),
                   ),
-                  filled: true,
-                  fillColor: _bg2,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-                  border: _border(_line),
-                  enabledBorder: _border(_line),
-                  focusedBorder: _border(_lime),
-                  disabledBorder: _border(_line),
+                  // 生成中は Enter でも送らない（ボタンは既に無効化済み）
+                  onSubmitted: (_) {
+                    if (context.read<ChatProvider>().isLoading) return;
+                    _send();
+                  },
                 ),
-                // 生成中は Enter でも送らない（ボタンは既に無効化済み）
-                onSubmitted: (_) {
-                  if (context.read<ChatProvider>().isLoading) return;
-                  _send();
-                },
               ),
             ),
             _iconButton(Icons.attach_file, '画像を送る', _pickImage),
-            _iconButton(Icons.mic_none, '音声入力（未実装）', null),
+            _buildTalkButton(voice),
             const SizedBox(width: 4),
             SizedBox(
               width: 32,
@@ -492,6 +667,24 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
             ),
           ],
         ),
+    );
+  }
+
+  /// 長い文は末尾だけ見せる。話している最中は今の言葉が見えてほしいため。
+  static String _tail(String text, {int max = 26}) =>
+      text.length <= max ? text : '…${text.substring(text.length - max)}';
+
+  /// マイクボタン。押すと聞き取りを始め、もう一度押すと話し終わりにする。
+  Widget _buildTalkButton(VoiceController voice) {
+    final talking = voice.isTranscribing;
+    if (!talking && !context.watch<VoiceSettingsProvider>().manualMicEnabled) {
+      return const SizedBox.shrink();
+    }
+    return _iconButton(
+      talking ? Icons.stop_circle_outlined : Icons.mic_none,
+      talking ? '話し終わり' : 'マイクで話しかける',
+      talking || voice.canTalk ? () => voice.toggleTalk() : null,
+      active: talking,
     );
   }
 
@@ -563,10 +756,17 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         _menuRow(Icons.close, '入力欄を閉じる', _closeWindow),
         const Divider(color: _line, height: 13),
         _sectionLabel('アプリ'),
+        _buildWakeWordRow(),
         _buildServerRow(),
-        _menuRow(Icons.settings_outlined, '設定', () {
-          RaimLog.d('[WindowsInputWindow] 設定が押されました');
-        }),
+        // 開発用: マイクに入っている音を wav に保存して耳で確かめる
+        _menuRow(
+          _isRecordingDump ? Icons.stop_circle_outlined : Icons.graphic_eq,
+          _isRecordingDump ? 'マイク録音テストを止めて保存' : 'マイク録音テスト（開発用）',
+          _toggleMicDump,
+          color: _isRecordingDump ? _lime : _text,
+        ),
+        _menuRow(Icons.settings_outlined, '設定',
+            () => _setMode(_PanelMode.settings)),
         _menuRow(Icons.record_voice_over, 'クレジット表記',
             () => _setMode(_PanelMode.credits)),
         _menuRow(Icons.logout_rounded, 'ログアウト', _logout),
@@ -766,6 +966,44 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         ),
       );
 
+  /// 「ねえライム」で呼び出すかどうかの切り替え。
+  ///
+  /// 設定画面を開かずにその場で切れるように、☰ に直接置く。
+  /// 文化祭で近くのスピーカーから動画の「ねえ、ライム」が流れるときなど、
+  /// すぐ止めたい場面があるため。
+  Widget _buildWakeWordRow() {
+    final settings = context.watch<VoiceSettingsProvider>();
+    final voice = context.watch<VoiceController>();
+    final enabled = settings.wakeWordEnabled;
+
+    final label = switch (voice.state) {
+      VoiceState.starting => '「ねえライム」で呼ぶ: 準備中…',
+      VoiceState.error => '「ねえライム」: ${voice.errorMessage ?? "起動できません"}',
+      // 入力バーは高さに余裕が無いので、聞き取りの失敗はここに出す
+      VoiceState.listening when voice.sttError != null =>
+        '「ねえライム」: ON（前回: ${voice.sttError}）',
+      VoiceState.off ||
+      VoiceState.listening ||
+      VoiceState.awake =>
+        '「ねえライム」で呼ぶ: ${enabled ? "ON" : "OFF"}',
+    };
+
+    final color = switch (voice.state) {
+      VoiceState.error => const Color(0xFFE06C6C),
+      VoiceState.listening when voice.sttError != null =>
+        const Color(0xFFE06C6C),
+      _ when enabled => _lime,
+      _ => _text,
+    };
+
+    return _menuRow(
+      enabled ? Icons.hearing : Icons.hearing_disabled,
+      label,
+      () => settings.setWakeWordEnabled(!enabled),
+      color: color,
+    );
+  }
+
   Widget _menuRow(
     IconData icon,
     String label,
@@ -784,6 +1022,40 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
           ],
         ),
       ),
+    );
+  }
+
+  // ---------- 設定 ----------
+
+  Widget _buildSettings() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _sectionLabel('音声の設定')),
+            IconButton(
+              icon: const Icon(Icons.close, size: 15),
+              color: _mut,
+              splashRadius: 15,
+              onPressed: () => _setMode(_PanelMode.none),
+            ),
+          ],
+        ),
+        const Expanded(
+          child: VoiceSettingsPanel(
+            palette: VoiceSettingsPalette(
+              text: _text,
+              muted: _mut,
+              accent: _lime,
+              error: Color(0xFFE06C6C),
+              line: _line,
+              surface: _bg2,
+            ),
+            fontScale: 0.95,
+          ),
+        ),
+      ],
     );
   }
 
