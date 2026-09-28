@@ -11,7 +11,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   screen_retriever_linux
   tray_manager
   url_launcher_linux
-  vosk_flutter_service
+  vosk_flutter
   window_manager
 )
 

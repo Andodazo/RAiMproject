@@ -75,8 +75,7 @@ void main() async {
   final voiceSettings = VoiceSettingsProvider();
   await voiceSettings.load();
 
-  final authService = AuthService();
-  final authProvider = AuthProvider(authService);
+  final authProvider = AuthProvider(AuthService());
   final raimService = RaimServerService(serverUrl: RaimConfig.serverUrl, accessTokenGetter: () => authProvider.getValidAccessToken(),);
   //RaimAppにraimServiceとunityBridgeを入れている
   runApp(
