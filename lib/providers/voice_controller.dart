@@ -102,6 +102,8 @@ class VoiceController extends ChangeNotifier {
   VoiceState _state = VoiceState.off;
   String? _errorMessage;
   List<String> _activeWords = const [];
+  String? _activeMicId;
+  String? _micWarning;
 
   Timer? _awakeTimer;
   Timer? _resumeTimer;
@@ -121,6 +123,12 @@ class VoiceController extends ChangeNotifier {
 
   VoiceState get state => _state;
   String? get errorMessage => _errorMessage;
+
+  /// 動いてはいるが知らせておきたいこと（選んだマイクが無い など）。
+  String? get micWarning => _micWarning;
+
+  /// 聞き取り（Transcribe）を組み込んであるか。
+  bool get hasStt => _stt != null;
 
   /// ライムが喋っているか。
   bool get isSpeaking => _speaking.value;
@@ -170,32 +178,74 @@ class VoiceController extends ChangeNotifier {
 
     final words = _settings.wakeWords;
     final wordsChanged = !listEquals(words, _activeWords);
+    final micChanged = _settings.micDeviceId != _activeMicId;
     final running =
         _state == VoiceState.listening || _state == VoiceState.awake;
 
-    if (running && !wordsChanged) return;
+    if (running && !wordsChanged && !micChanged) {
+      // 聞き取りを後から ON にされたときのため
+      if (_settings.sttEnabled && _warmTimer == null) _startWarmUp();
+      return;
+    }
+
+    // マイクを替えるには一度閉じる（開いたままだと前のマイクのまま）
+    if (running && micChanged) {
+      await _wake.stop();
+      await _releaseMic();
+    }
     await _start(words);
   }
 
   Future<void> _start(List<String> words) async {
     _cancelTimers();
+    _cancelSession();
     _setState(VoiceState.starting);
 
+    final micId = _settings.micDeviceId;
+    String? warning;
     try {
-      await _wake.start(wakeWords: words);
-      _activeWords = List.unmodifiable(words);
-      _errorMessage = null;
-      _setState(VoiceState.listening);
-      _startWarmUp();
-
-      // 起動した時点でライムが喋っていれば、すぐ止める
-      if (isSpeaking) _wake.suspend();
+      await _startWake(words, micId);
     } catch (e) {
-      RaimLog.e('[Voice] ウェイクワードを起動できませんでした', e);
-      _errorMessage = _describe(e);
-      await _releaseMic();
-      _setState(VoiceState.error);
+      if (micId == null) {
+        await _fail(e);
+        return;
+      }
+      // 選んだマイクが抜かれているなど。既定のマイクで試し直す
+      RaimLog.w('[Voice] 選んだマイクを開けなかったので、既定のマイクで試します');
+      try {
+        await _wake.stop();
+        await _releaseMic();
+        await _startWake(words, null);
+        warning = '選んだマイクが見つからないため、既定のマイクを使っています';
+      } catch (e2) {
+        await _fail(e2);
+        return;
+      }
     }
+
+    _activeWords = List.unmodifiable(words);
+    // 既定に切り替えた場合も「選ばれた方」を覚えておく。
+    // 覚えないと、設定が変わるたびに開けないマイクを試し直すことになる。
+    _activeMicId = micId;
+    _micWarning = warning;
+    _errorMessage = null;
+    _setState(VoiceState.listening);
+    _startWarmUp();
+
+    // 起動した時点でライムが喋っていれば、すぐ止める
+    if (isSpeaking) _wake.suspend();
+  }
+
+  Future<void> _startWake(List<String> words, String? micId) async {
+    MicStreamService.instance.deviceId = micId;
+    await _wake.start(wakeWords: words);
+  }
+
+  Future<void> _fail(Object e) async {
+    RaimLog.e('[Voice] ウェイクワードを起動できませんでした', e);
+    _errorMessage = _describe(e);
+    await _releaseMic();
+    _setState(VoiceState.error);
   }
 
   Future<void> _stop() async {
@@ -204,6 +254,8 @@ class VoiceController extends ChangeNotifier {
     await _wake.stop();
     await _releaseMic();
     _activeWords = const [];
+    _activeMicId = null;
+    _micWarning = null;
     _setState(VoiceState.off);
     RaimLog.i('[Voice] ウェイクワードを停止しました');
   }
@@ -236,7 +288,7 @@ class VoiceController extends ChangeNotifier {
     _setState(VoiceState.awake);
     if (!_wakeEvents.isClosed) _wakeEvents.add(detection);
 
-    final stt = _stt;
+    final stt = _settings.sttEnabled ? _stt : null;
     if (stt == null) {
       _awakeTimer?.cancel();
       _awakeTimer = Timer(awakeDuration, _endAwake);
@@ -348,7 +400,7 @@ class VoiceController extends ChangeNotifier {
 
   void _startWarmUp() {
     final stt = _stt;
-    if (stt == null) return;
+    if (stt == null || !_settings.sttEnabled) return;
     _warmTimer?.cancel();
     unawaited(stt.warmUp());
     _warmTimer = Timer.periodic(_warmInterval, (_) => unawaited(stt.warmUp()));

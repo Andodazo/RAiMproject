@@ -19,6 +19,7 @@ import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/config/raim_config.dart';
 
 /// Windows のデスクトップマスコット用の入力小窓。
@@ -37,7 +38,7 @@ class WindowsInputWindow extends StatefulWidget {
   State<WindowsInputWindow> createState() => _WindowsInputWindowState();
 }
 
-enum _PanelMode { none, menu, log, credits }
+enum _PanelMode { none, menu, log, credits, settings }
 
 class _WindowsInputWindowState extends State<WindowsInputWindow>
     with TrayListener {
@@ -265,6 +266,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         await _mascot.expandLog();
         break;
       case _PanelMode.credits:
+      case _PanelMode.settings:
         await _mascot.expandPanel();
         break;
     }
@@ -460,6 +462,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                   _PanelMode.menu => _buildMenu(),
                   _PanelMode.log => _buildLog(),
                   _PanelMode.credits => _buildCredits(),
+                  _PanelMode.settings => _buildSettings(),
                   _PanelMode.none => const SizedBox.shrink(),
                 },
               ),
@@ -669,9 +672,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         _sectionLabel('アプリ'),
         _buildWakeWordRow(),
         _buildServerRow(),
-        _menuRow(Icons.settings_outlined, '設定', () {
-          RaimLog.d('[WindowsInputWindow] 設定が押されました');
-        }),
+        _menuRow(Icons.settings_outlined, '設定',
+            () => _setMode(_PanelMode.settings)),
         _menuRow(Icons.record_voice_over, 'クレジット表記',
             () => _setMode(_PanelMode.credits)),
         _menuRow(Icons.logout_rounded, 'ログアウト', _logout),
@@ -927,6 +929,40 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
           ],
         ),
       ),
+    );
+  }
+
+  // ---------- 設定 ----------
+
+  Widget _buildSettings() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _sectionLabel('音声の設定')),
+            IconButton(
+              icon: const Icon(Icons.close, size: 15),
+              color: _mut,
+              splashRadius: 15,
+              onPressed: () => _setMode(_PanelMode.none),
+            ),
+          ],
+        ),
+        const Expanded(
+          child: VoiceSettingsPanel(
+            palette: VoiceSettingsPalette(
+              text: _text,
+              muted: _mut,
+              accent: _lime,
+              error: Color(0xFFE06C6C),
+              line: _line,
+              surface: _bg2,
+            ),
+            fontScale: 0.95,
+          ),
+        ),
+      ],
     );
   }
 

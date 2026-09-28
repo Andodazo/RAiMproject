@@ -55,6 +55,16 @@ class MicStreamService {
 
   bool get isRunning => _controller != null;
 
+  /// 使うマイクの識別子。null なら OS の既定。
+  ///
+  /// 次に [start] したときから効く。開いている間に変えても切り替わらない
+  /// （切り替えるには一度 [stop] する。VoiceController がやる）。
+  String? deviceId;
+
+  /// 開いているマイクの識別子。null なら OS の既定か、開いていない。
+  String? _openedDeviceId;
+  String? get openedDeviceId => _openedDeviceId;
+
   int get _prerollLimit =>
       (sampleRate * prerollDuration.inMilliseconds ~/ 1000) *
       channels *
@@ -65,6 +75,14 @@ class MicStreamService {
   /// Windows では record の権限チェックが実装されていないため、
   /// 常に true が返る場合がある。実際に start() して例外が出るかで判断する。
   Future<bool> hasPermission() => _recorder.hasPermission();
+
+  /// 使えるマイクの一覧。
+  Future<List<MicDevice>> listDevices() async {
+    final devices = await _recorder.listInputDevices();
+    return [
+      for (final d in devices) MicDevice(id: d.id, label: d.label),
+    ];
+  }
 
   /// マイクを開く。既に開いていれば同じストリームを返す。
   ///
@@ -78,9 +96,11 @@ class MicStreamService {
       throw StateError('マイクの使用が許可されていません');
     }
 
+    final id = deviceId;
     final raw = await _recorder.startStream(
-      const RecordConfig(
+      RecordConfig(
         encoder: AudioEncoder.pcm16bits,
+        device: id == null ? null : InputDevice(id: id, label: ''),
         sampleRate: sampleRate,
         numChannels: channels,
         // Windows ではエコーキャンセルもノイズ抑制も効かない。
@@ -93,6 +113,7 @@ class MicStreamService {
 
     final controller = StreamController<Uint8List>.broadcast();
     _controller = controller;
+    _openedDeviceId = id;
 
     var chunkLogged = false;
     _sub = raw.listen(
@@ -138,6 +159,7 @@ class MicStreamService {
       RaimLog.w('[Mic] stop に失敗しました: ${e.runtimeType}');
     }
     await controller?.close();
+    _openedDeviceId = null;
 
     _preroll.clear();
     _prerollBytes = 0;
@@ -224,4 +246,14 @@ class MicStreamService {
     );
     return file.path;
   }
+}
+
+/// マイク1台ぶんの情報。
+class MicDevice {
+  const MicDevice({required this.id, required this.label});
+
+  final String id;
+
+  /// OS が付けた名前（例: 「マイク (Realtek High Definition Audio)」）
+  final String label;
 }

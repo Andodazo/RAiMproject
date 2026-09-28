@@ -27,6 +27,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
   static const _kManualMicEnabled = 'voice.manualMicEnabled';
   static const _kWakePhraseMode = 'voice.wakePhraseMode';
   static const _kMicDeviceId = 'voice.micDeviceId';
+  static const _kSttEnabled = 'voice.sttEnabled';
 
   SharedPreferences? _prefs;
 
@@ -34,6 +35,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
   bool _manualMicEnabled = true;
   WakePhraseMode _wakePhraseMode = WakePhraseMode.polite;
   String? _micDeviceId;
+  bool _sttEnabled = true;
 
   /// 常時待機（ウェイクワード検知）を使うか。
   bool get wakeWordEnabled => _wakeWordEnabled;
@@ -45,6 +47,12 @@ class VoiceSettingsProvider extends ChangeNotifier {
 
   /// 使うマイクの識別子。null なら OS の既定。
   String? get micDeviceId => _micDeviceId;
+
+  /// 呼ばれたあとに話した内容を聞き取って送るか。
+  ///
+  /// OFF にすると、呼ばれても入力小窓を開くだけになる。
+  /// 聞き取りは Transcribe の利用料がかかるので、止められるようにしておく。
+  bool get sttEnabled => _sttEnabled;
 
   /// 何らかの形でマイクを使うか。権限要求の要否判断に使う。
   bool get needsMicrophone => _wakeWordEnabled || _manualMicEnabled;
@@ -70,6 +78,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
     _wakeWordEnabled = prefs.getBool(_kWakeWordEnabled) ?? false;
     _manualMicEnabled = prefs.getBool(_kManualMicEnabled) ?? true;
     _micDeviceId = prefs.getString(_kMicDeviceId);
+    _sttEnabled = prefs.getBool(_kSttEnabled) ?? true;
 
     final modeName = prefs.getString(_kWakePhraseMode);
     _wakePhraseMode = WakePhraseMode.values.firstWhere(
@@ -79,7 +88,8 @@ class VoiceSettingsProvider extends ChangeNotifier {
 
     RaimLog.i(
       '[VoiceSettings] 読み込み wake=$_wakeWordEnabled '
-      'manual=$_manualMicEnabled mode=${_wakePhraseMode.name}',
+      'manual=$_manualMicEnabled mode=${_wakePhraseMode.name} '
+      'stt=$_sttEnabled mic=${_micDeviceId == null ? "既定" : "指定"}',
     );
     notifyListeners();
   }
@@ -104,6 +114,14 @@ class VoiceSettingsProvider extends ChangeNotifier {
     _wakePhraseMode = mode;
     notifyListeners();
     await _prefs?.setString(_kWakePhraseMode, mode.name);
+  }
+
+  Future<void> setSttEnabled(bool value) async {
+    if (_sttEnabled == value) return;
+    _sttEnabled = value;
+    notifyListeners();
+    await _prefs?.setBool(_kSttEnabled, value);
+    RaimLog.i('[VoiceSettings] 聞き取り: ${value ? "ON" : "OFF"}');
   }
 
   Future<void> setMicDeviceId(String? id) async {
