@@ -187,8 +187,9 @@ class MicStreamService {
 
   /// 溜めた PCM を wav にして保存し、そのパスを返す。
   ///
-  /// 保存先はアプリのドキュメント領域。Windows なら
-  /// C:\Users\<user>\Documents\... 配下に出る。
+  /// 保存先はアプリ専用の作業領域。ドキュメント領域を使うと、
+  /// Windows で OneDrive にリダイレクトされている環境では
+  /// デバッグ用の wav が同期対象になってしまう。
   Future<String?> stopDumpAndSave({String prefix = 'mic'}) async {
     final dump = _dump;
     _dump = null;
@@ -206,7 +207,7 @@ class MicStreamService {
       channels: channels,
     );
 
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getApplicationSupportDirectory();
     final stamp = DateTime.now()
         .toIso8601String()
         .replaceAll(RegExp(r'[:.]'), '-');
@@ -214,9 +215,12 @@ class MicStreamService {
     await file.writeAsBytes(wav, flush: true);
 
     final seconds = pcm.length / bytesPerSample / sampleRate;
+    // 保存先はプラットフォームごとに違ううえ、探すのが手間なので
+    // パスもそのまま出す。デバッグ専用のログ。
     RaimLog.i(
       '[Mic] デバッグ録音を保存しました '
-      '(${seconds.toStringAsFixed(1)}秒 / ${wav.length}bytes)',
+      '(${seconds.toStringAsFixed(1)}秒 / ${wav.length}bytes)\n'
+      '      ${file.path}',
     );
     return file.path;
   }
