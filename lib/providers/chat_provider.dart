@@ -22,7 +22,6 @@ import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/models/image_attachment.dart';
 import 'package:raim_prototype/services/aws_image_service.dart';
-import 'package:raim_prototype/config/raim_config.dart';
 
 class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // ============================================================
@@ -759,13 +758,14 @@ _toolStatus = null;
       0,
       (total, image) => total + image.sizeBytes,
     );
-    if (totalBytes > RaimConfig.maxImageTotalBytes) {
-      _addLocalError('画像の合計サイズは10MiB以下にしてください。');
-      unawaited(_imageService.cleanupPendingImages(imagesToUpload));
-      return;
-    }
+    // 10MiB の確認は 2MiB の確認に含まれるので1つにまとめた。
+    // 以前は両方あり、10MiB 側の文言（「10MiB以下に」）は出ることがなかった。
     if (totalBytes > maxTotalImageBytes) {
-      _addLocalError('画像の合計サイズが大きすぎます。');
+      _addLocalError(
+        '画像の合計サイズが大きすぎます'
+        '（${maxTotalImageBytes ~/ (1024 * 1024)}MB まで）。'
+        '枚数を減らしてください。',
+      );
       unawaited(_imageService.cleanupPendingImages(imagesToUpload));
       return;
     }
