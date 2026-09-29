@@ -340,11 +340,15 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
     super.key,
     required this.onSettings,
     required this.onLogout,
+    this.onStationAlarm,
     this.isWide = false,
   });
 
   final VoidCallback onSettings;
   final VoidCallback onLogout;
+
+  /// 駅アラームを開く。null ならメニューに出さない（対応していない端末）
+  final VoidCallback? onStationAlarm;
   final bool isWide;
   //開発検証用---------------------------------------------------
   @override
@@ -420,6 +424,9 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
           case 'settings':
             widget.onSettings();
             break;
+          case 'station_alarm':
+            widget.onStationAlarm?.call();
+            break;
           case 'logout':
             widget.onLogout();
             break;
@@ -478,6 +485,19 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
           ),
         ),
         const PopupMenuDivider(),
+        if (widget.onStationAlarm != null) ...[
+          const PopupMenuItem(
+            value: 'station_alarm',
+            child: Row(
+              children: [
+                Icon(Icons.train_rounded, color: Colors.white70),
+                SizedBox(width: 12),
+                Text('駅アラーム', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+          ),
+          const PopupMenuDivider(),
+        ],
         PopupMenuItem(
           value: 'settings',
           child: Row(

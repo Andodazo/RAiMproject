@@ -26,6 +26,7 @@ import 'package:raim_prototype/config/raim_config.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
+import 'package:raim_prototype/providers/station_alarm_controller.dart';
 import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/screens/splash_screen.dart';
@@ -247,6 +248,12 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
             stt: TranscribeSttService(
               idTokenGetter: widget.authProvider.getValidIdToken,
             ),
+          ),
+        ),
+        // 駅アラーム（乗車モード）。ライムが喋っている間はアナウンスを聞かない
+        ChangeNotifierProvider(
+          create: (context) => StationAlarmController(
+            speaking: context.read<ChatProvider>().isSpeaking,
           ),
         ),
       ],

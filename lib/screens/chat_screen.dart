@@ -11,6 +11,8 @@ import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
 import 'package:raim_prototype/widgets/thread_selector_menu.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
+import 'package:raim_prototype/providers/station_alarm_controller.dart';
+import 'package:raim_prototype/screens/station_alarm_screen.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
 class ChatScreen extends StatelessWidget {
@@ -107,6 +109,9 @@ class ChatScreen extends StatelessWidget {
         children: [
           ChatMenuButton(
             onSettings: () => showVoiceSettingsSheet(context),
+            onStationAlarm: StationAlarmController.isSupported
+                ? () => StationAlarmScreen.open(context)
+                : null,
             onLogout: () {
               _confirmLogoutAndClose(context);
             },
@@ -275,6 +280,9 @@ class ChatScreen extends StatelessWidget {
           child: ChatMenuButton(
             isWide: true,
             onSettings: () => showVoiceSettingsSheet(context),
+            onStationAlarm: StationAlarmController.isSupported
+                ? () => StationAlarmScreen.open(context)
+                : null,
             onLogout: () {
               _confirmLogoutAndClose(context);
             },
