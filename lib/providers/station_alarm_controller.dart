@@ -12,6 +12,13 @@
 // Android はフォアグラウンドサービス（RideForegroundService）を動かして、
 // 裏でもマイクを使えるようにする。サービスの通知が「乗車中」の表示になる。
 //
+// 【GPS】
+// 位置情報の許可があれば、GPS も使う（StationProximity）。
+//   - 降りる駅から遠いところで聞こえたアナウンスは無視する（聞き間違い対策）
+//   - アナウンスを聞き逃しても、駅に近づいたら知らせる
+//   - 地下などで位置が取れないときは、音声だけで判定する
+// 許可が無くても、音声だけで動く。
+//
 // 【知らせ方】
 //   - 通知（音とバイブ）… サービスの通知を書き換えて鳴らす
 //   - ライムの声      … assets/sounds の wav（VOICEVOX で作ったもの）。無ければ鳴らさない
@@ -23,12 +30,14 @@ import 'dart:io' show Platform;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/station/ride_foreground_service.dart';
 import 'package:raim_prototype/services/station/station_alarm.dart';
 import 'package:raim_prototype/services/station/station_database.dart';
 import 'package:raim_prototype/services/station/station_listener.dart';
+import 'package:raim_prototype/services/station/station_proximity.dart';
 
 enum StationAlarmState { idle, starting, riding, arrived, error }
 
@@ -61,6 +70,9 @@ class StationAlarmController extends ChangeNotifier {
 
   StationListener? _listener;
   AudioPlayer? _voice;
+  StationProximity? _proximity;
+  StreamSubscription<Position>? _gpsSub;
+  bool _approachAlerted = false;
 
   /// フォアグラウンドサービスが動いているか（画面を消しても大丈夫か）。
   bool _background = false;
@@ -82,6 +94,18 @@ class StationAlarmController extends ChangeNotifier {
   String? get lastHeard => _lastHeard;
 
   String? get errorMessage => _error;
+
+  /// GPS を使っているか（位置情報の許可があり、位置が取れているか）。
+  bool get hasLocation =>
+      _proximity?.hasFreshFix(DateTime.now()) ?? false;
+
+  /// 降りる駅までの距離（m）。GPS が使えなければ null。
+  double? get distanceToDestination =>
+      hasLocation ? _proximity?.distance : null;
+
+  /// 位置情報の許可をもらえたか（GPS を使おうとしているか）。
+  bool _locationGranted = false;
+  bool get locationGranted => _locationGranted;
   DateTime? get startedAt => _startedAt;
 
   bool get isActive =>
@@ -102,6 +126,7 @@ class StationAlarmController extends ChangeNotifier {
     _lastEvent = null;
     _lastHeard = null;
     _error = null;
+    _approachAlerted = false;
     _setState(StationAlarmState.starting);
 
     try {
@@ -109,7 +134,8 @@ class StationAlarmController extends ChangeNotifier {
       final plan = StationAlarmPlan.build(db, destination, line: line);
       final listener = StationListener(plan: plan, speaking: _speaking);
       _listener = listener;
-      _eventSub = listener.events.listen(_onEvent);
+      _proximity = StationProximity(plan);
+      _eventSub = listener.events.listen(_onVoiceEvent);
       _heardSub = listener.heard.listen((text) {
         _lastHeard = text;
         _notify();
@@ -119,11 +145,16 @@ class StationAlarmController extends ChangeNotifier {
       // 待っている間に止められていたら何もしない
       if (!identical(_listener, listener)) return;
 
+      // 位置情報の許可をもらう（断られたら音声だけで動く）
+      _locationGranted = await _prepareLocation();
+      if (!identical(_listener, listener)) return;
+
       // マイクを開いてから（録音の許可をもらってから）サービスを始める。
       // Android 14 以降は、許可が無いとマイク用のサービスを始められない。
       _background = await RideForegroundService.start(
         title: '駅アラーム：${destination.name}',
         text: '車内アナウンスを聞いています',
+        withLocation: _locationGranted,
       );
       if (!identical(_listener, listener)) {
         // 待っている間に止められた。始めてしまったサービスも止める
@@ -133,6 +164,8 @@ class StationAlarmController extends ChangeNotifier {
         }
         return;
       }
+
+      if (_locationGranted) _startGps();
 
       _startedAt = DateTime.now();
       _endTimer = Timer(maxRide, () {
@@ -157,6 +190,10 @@ class StationAlarmController extends ChangeNotifier {
   Future<void> _teardown() async {
     _endTimer?.cancel();
     _endTimer = null;
+    await _gpsSub?.cancel();
+    _gpsSub = null;
+    _proximity = null;
+    _locationGranted = false;
     if (_background) {
       _background = false;
       await RideForegroundService.stop();
@@ -173,7 +210,90 @@ class StationAlarmController extends ChangeNotifier {
     await listener?.dispose();
   }
 
-  void _onEvent(StationAlarmEvent event) {
+  // ─── GPS ───
+
+  /// 位置情報の許可を確かめ、無ければ求める。使えるなら true。
+  Future<bool> _prepareLocation() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        RaimLog.i('[StationAlarm] 位置情報がオフなので、音声だけで判定します');
+        return false;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      final ok = permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always;
+      if (!ok) RaimLog.i('[StationAlarm] 位置情報の許可が無いので、音声だけで判定します');
+      return ok;
+    } catch (e) {
+      RaimLog.w('[StationAlarm] 位置情報を確認できませんでした: ${e.runtimeType}');
+      return false;
+    }
+  }
+
+  void _startGps() {
+    _gpsSub = Geolocator.getPositionStream(
+      locationSettings: AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        // 電車は速いので間隔で取る。距離で絞ると駅に止まっている間に来ない
+        distanceFilter: 0,
+        intervalDuration: const Duration(seconds: 5),
+      ),
+    ).listen(
+      _onPosition,
+      onError: (Object e) =>
+          RaimLog.w('[StationAlarm] 位置を取れませんでした: ${e.runtimeType}'),
+    );
+  }
+
+  void _onPosition(Position p) {
+    final proximity = _proximity;
+    final dest = _destination;
+    if (proximity == null || dest == null) return;
+
+    final stage = proximity.onPosition(
+      p.latitude,
+      p.longitude,
+      accuracy: p.accuracy,
+      at: DateTime.now(),
+    );
+    if (stage != null && _state != StationAlarmState.arrived) {
+      RaimLog.i('[StationAlarm] GPS で知らせます: ${stage.name}');
+      _alert(StationAlarmEvent(
+        stage: stage,
+        station: dest,
+        heard: 'GPS',
+        at: DateTime.now(),
+      ));
+      return;
+    }
+    _notify(); // 距離の表示を更新する
+  }
+
+  // ─── 知らせ ───
+
+  /// 音声で見つけた知らせ。GPS で遠いと分かっていれば捨てる。
+  void _onVoiceEvent(StationAlarmEvent event) {
+    final proximity = _proximity;
+    if (proximity != null && !proximity.allowsVoice(DateTime.now())) {
+      RaimLog.i(
+        '[StationAlarm] 駅から遠いので聞き間違いとみなしました '
+        '(${proximity.distance?.round()}m / ${event.stage.name})',
+      );
+      return;
+    }
+    proximity?.markNotified(event.stage);
+    _alert(event);
+  }
+
+  void _alert(StationAlarmEvent event) {
+    if (_state == StationAlarmState.arrived) return;
+    if (event.stage == StationAlarmStage.approaching) {
+      if (_approachAlerted) return;
+      _approachAlerted = true;
+    }
     _lastEvent = event;
     final dest = _destination?.name ?? '';
     switch (event.stage) {

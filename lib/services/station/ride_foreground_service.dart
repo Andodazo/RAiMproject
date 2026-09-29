@@ -87,9 +87,14 @@ class RideForegroundService {
   ///
   /// 通知の許可が無ければここで求める（Android 13 以降）。
   /// 許可されなくてもサービスは動くが、通知が出ないので知らせに気づけない。
+  ///
+  /// [withLocation] なら位置情報用としても宣言する（画面を消しても GPS を
+  /// 受け取るため）。位置情報の許可が無いのに宣言すると Android 14 以降は
+  /// サービスを始められないので、許可をもらったときだけ true にする。
   static Future<bool> start({
     required String title,
     required String text,
+    bool withLocation = false,
   }) async {
     if (!isSupported) return false;
     _init();
@@ -106,7 +111,10 @@ class RideForegroundService {
 
     final result = await FlutterForegroundTask.startService(
       serviceId: _serviceId,
-      serviceTypes: const [ForegroundServiceTypes.microphone],
+      serviceTypes: [
+        ForegroundServiceTypes.microphone,
+        if (withLocation) ForegroundServiceTypes.location,
+      ],
       notificationTitle: title,
       notificationText: text,
       callback: rideTaskCallback,

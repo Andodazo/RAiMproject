@@ -242,6 +242,20 @@ class _LinePicker extends StatelessWidget {
   }
 }
 
+String _locationText(StationAlarmController alarm) {
+  final d = alarm.distanceToDestination;
+  if (d != null) {
+    final text = d >= 1000
+        ? '${(d / 1000).toStringAsFixed(1)}km'
+        : '${d.round()}m';
+    return '降りる駅まで あと $text（GPS）';
+  }
+  if (alarm.locationGranted) {
+    return '位置を確認中…（地下など取れないときはアナウンスだけで判定します）';
+  }
+  return '位置情報なし（アナウンスだけで判定します）';
+}
+
 /// 乗車中の表示。
 class _Riding extends StatelessWidget {
   const _Riding({required this.alarm});
@@ -305,6 +319,23 @@ class _Riding extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(
+                alarm.hasLocation ? Icons.location_on : Icons.location_off,
+                size: 16,
+                color: _mut,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _locationText(alarm),
+                  style: const TextStyle(color: _mut, fontSize: 12.5),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           const Text('最後に聞こえた言葉（確認用）',

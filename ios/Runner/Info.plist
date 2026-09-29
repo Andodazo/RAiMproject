@@ -64,6 +64,8 @@
 	<string>ライムに写真を見せるために、カメラを使用します。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>ライムに写真を見せるために、写真ライブラリにアクセスします。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>駅アラームで、降りる駅に近づいたことを知らせるために位置情報を使用します。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ライムに話しかけるために、マイクを使用します。</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
