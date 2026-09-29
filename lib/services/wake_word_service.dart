@@ -166,6 +166,15 @@ class WakeWordService {
     RaimLog.i('[WakeWord] モデルを読み込みました (${ms}ms)');
   }
 
+  /// 読み込んだモデル。駅アラームなど、別の文法で認識したい機能と共有する。
+  ///
+  /// モデルは約48MB あり、読み込みにも時間がかかるので1つだけ持つ。
+  /// 認識器（Recognizer）は文法ごとに別に作れる。
+  Future<Model> sharedModel() async {
+    await initialize();
+    return _model!;
+  }
+
   /// 待機を開始する。
   ///
   /// [wakeWords] は VoiceSettingsProvider から渡す。

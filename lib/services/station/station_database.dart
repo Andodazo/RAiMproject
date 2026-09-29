@@ -147,8 +147,7 @@ class StationDatabase {
 
   /// 路線の駅を並び順で。
   List<Station> stationsOf(RailLine line) => [
-        for (final c in line.stationCodes)
-          if (_stations[c] case final s?) s,
+        for (final c in line.stationCodes) ?_stations[c],
       ];
 
   /// 路線上で隣の駅（前後）。

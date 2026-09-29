@@ -4,6 +4,12 @@
     <!-- 音声入力（STT）用。録音以外の用途では使わない -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
+    <!-- 駅アラーム: 画面を消しても車内アナウンスを聞き続けるため。
+         マイク用のフォアグラウンドサービス（Android 14 以降は種類の宣言が必須）。
+         FOREGROUND_SERVICE / WAKE_LOCK / POST_NOTIFICATIONS は
+         flutter_foreground_task 側の宣言に含まれている -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
     <application
         android:label="raim_prototype"
         android:allowBackup="false"
@@ -38,6 +44,11 @@
                 <data android:scheme="raim" android:host="callback" />
             </intent-filter>
         </activity>
+        <!-- 駅アラームの乗車モード中だけ動くサービス（flutter_foreground_task） -->
+        <service
+            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

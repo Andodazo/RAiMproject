@@ -231,6 +231,21 @@ class MicStreamService {
 
   bool get isDumping => _dump != null;
 
+  /// マイクを使い続けたい利用者。
+  ///
+  /// 駅アラームのように「ねえライム」とは別にマイクを使うものが登録する。
+  /// 登録がある間は、ねえライムを OFF にしてもマイクを閉じない。
+  final Set<Object> _holders = {};
+
+  /// 誰かがマイクを使い続けたいと登録しているか。
+  bool get isHeld => _holders.isNotEmpty;
+
+  void hold(Object who) => _holders.add(who);
+  void unhold(Object who) => _holders.remove(who);
+
+  /// 今マイクの音を受け取っている相手がいるか。
+  bool get hasListeners => _controller?.hasListener ?? false;
+
   /// 生の PCM を溜め始める。
   void startDump() {
     _dump = BytesBuilder(copy: false);
