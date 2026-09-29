@@ -1,0 +1,5 @@
+# libvosk.xcframework は大きい（約170MB）ので Git に入れない。
+# tool/fetch_libvosk.sh で取ってくる。
+*
+!.gitignore
+!README.md

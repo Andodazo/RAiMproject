@@ -64,6 +64,13 @@
 	<string>ライムに写真を見せるために、カメラを使用します。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>ライムに写真を見せるために、写真ライブラリにアクセスします。</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<!-- 駅アラーム: 画面を消しても車内アナウンスを聞き続ける -->
+		<string>audio</string>
+		<!-- 駅アラーム: 画面を消しても降りる駅への近さを GPS で見る -->
+		<string>location</string>
+	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>駅アラームで、降りる駅に近づいたことを知らせるために位置情報を使用します。</string>
 	<key>NSMicrophoneUsageDescription</key>

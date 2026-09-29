@@ -151,7 +151,7 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
 
           if (!supported)
             _note(
-              'この端末ではまだ「ねえライム」を使えません（iOS は対応予定）。',
+              'この端末ではまだ「ねえライム」を使えません（iOS は音声認識のライブラリを入れてビルドする必要があります）。',
               color: _p.error,
             ),
 
