@@ -112,6 +112,8 @@ flutter:
     # フォルダで指定しているので、万一 zip が無くてもビルドは通り、
     # ウェイクワードだけが「音声モデルが見つかりません」になる。
     - assets/models/
+    # 駅アラーム用の駅データ（tools/build_station_data.py で生成、約830KB）
+    - assets/stations/
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

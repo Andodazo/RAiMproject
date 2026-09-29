@@ -573,6 +573,20 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
                 Text('・VOICEVOX: 春日部つむぎ',style: TextStyle(color: Colors.white70)),
                 
                 Divider(height: 24, color: Colors.white24),//区切り線
+                Text(
+                  '音声認識',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white,),
+                ),
+                SizedBox(height: 4),
+                Text('・Vosk（Alpha Cephei、Apache License 2.0）',style: TextStyle(color: Colors.white70)),
+                Divider(height: 24, color: Colors.white24),
+                Text(
+                  '駅データ',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white,),
+                ),
+                SizedBox(height: 4),
+                Text('・station_database（Seo-4d696b75、CC BY 4.0）',style: TextStyle(color: Colors.white70)),
+                Divider(height: 24, color: Colors.white24),
               ],
             ),
           ),
