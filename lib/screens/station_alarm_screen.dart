@@ -261,7 +261,7 @@ class _Riding extends StatelessWidget {
     final (color, status) = switch (alarm.state) {
       StationAlarmState.starting => (_mut, '準備中…（初回は数秒かかります）'),
       StationAlarmState.arrived => (_lime, 'まもなく到着！降りる準備をしてね'),
-      _ when approaching => (_warn, '次は「${event!.station.name}」。もうすぐだよ'),
+      _ when approaching => (_warn, '次は「${event.station.name}」。もうすぐだよ'),
       _ => (_text, '車内アナウンスを聞いています'),
     };
 
