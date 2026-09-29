@@ -197,6 +197,13 @@ class WindowsUnityBridge implements UnityCommunicator {
 
   @override
   Future<void> start() async {
+    // 認証後の画面はログアウト→再ログインで作り直されるため、
+    // 同じブリッジを二重起動しない。
+    if (_server != null) {
+      RaimLog.d('[UnityBridge] WebSocketサーバーは起動済みです');
+      return;
+    }
+
     // allowedOrigins を空にすると、Origin ヘッダを付ける接続（＝ブラウザ）を
     // すべて弾く。Unity の WebSocket クライアントは Origin を付けないので通る。
     // これを指定しないと、悪意のあるページを開いただけで
