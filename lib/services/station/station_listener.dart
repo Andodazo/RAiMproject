@@ -139,6 +139,15 @@ class StationListener {
     }
   }
 
+  /// しばらく聞かない。ライムの声（知らせのセリフ）を鳴らすときに使う。
+  void muteFor(Duration duration) {
+    final until = DateTime.now().add(duration);
+    final current = _mutedUntil;
+    if (current == null || until.isAfter(current)) _mutedUntil = until;
+    _pending.clear();
+    unawaited(_recognizer?.reset());
+  }
+
   bool get _muted {
     if (_speaking?.value ?? false) return true;
     final until = _mutedUntil;

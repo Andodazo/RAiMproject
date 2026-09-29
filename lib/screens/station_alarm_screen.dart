@@ -3,8 +3,7 @@
 // 駅アラームの画面。降りる駅を探して選び、乗車モードを始める。
 // 乗車中は、目的の駅と今の状態、最後に聞こえた言葉を出す。
 //
-// 画面を消した状態での動作はまだ無い。乗車中は画面を点けたままにしておく
-// 必要がある（別の段階で、画面を消しても動くようにする）。
+// 乗車中は Android のフォアグラウンドサービスで、画面を消しても聞き続ける。
 
 import 'dart:async';
 
@@ -316,9 +315,14 @@ class _Riding extends StatelessWidget {
             style: const TextStyle(color: _text, fontSize: 13),
           ),
           const Spacer(),
-          const Text(
-            '今は画面を点けたままにしてください（画面を消すと止まります）。',
-            style: TextStyle(color: _mut, fontSize: 12),
+          Text(
+            alarm.canRunInBackground
+                ? '画面を消しても聞き続けます。通知から戻れます。'
+                : '通知を出せないため、画面を点けたままにしてください。',
+            style: TextStyle(
+              color: alarm.canRunInBackground ? _mut : _warn,
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 12),
           SizedBox(
