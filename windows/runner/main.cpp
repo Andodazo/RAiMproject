@@ -30,7 +30,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   if (!window.Create(L"raim_prototype", origin, size)) {
     return EXIT_FAILURE;
   }
-  window.EnterBorderlessFullscreen();
+  // 認証前は通常のウィンドウで外部ブラウザへ入力を渡す。
+  // 認証後のWindowsマスコットモードへの切り替えは、
+  // MascotWindowServiceがFlutter側から行う。
   window.SetQuitOnClose(true);
 
   ::MSG msg;

@@ -6,6 +6,8 @@ import 'package:raim_prototype/screens/login_screen.dart';
 import 'package:raim_prototype/screens/windows_input_window.dart';
 import 'package:raim_prototype/services/mascot_window_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
+import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/unity_communicator.dart';
 
 /// アプリ起動直後に表示する認証振り分け画面です。
 ///
@@ -71,6 +73,16 @@ class _AuthenticatedChatScreenState extends State<_AuthenticatedChatScreen> {
   Future<void> _connectWithToken() async {
     final raimService = context.read<RaimServerService>();
     final authProvider = context.read<AuthProvider>();
+    final unityBridge = context.read<UnityCommunicator>();
+
+    // 認証前にUnityを起動すると、Windowsの透過・最前面ウィンドウが
+    // 認証ブラウザのフォーカスや入力と競合するため、認証後に起動する。
+    // 起動に失敗してもチャット自体は使えるように続行する。
+    try {
+      await unityBridge.start();
+    } catch (e) {
+      RaimLog.e('Unity ブリッジを起動できませんでした（マスコット無しで続行）', e);
+    }
 
     // 有効なアクセストークンを取得
     final accessToken = await authProvider.getValidAccessToken();

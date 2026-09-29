@@ -58,16 +58,6 @@ void main() async {
 
   // Unity Bridge
   final UnityCommunicator unityBridge = _createUnityBridge();
-  // ポートが埋まっている（RAiM の二重起動など）と start() は例外を投げる。
-  // ここで落とすと UI が一切出ないまま終了してしまうため、
-  // マスコット無しでも起動できるようにする。
-  try {
-    await unityBridge.start();
-  } catch (e) {
-    // よくある原因は RAiM の二重起動。マスコットは出ないが、
-    // チャット自体は動くのでアプリは続行する。
-    RaimLog.e('Unity ブリッジを起動できませんでした（マスコット無しで続行）', e);
-  }
 
   // RAiM サーバー接続用のサービスを作成する。
   // 未認証状態で WebSocket 接続しないよう、connect() は SplashScreen で認証済みを確認してから呼ぶ。
