@@ -31,7 +31,6 @@
 // ウェイクワードが OFF でも、iOS でも使える。
 
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 
@@ -40,6 +39,7 @@ import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/transcribe_stt_service.dart';
+import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 import 'package:raim_prototype/services/wake_word_service.dart';
 
 enum VoiceState { off, starting, listening, awake, error }
@@ -83,13 +83,10 @@ class VoiceController extends ChangeNotifier {
 
   /// Vosk とマイクが使えるプラットフォームか。
   ///
-  /// iOS は含めない。本家 vosk_flutter が Windows・Linux（FFI）と
-  /// Android にしか対応しておらず、iOS では初期化で例外になる。
-  /// iOS の対応はタスク8で別途検討する。
-  static bool get isSupported {
-    if (kIsWeb) return false;
-    return Platform.isWindows || Platform.isAndroid;
-  }
+  /// Windows・Android は本家 vosk_flutter、iOS はアプリに静的リンクした
+  /// libvosk（packages/vosk_ios）を使う。iOS は libvosk を入れてビルド
+  /// したとき（fetch_libvosk.sh を実行したとき）だけ使える。
+  static bool get isSupported => VoskEngine.isAvailable;
 
   final VoiceSettingsProvider _settings;
   final AuthProvider _auth;

@@ -36,7 +36,12 @@ dependencies:
   # 駅アラーム: 画面を消しても聞き続けるためのフォアグラウンドサービス
   flutter_foreground_task: ^11.0.3
   # 駅アラーム: 降りる駅への近さを GPS で見る
-  geolocator: ^14.1.1
+  # 14.0.3 以降は flutter_secure_storage 9 系と win32 のバージョンがぶつかるので 14.0.2 に留める
+  geolocator: ^14.0.2
+  # iOS で Vosk を使う: アプリに静的リンクした libvosk を FFI で呼ぶ
+  ffi: ^2.1.3
+  vosk_ios:
+    path: packages/vosk_ios
   audioplayers: ^6.8.1  # 2026年現在の最新安定版
   
   flutter_embed_unity: ^2.0.0  # (replace this version with the latest available)

@@ -6,6 +6,7 @@
 // 乗車中は Android のフォアグラウンドサービスで、画面を消しても聞き続ける。
 
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -105,7 +106,8 @@ class _StationAlarmScreenState extends State<StationAlarmScreen> {
       ),
       body: SafeArea(
         child: !StationAlarmController.isSupported
-            ? _message('この端末ではまだ駅アラームを使えません（Android のみ対応）')
+            ? _message('この端末ではまだ駅アラームを使えません。\n'
+                '（iOS は音声認識のライブラリを入れてビルドする必要があります）')
             : alarm.isActive
                 ? _Riding(alarm: alarm)
                 : _buildPicker(alarm),
@@ -348,7 +350,9 @@ class _Riding extends StatelessWidget {
           const Spacer(),
           Text(
             alarm.canRunInBackground
-                ? '画面を消しても聞き続けます。通知から戻れます。'
+                ? (Platform.isIOS
+                    ? '画面を消しても聞き続けます。着いたらライムの声で知らせます。'
+                    : '画面を消しても聞き続けます。通知から戻れます。')
                 : '通知を出せないため、画面を点けたままにしてください。',
             style: TextStyle(
               color: alarm.canRunInBackground ? _mut : _warn,

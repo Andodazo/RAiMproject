@@ -42,6 +42,7 @@ import 'package:vosk_flutter/vosk_flutter.dart';
 
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 
 /// 文法に入れるが、検知扱いにはしない語。
 ///
@@ -82,13 +83,6 @@ class WakeWordService {
       MicStreamService.bytesPerSample *
       200 ~/
       1000;
-
-  /// Vosk 本体。
-  ///
-  /// フィールド初期化で作らないこと。本家 vosk_flutter は iOS に対応して
-  /// おらず、instance() の時点で UnsupportedError を投げる。
-  /// 初期化で作ると、ウェイクワードを使わない設定でも iOS で起動時に落ちる。
-  VoskFlutterPlugin get _vosk => VoskFlutterPlugin.instance();
 
   Model? _model;
   Recognizer? _recognizer;
@@ -160,7 +154,9 @@ class WakeWordService {
     final loader = ModelLoader(modelStorage: storage);
     final started = DateTime.now();
     final modelPath = await loader.loadFromAssets(kVoskModelAsset);
-    _model = await _vosk.createModel(modelPath);
+    // iOS は本家 vosk_flutter が対応していないので、VoskEngine が
+    // アプリに静的リンクした libvosk を FFI で呼ぶ
+    _model = await VoskEngine.createModel(modelPath);
 
     final ms = DateTime.now().difference(started).inMilliseconds;
     RaimLog.i('[WakeWord] モデルを読み込みました (${ms}ms)');
@@ -195,7 +191,7 @@ class WakeWordService {
       '[unk]',
     ];
 
-    _recognizer = await _vosk.createRecognizer(
+    _recognizer = await VoskEngine.createRecognizer(
       model: _model!,
       sampleRate: MicStreamService.sampleRate,
       grammar: grammar,

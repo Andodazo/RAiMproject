@@ -1,0 +1,20 @@
+name: vosk_ios
+description: >-
+  Vosk（libvosk）を iOS アプリに静的リンクするためだけの RAiM 専用プラグイン。
+  Dart からは FFI（DynamicLibrary.process）で直接呼ぶ。
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: VoskIosPlugin

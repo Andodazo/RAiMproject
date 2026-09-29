@@ -20,6 +20,7 @@ Cognito認証状態を確認
 import 'dart:async' show StreamSubscription, unawaited;
 import 'dart:io' show Platform, exit;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/config/raim_config.dart';
@@ -44,6 +45,33 @@ import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
 
+/// iOS の音声の設定。
+///
+/// 録音（ねえライム・駅アラーム）とライムの声の再生を同時に使えるようにする。
+/// audioplayers の既定（playback）のままだと、ライムが喋るたびに録音側の
+/// 設定が上書きされ、声が受話口から小さく出たり録音が止まったりする。
+/// playAndRecord はマナーモードでも音が鳴るので、駅アラームの声も届く。
+Future<void> _configureIosAudio() async {
+  if (kIsWeb || !Platform.isIOS) return;
+  try {
+    await AudioPlayer.global.setAudioContext(
+      AudioContext(
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.playAndRecord,
+          options: const {
+            AVAudioSessionOptions.defaultToSpeaker,
+            AVAudioSessionOptions.mixWithOthers,
+            AVAudioSessionOptions.allowBluetooth,
+            AVAudioSessionOptions.allowBluetoothA2DP,
+          },
+        ),
+      ),
+    );
+  } catch (e) {
+    RaimLog.w('[Audio] iOS の音声設定に失敗しました: ${e.runtimeType}');
+  }
+}
+
 void main() async {
   //ウィジェットを使うための初期化処理
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,6 +95,7 @@ void main() async {
   // 非同期で後から入ると一瞬 OFF の状態が描画される。
   final voiceSettings = VoiceSettingsProvider();
   await voiceSettings.load();
+  await _configureIosAudio();
 
   final authProvider = AuthProvider(AuthService());
   final raimService = RaimServerService(serverUrl: RaimConfig.serverUrl, accessTokenGetter: () => authProvider.getValidAccessToken(),);

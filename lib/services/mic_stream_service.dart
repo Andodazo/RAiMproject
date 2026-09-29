@@ -127,6 +127,16 @@ class MicStreamService {
         // 「喋っている間は検知に渡さない」ことで対処する。
         echoCancel: true,
         noiseSuppress: true,
+        // iOS: 録音中もライムの声をスピーカーから鳴らし、音楽アプリの再生も
+        // 止めない（電車で音楽を聴きながら駅アラームを使えるように）
+        iosConfig: const IosRecordConfig(
+          categoryOptions: [
+            IosAudioCategoryOption.defaultToSpeaker,
+            IosAudioCategoryOption.allowBluetooth,
+            IosAudioCategoryOption.allowBluetoothA2DP,
+            IosAudioCategoryOption.mixWithOthers,
+          ],
+        ),
       ),
     );
 

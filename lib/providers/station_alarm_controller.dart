@@ -11,6 +11,10 @@
 // 【画面を消しても動く】
 // Android はフォアグラウンドサービス（RideForegroundService）を動かして、
 // 裏でもマイクを使えるようにする。サービスの通知が「乗車中」の表示になる。
+// iOS は Info.plist の UIBackgroundModes（audio / location）により、
+// 画面を点けている間に始めた録音と GPS は、画面を消しても続く。
+// iOS では通知を出さないので、ライムの声とバイブで知らせる
+// （録音中の音声設定 playAndRecord はマナーモードでも音が鳴る）。
 //
 // 【GPS】
 // 位置情報の許可があれば、GPS も使う（StationProximity）。
@@ -38,6 +42,7 @@ import 'package:raim_prototype/services/station/station_alarm.dart';
 import 'package:raim_prototype/services/station/station_database.dart';
 import 'package:raim_prototype/services/station/station_listener.dart';
 import 'package:raim_prototype/services/station/station_proximity.dart';
+import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 
 enum StationAlarmState { idle, starting, riding, arrived, error }
 
@@ -54,11 +59,14 @@ class StationAlarmController extends ChangeNotifier {
   /// 乗車モードの上限。消し忘れでマイクが開きっぱなしになるのを防ぐ。
   static const Duration maxRide = Duration(hours: 3);
 
-  /// Vosk が使えるプラットフォームか。
+  /// 駅アラームを使えるか。
   ///
-  /// 本家 vosk_flutter は iOS に対応していないので、iOS はまだ使えない。
+  /// スマホ（Android・iOS）で、Vosk が使えるとき。
   /// Windows は電車で使わないので出さない。
-  static bool get isSupported => !kIsWeb && Platform.isAndroid;
+  static bool get isSupported =>
+      !kIsWeb &&
+      (Platform.isAndroid || Platform.isIOS) &&
+      VoskEngine.isAvailable;
 
   StationAlarmState _state = StationAlarmState.idle;
   Station? _destination;
@@ -151,11 +159,12 @@ class StationAlarmController extends ChangeNotifier {
 
       // マイクを開いてから（録音の許可をもらってから）サービスを始める。
       // Android 14 以降は、許可が無いとマイク用のサービスを始められない。
-      _background = await RideForegroundService.start(
-        title: '駅アラーム：${destination.name}',
-        text: '車内アナウンスを聞いています',
-        withLocation: _locationGranted,
-      );
+      _background = Platform.isIOS ||
+          await RideForegroundService.start(
+            title: '駅アラーム：${destination.name}',
+            text: '車内アナウンスを聞いています',
+            withLocation: _locationGranted,
+          );
       if (!identical(_listener, listener)) {
         // 待っている間に止められた。始めてしまったサービスも止める
         if (_background) {
@@ -234,14 +243,24 @@ class StationAlarmController extends ChangeNotifier {
   }
 
   void _startGps() {
-    _gpsSub = Geolocator.getPositionStream(
-      locationSettings: AndroidSettings(
-        accuracy: LocationAccuracy.high,
-        // 電車は速いので間隔で取る。距離で絞ると駅に止まっている間に来ない
-        distanceFilter: 0,
-        intervalDuration: const Duration(seconds: 5),
-      ),
-    ).listen(
+    final LocationSettings settings = Platform.isIOS
+        ? AppleSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 0,
+            activityType: ActivityType.otherNavigation,
+            // 駅で止まっている間に更新が止まらないように
+            pauseLocationUpdatesAutomatically: false,
+            // 画面を消しても受け取る（ステータスバーに青い表示が出る）
+            allowBackgroundLocationUpdates: true,
+            showBackgroundLocationIndicator: true,
+          )
+        : AndroidSettings(
+            accuracy: LocationAccuracy.high,
+            // 電車は速いので間隔で取る。距離で絞ると駅に止まっている間に来ない
+            distanceFilter: 0,
+            intervalDuration: const Duration(seconds: 5),
+          );
+    _gpsSub = Geolocator.getPositionStream(locationSettings: settings).listen(
       _onPosition,
       onError: (Object e) =>
           RaimLog.w('[StationAlarm] 位置を取れませんでした: ${e.runtimeType}'),

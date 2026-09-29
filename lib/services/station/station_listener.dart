@@ -20,6 +20,7 @@ import 'package:vosk_flutter/vosk_flutter.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/station/station_alarm.dart';
+import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 import 'package:raim_prototype/services/wake_word_service.dart';
 
 class StationListener {
@@ -63,7 +64,7 @@ class StationListener {
     if (isListening) return;
 
     final model = await WakeWordService.instance.sharedModel();
-    final recognizer = await VoskFlutterPlugin.instance().createRecognizer(
+    final recognizer = await VoskEngine.createRecognizer(
       model: model,
       sampleRate: MicStreamService.sampleRate,
       grammar: plan.grammar,
