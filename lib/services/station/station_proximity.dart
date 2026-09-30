@@ -117,6 +117,13 @@ class StationProximity {
     return (_distance ?? 0) <= gateRadius;
   }
 
+  /// GPS で、降りる駅の近く（音声を受け付ける範囲）にいると分かっているか。
+  ///
+  /// [allowsVoice] と違い、位置が分からないときは false。
+  /// 「次は」が無いアナウンス（駅名の繰り返し）を受け入れるかに使う。
+  bool isNearByGps(DateTime now) =>
+      hasFreshFix(now) && (_distance ?? double.infinity) <= gateRadius;
+
   /// 音声で知らせたことを伝える（同じ知らせを GPS で重ねて出さないため）。
   void markNotified(StationAlarmStage stage) {
     _approachFired = true;

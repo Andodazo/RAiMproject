@@ -17,6 +17,13 @@
 //   - 直前に「次は」「まもなく」がある
 //   - 同じ駅名が続けて2回聞こえた（「次は新宿、新宿」の言い方）
 //   - 「次は」だけが前の結果で聞こえていて、すぐ後に駅名が来た
+//   - GPS で駅の近くにいると分かっているときは、別々の結果で
+//     同じ駅名が短い間に2回聞こえた（allowRepeated）
+//
+// 最後の条件は、実機で「次は」がほとんど聞き取れなかったため。
+// 車内アナウンスは同じ駅名を何度も言う（「次は◯◯」「The next station is ◯◯」
+// 「まもなく◯◯」）ので、駅名が繰り返し聞こえること自体が手がかりになる。
+// ただし「◯◯行き」も繰り返し流れるので、位置で裏付けが取れるときに限る。
 
 import 'package:raim_prototype/services/station/station_database.dart';
 
@@ -135,6 +142,7 @@ class StationAnnouncementDetector {
     this.plan, {
     this.cueWindow = const Duration(seconds: 4),
     this.repeatGuard = const Duration(seconds: 90),
+    this.repeatWindow = const Duration(seconds: 45),
   });
 
   final StationAlarmPlan plan;
@@ -146,6 +154,13 @@ class StationAnnouncementDetector {
   /// （日本語と英語、または停車前と停車直前）ことが多い。
   final Duration repeatGuard;
 
+  /// 同じ駅名が別々の結果で2回聞こえたら知らせる、その間隔
+  /// （allowRepeated のときだけ）。
+  final Duration repeatWindow;
+
+  /// 駅コード → その駅名が聞こえた時刻（repeatWindow の間だけ持つ）。
+  final Map<int, List<DateTime>> _heardAt = {};
+
   DateTime? _cueAt;
   final Map<String, DateTime> _lastNotified = {};
   bool _arrived = false;
@@ -155,7 +170,14 @@ class StationAnnouncementDetector {
 
   /// Vosk の認識結果（空白区切りの語）を1件渡す。
   /// 知らせることがあればイベントを返す。
-  StationAlarmEvent? onResult(String text, {DateTime? at}) {
+  ///
+  /// [allowRepeated] は、GPS で降りる駅の近くにいると分かっているときに
+  /// true にする。「次は」が無くても、駅名の繰り返しで知らせるようになる。
+  StationAlarmEvent? onResult(
+    String text, {
+    DateTime? at,
+    bool allowRepeated = false,
+  }) {
     final now = at ?? DateTime.now();
     final tokens = _tokens(text);
     if (tokens.isEmpty) return null;
@@ -165,20 +187,49 @@ class StationAnnouncementDetector {
     _cueAt = _endsWithCue(tokens) ? now : null;
 
     final claims = _claim(tokens);
+    _rememberHeard(claims, now);
 
     // 目的の駅を優先して調べる
     final dest = plan.destination;
     if (_announced(tokens, claims, dest, cueBefore)) {
       return _notify(StationAlarmStage.arriving, dest, text, now);
     }
+    if (!_arrived) {
+      for (final s in plan.approach) {
+        if (_announced(tokens, claims, s, cueBefore)) {
+          return _notify(StationAlarmStage.approaching, s, text, now);
+        }
+      }
+    }
+
+    if (!allowRepeated) return null;
+    if (_heardRepeatedly(dest)) {
+      return _notify(StationAlarmStage.arriving, dest, text, now);
+    }
     if (_arrived) return null; // 着いた後の隣の駅は知らせない
     for (final s in plan.approach) {
-      if (_announced(tokens, claims, s, cueBefore)) {
+      if (_heardRepeatedly(s)) {
         return _notify(StationAlarmStage.approaching, s, text, now);
       }
     }
     return null;
   }
+
+  /// 目的の駅と隣の駅について、聞こえた時刻を覚える。古いものは捨てる。
+  void _rememberHeard(Map<int, List<int>> claims, DateTime now) {
+    for (final s in [plan.destination, ...plan.approach]) {
+      final list = _heardAt[s.code];
+      if (list != null) {
+        list.removeWhere((t) => now.difference(t) > repeatWindow);
+      }
+      final hits = claims[s.code];
+      if (hits == null) continue;
+      (_heardAt[s.code] ??= []).addAll(List.filled(hits.length, now));
+    }
+  }
+
+  bool _heardRepeatedly(Station station) =>
+      (_heardAt[station.code]?.length ?? 0) >= 2;
 
   /// 文法のすべての駅名について、どこに現れたかを決める。
   ///
@@ -217,6 +268,7 @@ class StationAnnouncementDetector {
   void reset() {
     _cueAt = null;
     _lastNotified.clear();
+    _heardAt.clear();
     _arrived = false;
   }
 

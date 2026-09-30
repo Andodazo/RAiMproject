@@ -192,6 +192,55 @@ void main() {
       );
     });
 
+    group('駅名の繰り返し（GPS で近いとき）', () {
+      test('「次は」が聞き取れなくても、2回聞こえたら知らせる', () {
+        expect(
+          detector.onResult('[unk] しん じゅく', at: t0, allowRepeated: true),
+          isNull,
+        );
+        final e = detector.onResult(
+          'しん じゅく [unk]',
+          at: t0.add(const Duration(seconds: 20)),
+          allowRepeated: true,
+        );
+        expect(e?.stage, StationAlarmStage.arriving);
+        expect(e?.station.name, '新宿');
+      });
+
+      test('隣の駅の繰り返しで「もうすぐ」', () {
+        detector.onResult('よ つや', at: t0, allowRepeated: true);
+        final e = detector.onResult(
+          '[unk] よ つや',
+          at: t0.add(const Duration(seconds: 10)),
+          allowRepeated: true,
+        );
+        expect(e?.stage, StationAlarmStage.approaching);
+        expect(e?.station.name, startsWith('四ツ谷'));
+      });
+
+      test('GPS の裏付けが無ければ、繰り返しだけでは知らせない', () {
+        // 「この電車は新宿行きです」が何度も流れる場合
+        detector.onResult('[unk] しん じゅく [unk]', at: t0);
+        expect(
+          detector.onResult('[unk] しん じゅく [unk]',
+              at: t0.add(const Duration(seconds: 20))),
+          isNull,
+        );
+      });
+
+      test('間が空いた2回は数えない', () {
+        detector.onResult('しん じゅく', at: t0, allowRepeated: true);
+        expect(
+          detector.onResult(
+            'しん じゅく',
+            at: t0.add(const Duration(seconds: 60)),
+            allowRepeated: true,
+          ),
+          isNull,
+        );
+      });
+    });
+
     test('reset で次の乗車に使える', () {
       detector.onResult('つぎ は しん じゅく', at: t0);
       detector.reset();

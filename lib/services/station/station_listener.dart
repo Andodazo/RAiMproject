@@ -27,11 +27,16 @@ class StationListener {
   StationListener({
     required this.plan,
     ValueListenable<bool>? speaking,
+    bool Function()? allowRepeated,
   })  : _speaking = speaking,
+        _allowRepeated = allowRepeated,
         _detector = StationAnnouncementDetector(plan);
 
   final StationAlarmPlan plan;
   final ValueListenable<bool>? _speaking;
+
+  /// 駅名の繰り返しだけで知らせてよいか（GPS で駅の近くにいるか）。
+  final bool Function()? _allowRepeated;
   final StationAnnouncementDetector _detector;
 
   /// 一度に渡す量（200ms）。WakeWordService と同じ。
@@ -183,7 +188,10 @@ class StationListener {
       RaimLog.d('[Station] 聞こえた: $text');
       if (!_heard.isClosed) _heard.add(text);
 
-      final event = _detector.onResult(text);
+      final event = _detector.onResult(
+        text,
+        allowRepeated: _allowRepeated?.call() ?? false,
+      );
       if (event != null) {
         RaimLog.i('[Station] $event');
         if (!_events.isClosed) _events.add(event);
