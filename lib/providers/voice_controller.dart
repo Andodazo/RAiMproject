@@ -31,8 +31,10 @@
 // ウェイクワードが OFF でも、iOS でも使える。
 
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener, AppLifecycleState;
 
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
@@ -62,6 +64,54 @@ class VoiceController extends ChangeNotifier {
     _auth.addListener(_onInputsChanged);
     _speaking.addListener(_onSpeakingChanged);
     _detectionSub = _wake.detections.listen(_onDetected);
+    if (_pausesInBackground) {
+      _lifecycle = AppLifecycleListener(onStateChange: _onAppStateChanged);
+    }
+    _onInputsChanged();
+  }
+
+  /// アプリが裏に回ったら「ねえライム」を止めるプラットフォームか。
+  ///
+  /// iOS は駅アラームのために UIBackgroundModes に audio を入れているので、
+  /// 止めないとホームに戻っても録音が続く（オレンジの点が出たまま、
+  /// 電池を使い、誤検知すると Transcribe の料金もかかる）。
+  /// Android は裏では無音しか届かないが、マイクを握ったままになるので同じく止める。
+  ///
+  /// Windows は入力小窓を閉じた状態（裏）で呼ぶのが本来の使い方なので止めない。
+  static bool get _pausesInBackground =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  AppLifecycleListener? _lifecycle;
+
+  /// アプリが裏にいるか（スマホのみ）。
+  bool _inBackground = false;
+
+  void _onAppStateChanged(AppLifecycleState state) {
+    // inactive（通知センターを引き出した、許可のダイアログが出た など）では
+    // 止めない。すぐ戻ることが多く、止めると戻ったときに頭が欠ける
+    final background = state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached;
+    if (state != AppLifecycleState.resumed && !background) return;
+    if (background == _inBackground) return;
+    _inBackground = background;
+
+    if (background) {
+      RaimLog.i('[Voice] アプリが裏に回ったので、音声の待ち受けを止めます');
+      // 聞き取りの途中なら取り消す（画面が見えないまま送らない）
+      _cancelSession();
+      // 「ねえライム」を使っていない（マイクボタンだけ）ときに開いたマイクも閉じる。
+      // 駅アラームがマイクを使っている間は閉じない（_releaseMic が判断する）
+      _op = _op.then((_) async {
+        if (_state == VoiceState.off || _state == VoiceState.error) {
+          await _releaseMic();
+        }
+      }).catchError((Object e) {
+        RaimLog.e('[Voice] マイクを閉じられませんでした', e);
+      });
+    } else {
+      RaimLog.i('[Voice] アプリが画面に戻りました');
+    }
     _onInputsChanged();
   }
 
@@ -182,8 +232,10 @@ class VoiceController extends ChangeNotifier {
   Future<void> _sync() async {
     if (_disposed) return;
 
-    final shouldRun =
-        isSupported && _auth.isAuthenticated && _settings.wakeWordEnabled;
+    final shouldRun = isSupported &&
+        _auth.isAuthenticated &&
+        _settings.wakeWordEnabled &&
+        !_inBackground;
 
     if (!shouldRun) {
       if (_state != VoiceState.off) await _stop();
@@ -533,6 +585,7 @@ class VoiceController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _lifecycle?.dispose();
     _settings.removeListener(_onInputsChanged);
     _auth.removeListener(_onInputsChanged);
     _speaking.removeListener(_onSpeakingChanged);

@@ -13,8 +13,11 @@
 // 裏でもマイクを使えるようにする。サービスの通知が「乗車中」の表示になる。
 // iOS は Info.plist の UIBackgroundModes（audio / location）により、
 // 画面を点けている間に始めた録音と GPS は、画面を消しても続く。
-// iOS では通知を出さないので、ライムの声とバイブで知らせる
-// （録音中の音声設定 playAndRecord はマナーモードでも音が鳴る）。
+//
+// 【裏で始めようとしたとき】
+// Android は、アプリが裏にいる間はマイク・位置情報を使うサービスを始められない。
+// 始められなかったら「アプリを開いて」と通知し、開かれたら
+// retryBackground() で始め直す（ClientActionListener が呼ぶ）。
 //
 // 【GPS】
 // 位置情報の許可があれば、GPS も使う（StationProximity）。
@@ -26,9 +29,10 @@
 // 許可が無くても、音声だけで動く。
 //
 // 【知らせ方】
-//   - 通知（音とバイブ）… サービスの通知を書き換えて鳴らす
+//   - 通知（音とバイブ）… Android はサービスの通知を書き換えて鳴らす。
+//                         iOS（とサービスが無い Android）は StationNotifications
 //   - ライムの声      … assets/sounds の wav（VOICEVOX で作ったもの）。無ければ鳴らさない
-//   - バイブ          … 画面を点けているときの補助
+//   - バイブ          … 画面を点けているときの補助（裏では鳴らない）
 
 import 'dart:async';
 import 'dart:io' show Platform;
@@ -36,6 +40,7 @@ import 'dart:io' show Platform;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding;
 import 'package:geolocator/geolocator.dart';
 
 import 'package:raim_prototype/services/raim_log.dart';
@@ -44,6 +49,7 @@ import 'package:raim_prototype/services/station/station_alarm.dart';
 import 'package:raim_prototype/services/station/station_database.dart';
 import 'package:raim_prototype/services/station/station_listener.dart';
 import 'package:raim_prototype/services/station/station_lookup.dart';
+import 'package:raim_prototype/services/station/station_notifications.dart';
 import 'package:raim_prototype/services/station/station_proximity.dart';
 import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 
@@ -167,6 +173,11 @@ class StationAlarmController extends ChangeNotifier {
       _locationGranted = await _prepareLocation();
       if (!identical(_listener, listener)) return;
 
+      // iOS は知らせを通知で出すので、画面に出ている今のうちに許可をもらう
+      // （Android はフォアグラウンドサービスを始めるときに聞く）
+      if (Platform.isIOS) await StationNotifications.requestPermission();
+      if (!identical(_listener, listener)) return;
+
       // マイクを開いてから（録音の許可をもらってから）サービスを始める。
       // Android 14 以降は、許可が無いとマイク用のサービスを始められない。
       _background = Platform.isIOS ||
@@ -186,6 +197,10 @@ class StationAlarmController extends ChangeNotifier {
 
       if (_locationGranted) _startGps();
 
+      // Android で始められなかった（アプリが裏にいた）。画面を消すと
+      // マイクに無音しか届かなくなるので、開いてもらって始め直す
+      if (!_background) _askToOpenApp();
+
       _startedAt = DateTime.now();
       _endTimer = Timer(maxRide, () {
         RaimLog.i('[StationAlarm] 上限時間に達したので終了します');
@@ -197,6 +212,50 @@ class StationAlarmController extends ChangeNotifier {
       await _teardown();
       _fail(_describe(e));
     }
+  }
+
+  /// 裏でも動くようにし直す。アプリが画面に戻ったときに呼ぶ。
+  ///
+  /// 乗車モードをアプリが裏にいる間に始めると、Android では
+  /// フォアグラウンドサービスを始められない（[start] 参照）。
+  Future<void> retryBackground() async {
+    if (!Platform.isAndroid || _background) return;
+    if (_state != StationAlarmState.riding &&
+        _state != StationAlarmState.arrived) {
+      return;
+    }
+    final dest = _destination;
+    if (dest == null) return;
+
+    final ok = await RideForegroundService.start(
+      title: '駅アラーム：${dest.name}',
+      text: '車内アナウンスを聞いています',
+      withLocation: _locationGranted,
+    );
+    // 待っている間に止められていたら、始めたサービスも止める
+    if (!isActive) {
+      if (ok) await RideForegroundService.stop();
+      return;
+    }
+    _background = ok;
+    if (ok) {
+      RaimLog.i('[StationAlarm] 画面に戻ったので、裏でも動くようにしました');
+      unawaited(StationNotifications.cancel(StationNotifications.openAppId));
+    }
+    _notify();
+  }
+
+  void _askToOpenApp() {
+    final dest = _destination?.name ?? '';
+    RaimLog.w('[StationAlarm] フォアグラウンドサービスを始められませんでした');
+    // 画面に出ているのに始められなかった（通知の許可が無い など）ときは、
+    // 開いてと言っても意味が無いので出さない
+    final state = WidgetsBinding.instance.lifecycleState;
+    if (state == null || state == AppLifecycleState.resumed) return;
+    unawaited(StationNotifications.askToOpenApp(
+      title: '駅アラーム（$dest）',
+      body: 'このままだと画面を消したときに聞けません。アプリを一度開いてね',
+    ));
   }
 
   /// 駅名で乗車モードを始める。
@@ -259,6 +318,7 @@ class StationAlarmController extends ChangeNotifier {
   }
 
   Future<void> _teardown() async {
+    unawaited(StationNotifications.cancel(StationNotifications.openAppId));
     _endTimer?.cancel();
     _endTimer = null;
     await _gpsSub?.cancel();
@@ -380,7 +440,7 @@ class StationAlarmController extends ChangeNotifier {
     switch (event.stage) {
       case StationAlarmStage.approaching:
         unawaited(HapticFeedback.mediumImpact());
-        unawaited(RideForegroundService.update(
+        unawaited(_notifyUser(
           title: 'もうすぐ $dest',
           text: '次は ${event.station.name}。降りる準備をしておいてね',
         ));
@@ -388,7 +448,7 @@ class StationAlarmController extends ChangeNotifier {
         _notify();
       case StationAlarmStage.arriving:
         unawaited(_buzz());
-        unawaited(RideForegroundService.update(
+        unawaited(_notifyUser(
           title: 'まもなく $dest！',
           text: '降りる準備をして！',
         ));
@@ -397,6 +457,19 @@ class StationAlarmController extends ChangeNotifier {
         _endTimer?.cancel();
         _endTimer = Timer(afterArrival, () => unawaited(stop()));
     }
+  }
+
+  /// 通知で知らせる。
+  ///
+  /// Android はフォアグラウンドサービスの通知を書き換える（音とバイブが鳴る）。
+  /// iOS と、サービスを始められなかった Android は別の通知を出す。
+  /// 以前は iOS で通知を出しておらず、画面を消しているとバイブも鳴らないため、
+  /// 声のファイルが無いと何も起きなかった。
+  Future<void> _notifyUser({required String title, required String text}) {
+    if (Platform.isAndroid && _background) {
+      return RideForegroundService.update(title: title, text: text);
+    }
+    return StationNotifications.alert(title: title, body: text);
   }
 
   /// ライムの声で知らせる。ファイルが無ければ何もしない。

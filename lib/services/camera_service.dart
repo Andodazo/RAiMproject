@@ -6,7 +6,11 @@ import 'package:image/image.dart' as img;
 import 'package:raim_prototype/models/image_attachment.dart';
 import 'package:uuid/uuid.dart';
 
+/// これより大きい PNG は JPEG にする（processImageBytes）。
+const int pngToJpegThreshold = 512 * 1024;
+
 /// JPEG/PNGをデコード → 長辺1024pxへ縮小 → 同じ形式で再圧縮する。
+/// ただし大きい PNG は JPEG にする（[pngToJpegThreshold]）。
 ///
 /// compute() で別 isolate に渡すため、トップレベル関数にしている。
 /// 12MP の写真だとデコードだけで数百ms〜数秒かかり、
@@ -33,7 +37,20 @@ Uint8List processImageBytes(Uint8List imageBytes, String contentType) {
   }
 
   if (contentType == 'image/png') {
-    return Uint8List.fromList(img.encodePng(resizedImage));
+    final png = img.encodePng(resizedImage);
+    if (png.length <= pngToJpegThreshold) return Uint8List.fromList(png);
+
+    // スクリーンショットのような PNG は、縮小しても1〜2MB あることが多い。
+    // 送れる合計は 2MB なので、2枚で上限に届いてしまう。大きいものは
+    // JPEG にする（形式が変わるので、呼び出し側は結果の形式を見直すこと）。
+    // 透明な部分が黒くならないよう、白い背景に重ねてから変換する。
+    final background = img.Image(
+      width: resizedImage.width,
+      height: resizedImage.height,
+    );
+    img.fill(background, color: img.ColorRgb8(255, 255, 255));
+    img.compositeImage(background, resizedImage);
+    return Uint8List.fromList(img.encodeJpg(background, quality: 85));
   }
   return Uint8List.fromList(img.encodeJpg(resizedImage, quality: 85));
 }
@@ -78,15 +95,18 @@ class CameraService {
 
       if (compressedBytes.isEmpty) continue;
 
+      // 大きい PNG は JPEG に変わるので、結果から形式を決め直す
+      final outFormat = detectImageFormat(compressedBytes) ?? format;
+
       final tempPath =
           '${Directory.systemTemp.path}${Platform.pathSeparator}'
-          'raim-upload-${_uuid.v4()}.${format.extension}';
+          'raim-upload-${_uuid.v4()}.${outFormat.extension}';
       await File(tempPath).writeAsBytes(compressedBytes, flush: true);
       resultList.add(PendingImage(
         localPath: xFile.path,
         uploadPath: tempPath,
-        contentType: format.contentType,
-        extension: format.extension,
+        contentType: outFormat.contentType,
+        extension: outFormat.extension,
         sizeBytes: compressedBytes.length,
       ));
     }
