@@ -1,0 +1,175 @@
+{
+  "coordinate_mapping": "Unity = (Blender.x, Blender.z, Blender.y)",
+  "vertical_fov_is_authoritative": true,
+  "cameras": {
+    "Camera_Main": {
+      "position": [
+        4.099999904632568,
+        0.25,
+        1.399999976158142
+      ],
+      "target": [
+        2.75,
+        2.95,
+        1.15
+      ],
+      "vertical_fov": 54,
+      "resolution": [
+        1920,
+        1080
+      ],
+      "rotation_quaternion_blender_wxyz": [
+        0.7160277962684631,
+        0.6591796278953552,
+        0.15561121702194214,
+        0.16903121769428253
+      ],
+      "sensor_fit": "VERTICAL",
+      "sensor_height_mm": 24.0,
+      "lens_mm": 23.551326751708984,
+      "near": 0.029999999329447746,
+      "far": 350.0
+    },
+    "Camera_Overview": {
+      "position": [
+        8.0,
+        -6.0,
+        7.5
+      ],
+      "target": [
+        2.4,
+        2.2,
+        0.55
+      ],
+      "ortho_scale": 7.8,
+      "resolution": [
+        1600,
+        1200
+      ],
+      "cutaway": true,
+      "rotation_quaternion_blender_wxyz": [
+        0.8474587798118591,
+        0.44126424193382263,
+        0.13629966974258423,
+        0.26176685094833374
+      ],
+      "sensor_fit": "VERTICAL",
+      "sensor_height_mm": 24.0,
+      "lens_mm": 50.0,
+      "near": 0.029999999329447746,
+      "far": 350.0
+    },
+    "Camera_DeskDetail": {
+      "position": [
+        3.3499999046325684,
+        0.7799999713897705,
+        1.5499999523162842
+      ],
+      "target": [
+        0.73,
+        2.23,
+        1.15
+      ],
+      "vertical_fov": 49,
+      "resolution": [
+        1600,
+        1200
+      ],
+      "rotation_quaternion_blender_wxyz": [
+        0.6482169032096863,
+        0.567386269569397,
+        0.33447158336639404,
+        0.38212093710899353
+      ],
+      "sensor_fit": "VERTICAL",
+      "sensor_height_mm": 24.0,
+      "lens_mm": 26.33159637451172,
+      "near": 0.029999999329447746,
+      "far": 350.0
+    },
+    "Camera_LoungeDetail": {
+      "position": [
+        1.899999976158142,
+        0.2800000011920929,
+        1.649999976158142
+      ],
+      "target": [
+        4.08,
+        1.5,
+        0.42
+      ],
+      "vertical_fov": 48,
+      "resolution": [
+        1600,
+        1200
+      ],
+      "rotation_quaternion_blender_wxyz": [
+        0.7324280142784119,
+        0.45577290654182434,
+        -0.267225056886673,
+        -0.4294310510158539
+      ],
+      "sensor_fit": "VERTICAL",
+      "sensor_height_mm": 24.0,
+      "lens_mm": 26.952442169189453,
+      "near": 0.029999999329447746,
+      "far": 350.0
+    },
+    "Camera_WindowDetail": {
+      "position": [
+        2.6500000953674316,
+        0.550000011920929,
+        1.649999976158142
+      ],
+      "target": [
+        2.38,
+        4,
+        1.3
+      ],
+      "vertical_fov": 58,
+      "resolution": [
+        1600,
+        1200
+      ],
+      "rotation_quaternion_blender_wxyz": [
+        0.7412654161453247,
+        0.6700756549835205,
+        0.0261803288012743,
+        0.02896176278591156
+      ],
+      "sensor_fit": "VERTICAL",
+      "sensor_height_mm": 24.0,
+      "lens_mm": 21.64857292175293,
+      "near": 0.029999999329447746,
+      "far": 350.0
+    },
+    "Camera_Portrait": {
+      "position": [
+        3.8499999046325684,
+        0.17000000178813934,
+        1.350000023841858
+      ],
+      "target": [
+        2.8,
+        2.75,
+        1.0
+      ],
+      "vertical_fov": 52,
+      "resolution": [
+        1080,
+        1920
+      ],
+      "rotation_quaternion_blender_wxyz": [
+        0.7359309196472168,
+        0.649246871471405,
+        0.12705464661121368,
+        0.14401832222938538
+      ],
+      "sensor_fit": "VERTICAL",
+      "sensor_height_mm": 24.0,
+      "lens_mm": 24.60364532470703,
+      "near": 0.029999999329447746,
+      "far": 350.0
+    }
+  }
+}

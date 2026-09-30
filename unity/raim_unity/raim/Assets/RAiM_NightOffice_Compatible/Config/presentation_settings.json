@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "packageVersion": "20260930_v4",
+  "unity": "6000.0.76f1",
+  "validatedURP": "17.0.4",
+  "remoteBaseline": "a5a0ef62691a3bac39177407cd1e8c184320f06e",
+  "prefabCameraCount": 0,
+  "existingCameraRequired": true,
+  "roomSerializedActive": false,
+  "defaultMode": "Automatic",
+  "automaticWindows": "DesktopOverlay; also Editor when UNITY_STANDALONE_WIN is defined",
+  "automaticOtherTargets": "Room",
+  "coordinateSystem": "Unity X right, Y up, Z into room; meters",
+  "roomCamera": {
+    "position": [
+      4.1,
+      1.4,
+      0.25
+    ],
+    "target": [
+      2.75,
+      1.15,
+      2.95
+    ],
+    "verticalFov": 54,
+    "near": 0.03,
+    "far": 350
+  },
+  "avatarAnchor": [
+    2.8,
+    0,
+    2.75
+  ],
+  "visibleSpriteHeightMeters": 1.65,
+  "windowsStartup": "Room inactive. Do not acquire/move/configure host camera or character.",
+  "desktopTransition": "Restore host state captured immediately before entering Room.",
+  "sceneGlobalSettingsModified": false,
+  "pipelinePresetIncluded": false,
+  "persistentRenderTexture": false,
+  "cameraSettingsJsonRole": "Blender authoring reference; does not create runtime cameras",
+  "runtimeScripts": [
+    "Runtime/NightOfficePresentation.cs",
+    "Runtime/RoomBakedLighting.cs"
+  ],
+  "integrationNeeds": [
+    "Keep original Main Camera, AudioListener, character and Windows overlay controls",
+    "Assign host camera and sprite to presentation; assign old background only to hideWhileRoomVisible",
+    "Do not retain v3 camera/room instances alongside v4",
+    "Use original 2D pose as startup pose"
+  ],
+  "unverified": [
+    "Native desktop window composition and hit testing",
+    "Flutter connection",
+    "Android/iOS hardware"
+  ]
+}

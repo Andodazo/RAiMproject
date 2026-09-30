@@ -1,0 +1,607 @@
+{
+  "blender_view_transform": "AgX",
+  "blender_look": "AgX - Medium High Contrast",
+  "exposure": 0.0,
+  "preview_lights": [
+    {
+      "name": "LGT_Shelf_00",
+      "position_blender": [
+        0.29499998688697815,
+        2.0999999046325684,
+        1.125
+      ],
+      "direction_blender": [
+        -0.6900753974914551,
+        -8.940696716308594e-08,
+        -0.7237374782562256
+      ],
+      "linear_rgb": [
+        1.0,
+        0.48514994978904724,
+        0.15592646598815918
+      ],
+      "blender_energy_watts": 14.0,
+      "blender_type": "AREA",
+      "size": 2.190000057220459,
+      "unity_mode": "Baked",
+      "unity_note": "Reconstruct and tune in URP; Blender watts are not Unity light intensity"
+    },
+    {
+      "name": "LGT_Shelf_01",
+      "position_blender": [
+        0.29499998688697815,
+        2.0999999046325684,
+        1.5850000381469727
+      ],
+      "direction_blender": [
+        -0.6900753378868103,
+        -5.960464477539063e-08,
+        -0.7237375974655151
+      ],
+      "linear_rgb": [
+        1.0,
+        0.48514994978904724,
+        0.15592646598815918
+      ],
+      "blender_energy_watts": 14.0,
+      "blender_type": "AREA",
+      "size": 2.190000057220459,
+      "unity_mode": "Baked",
+      "unity_note": "Reconstruct and tune in URP; Blender watts are not Unity light intensity"
+    },
+    {
+      "name": "LGT_Shelf_02",
+      "position_blender": [
+        0.29499998688697815,
+        2.0999999046325684,
+        2.0450000762939453
+      ],
+      "direction_blender": [
+        -0.6900753378868103,
+        -5.960464477539063e-08,
+        -0.7237375974655151
+      ],
+      "linear_rgb": [
+        1.0,
+        0.48514994978904724,
+        0.15592646598815918
+      ],
+      "blender_energy_watts": 14.0,
+      "blender_type": "AREA",
+      "size": 2.190000057220459,
+      "unity_mode": "Baked",
+      "unity_note": "Reconstruct and tune in URP; Blender watts are not Unity light intensity"
+    },
+    {
+      "name": "LGT_Shelf_03",
+      "position_blender": [
+        0.29499998688697815,
+        2.0999999046325684,
+        2.5950000286102295
+      ],
+      "direction_blender": [
+        -0.6900755167007446,
+        -5.960464477539063e-08,
+        -0.7237374782562256
+      ],
+      "linear_rgb": [
+        1.0,
+        0.48514994978904724,
+        0.15592646598815918
+      ],
+      "blender_energy_watts": 14.0,
+      "blender_type": "AREA",
+      "size": 2.190000057220459,
+      "unity_mode": "Baked",
+      "unity_note": "Reconstruct and tune in URP; Blender watts are not Unity light intensity"
+    },
+    {
+      "name": "LGT_Ceiling_00",
+      "position_blender": [
+        1.149999976158142,
+        1.0,
+        2.6600000858306885
+      ],
+      "direction_blender": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "linear_rgb": [
+        1.0,
+        0.637596845626831,
+        0.3277781009674072
+      ],
+      "blender_energy_watts": 22.0,
+      "blender_type": "AREA",
+      "size": 0.47999998927116394,
+      "unity_mode": "Baked",
+      "unity_note": "Reconstruct and tune in URP; Blender watts are not Unity light intensity"
+    },
+    {
+      "name": "LGT_Ceiling_01",
+      "position_blender": [
+        3.9000000953674316,
+        1.0,
+        2.6600000858306885
+      ],
+      "direction_blender": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "linear_rgb": [
+        1.0,
+        0.637596845626831,
+        0.3277781009674072
+      ],
+      "blender_energy_watts": 22.0,
+      "blender_type": "AREA",
+      "size": 0.47999998927116394,
+      "unity_mode": "Baked",
+      "unity_note": "Reconstruct and tune in URP; Blender watts are not Unity light intensity"
+    },
+    {
+      "name": "LGT_Ceiling_02",
+      "position_blender": [
+        1.149999976158142,
+        3.0999999046325684,
+        2.6600000858306885
+      ],
+      "direction_blender": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "linear_rgb": [
+        1.0,
+        0.637596845626831,
+        0.3277781009674072
+      ],
+      "blender_energy_watts": 22.0,
+      "blender_type": "AREA",
+      "size": 0.47999998927116394,
+      "unity_mode": "Baked",
+      "unity_note": "Reconstruct and tune in URP; Blender watts are not Unity light intensity"
+    },
+    {
+      "name": "LGT_Ceiling_03",
+      "position_blender": [
+        3.9000000953674316,
+        3.0999999046325684,
+        2.6600000858306885
+      ],
+      "direction_blender": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "linear_rgb": [
+        1.0,
+        0.637596845626831,
+        0.3277781009674072
+      ],
+      "blender_energy_watts": 22.0,
+      "blender_type": "AREA",
+      "size": 0.47999998927116394,
+      "unity_mode": "Baked",
+      "unity_note": "Reconstruct and tune in URP; Blender watts are not Unity light intensity"
+    },
+    {
+      "name": "LGT_DeskLamp",
+      "position_blender": [
+        1.4819999933242798,
+        2.8499999046325684,
+        1.1480000019073486
+      ],
+      "direction_blender": [
+        0.018198389559984207,
+        -0.22747930884361267,
+        -0.9736128449440002
+      ],
+      "linear_rgb": [
+        1.0,
+        0.637596845626831,
+        0.3277781009674072
+      ],
+      "blender_energy_watts": 3.0,
+      "blender_type": "AREA",
+      "size": 0.11999999731779099,
+      "unity_mode": "Baked",
+      "unity_note": "Reconstruct and tune in URP; Blender watts are not Unity light intensity"
+    },
+    {
+      "name": "LGT_Window",
+      "position_blender": [
+        2.5999999046325684,
+        3.890000104904175,
+        1.9500000476837158
+      ],
+      "direction_blender": [
+        -0.03798109292984009,
+        -0.9077483415603638,
+        -0.4177922308444977
+      ],
+      "linear_rgb": [
+        0.42869049310684204,
+        0.6239603757858276,
+        1.0
+      ],
+      "blender_energy_watts": 65.0,
+      "blender_type": "AREA",
+      "size": 4.0,
+      "unity_mode": "Baked",
+      "unity_note": "Reconstruct and tune in URP; Blender watts are not Unity light intensity"
+    },
+    {
+      "name": "LGT_AvatarKey",
+      "position_blender": [
+        3.5,
+        0.7200000286102295,
+        2.2200000286102295
+      ],
+      "direction_blender": [
+        -0.29445838928222656,
+        0.8539292812347412,
+        -0.4290677309036255
+      ],
+      "linear_rgb": [
+        1.0,
+        0.7529422044754028,
+        0.5088813304901123
+      ],
+      "blender_energy_watts": 62.0,
+      "blender_type": "AREA",
+      "size": 1.7999999523162842,
+      "unity_mode": "Realtime",
+      "unity_note": "Reconstruct and tune in URP; Blender watts are not Unity light intensity"
+    },
+    {
+      "name": "LGT_RoomBounce",
+      "position_blender": [
+        2.200000047683716,
+        1.2000000476837158,
+        2.299999952316284
+      ],
+      "direction_blender": [
+        -0.8076276779174805,
+        0.36343252658843994,
+        -0.464385986328125
+      ],
+      "linear_rgb": [
+        0.8227857351303101,
+        0.577580451965332,
+        0.37123769521713257
+      ],
+      "blender_energy_watts": 24.0,
+      "blender_type": "AREA",
+      "size": 2.200000047683716,
+      "unity_mode": "Baked",
+      "unity_note": "Reconstruct and tune in URP; Blender watts are not Unity light intensity"
+    }
+  ],
+  "unity_design": {
+    "static": "Baked area/point lights and light probes",
+    "dynamic": "One shadowed directional light for character",
+    "reflection": "One baked cubemap probe",
+    "exposure": "Fixed scene-local Volume"
+  },
+  "unity_actual": {
+    "bakeSucceeded": true,
+    "lightmapCount": 1,
+    "lights": [
+      {
+        "name": "Window_Baked",
+        "type": "Rectangle",
+        "mode": "Baked",
+        "position": {
+          "x": 2.6,
+          "y": 1.95,
+          "z": 3.89
+        },
+        "direction": {
+          "x": -0.0379810669,
+          "y": -0.417792141,
+          "z": -0.9077484
+        },
+        "linearRgb": {
+          "x": 0.318546832,
+          "y": 0.507078648,
+          "z": 1.0
+        },
+        "intensity": 0.55,
+        "shadows": "Soft",
+        "shadowStrength": 1.0,
+        "areaSize": {
+          "x": 4.0,
+          "y": 1.5
+        }
+      },
+      {
+        "name": "AvatarKey_Realtime",
+        "type": "Directional",
+        "mode": "Realtime",
+        "position": {
+          "x": 3.8,
+          "y": 4.3,
+          "z": 0.4
+        },
+        "direction": {
+          "x": -0.2442478,
+          "y": -0.781592965,
+          "z": 0.5739821
+        },
+        "linearRgb": {
+          "x": 1.0,
+          "y": 0.7677688,
+          "z": 0.507078648
+        },
+        "intensity": 1.1,
+        "shadows": "Soft",
+        "shadowStrength": 0.4,
+        "areaSize": {
+          "x": 1.0,
+          "y": 1.0
+        }
+      },
+      {
+        "name": "Ceiling_Baked_2",
+        "type": "Rectangle",
+        "mode": "Baked",
+        "position": {
+          "x": 1.15,
+          "y": 2.66,
+          "z": 3.1
+        },
+        "direction": {
+          "x": 0.0,
+          "y": -1.00000012,
+          "z": -1.1920929e-07
+        },
+        "linearRgb": {
+          "x": 1.0,
+          "y": 0.638283253,
+          "z": 0.330343783
+        },
+        "intensity": 5.0,
+        "shadows": "Soft",
+        "shadowStrength": 1.0,
+        "areaSize": {
+          "x": 0.3,
+          "y": 0.3
+        }
+      },
+      {
+        "name": "Ceiling_Baked_0",
+        "type": "Rectangle",
+        "mode": "Baked",
+        "position": {
+          "x": 1.15,
+          "y": 2.66,
+          "z": 1.0
+        },
+        "direction": {
+          "x": 0.0,
+          "y": -1.00000012,
+          "z": -1.1920929e-07
+        },
+        "linearRgb": {
+          "x": 1.0,
+          "y": 0.638283253,
+          "z": 0.330343783
+        },
+        "intensity": 5.0,
+        "shadows": "Soft",
+        "shadowStrength": 1.0,
+        "areaSize": {
+          "x": 0.3,
+          "y": 0.3
+        }
+      },
+      {
+        "name": "Shelf_Baked_2",
+        "type": "Rectangle",
+        "mode": "Baked",
+        "position": {
+          "x": 0.295,
+          "y": 2.04499984,
+          "z": 2.1
+        },
+        "direction": {
+          "x": -0.690075457,
+          "y": -0.7237375,
+          "z": -4.47034836e-08
+        },
+        "linearRgb": {
+          "x": 1.0,
+          "y": 0.476999849,
+          "z": 0.154872492
+        },
+        "intensity": 18.0,
+        "shadows": "Soft",
+        "shadowStrength": 1.0,
+        "areaSize": {
+          "x": 2.19,
+          "y": 0.045
+        }
+      },
+      {
+        "name": "Shelf_Baked_1",
+        "type": "Rectangle",
+        "mode": "Baked",
+        "position": {
+          "x": 0.295,
+          "y": 1.585,
+          "z": 2.1
+        },
+        "direction": {
+          "x": -0.690075159,
+          "y": -0.723737657,
+          "z": 2.98023224e-08
+        },
+        "linearRgb": {
+          "x": 1.0,
+          "y": 0.476999849,
+          "z": 0.154872492
+        },
+        "intensity": 18.0,
+        "shadows": "Soft",
+        "shadowStrength": 1.0,
+        "areaSize": {
+          "x": 2.19,
+          "y": 0.045
+        }
+      },
+      {
+        "name": "Shelf_Baked_0",
+        "type": "Rectangle",
+        "mode": "Baked",
+        "position": {
+          "x": 0.295,
+          "y": 1.125,
+          "z": 2.1
+        },
+        "direction": {
+          "x": -0.690075159,
+          "y": -0.723737657,
+          "z": 2.98023224e-08
+        },
+        "linearRgb": {
+          "x": 1.0,
+          "y": 0.476999849,
+          "z": 0.154872492
+        },
+        "intensity": 18.0,
+        "shadows": "Soft",
+        "shadowStrength": 1.0,
+        "areaSize": {
+          "x": 2.19,
+          "y": 0.045
+        }
+      },
+      {
+        "name": "Shelf_Baked_3",
+        "type": "Rectangle",
+        "mode": "Baked",
+        "position": {
+          "x": 0.295,
+          "y": 2.595,
+          "z": 2.1
+        },
+        "direction": {
+          "x": -0.690075457,
+          "y": -0.7237375,
+          "z": -4.47034836e-08
+        },
+        "linearRgb": {
+          "x": 1.0,
+          "y": 0.476999849,
+          "z": 0.154872492
+        },
+        "intensity": 18.0,
+        "shadows": "Soft",
+        "shadowStrength": 1.0,
+        "areaSize": {
+          "x": 2.19,
+          "y": 0.045
+        }
+      },
+      {
+        "name": "Ceiling_Baked_1",
+        "type": "Rectangle",
+        "mode": "Baked",
+        "position": {
+          "x": 3.9,
+          "y": 2.66,
+          "z": 1.0
+        },
+        "direction": {
+          "x": 0.0,
+          "y": -1.00000012,
+          "z": -1.1920929e-07
+        },
+        "linearRgb": {
+          "x": 1.0,
+          "y": 0.638283253,
+          "z": 0.330343783
+        },
+        "intensity": 5.0,
+        "shadows": "Soft",
+        "shadowStrength": 1.0,
+        "areaSize": {
+          "x": 0.3,
+          "y": 0.3
+        }
+      },
+      {
+        "name": "Ceiling_Baked_3",
+        "type": "Rectangle",
+        "mode": "Baked",
+        "position": {
+          "x": 3.9,
+          "y": 2.66,
+          "z": 3.1
+        },
+        "direction": {
+          "x": 0.0,
+          "y": -1.00000012,
+          "z": -1.1920929e-07
+        },
+        "linearRgb": {
+          "x": 1.0,
+          "y": 0.638283253,
+          "z": 0.330343783
+        },
+        "intensity": 5.0,
+        "shadows": "Soft",
+        "shadowStrength": 1.0,
+        "areaSize": {
+          "x": 0.3,
+          "y": 0.3
+        }
+      },
+      {
+        "name": "DeskLamp_Baked",
+        "type": "Point",
+        "mode": "Baked",
+        "position": {
+          "x": 1.482,
+          "y": 1.14,
+          "z": 2.85
+        },
+        "direction": {
+          "x": 0.0185264982,
+          "y": -0.9726394,
+          "z": -0.231580555
+        },
+        "linearRgb": {
+          "x": 1.0,
+          "y": 0.638283253,
+          "z": 0.330343783
+        },
+        "intensity": 0.35,
+        "shadows": "Soft",
+        "shadowStrength": 1.0,
+        "areaSize": {
+          "x": 1.0,
+          "y": 1.0
+        }
+      }
+    ]
+  },
+  "unity_capture": {
+    "renderTarget": "ARGB32 sRGB",
+    "shadowedRealtimeLights": 1,
+    "architectureRealtimeShadowExclusions": [
+      "ENV_Ceiling",
+      "ENV_Wall_Front"
+    ],
+    "keyIntensity": 1.1,
+    "keyPosition": {
+      "x": 3.8,
+      "y": 4.3,
+      "z": 0.4
+    },
+    "reason": "Baked occlusion is preserved; directional proxy can reach dynamic avatar indoors without changing its shader."
+  }
+}

@@ -1,0 +1,320 @@
+{
+  "materials": [
+    {
+      "name": "MAT_Book_Cream",
+      "base_color_srgb_hex": "#948B76",
+      "roughness": 0.7,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_Book_Gray",
+      "base_color_srgb_hex": "#55565B",
+      "roughness": 0.75,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_Brass",
+      "base_color_srgb_hex": "#85704E",
+      "roughness": 0.35,
+      "metallic": 0.8,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_Metallic.png"
+      }
+    },
+    {
+      "name": "MAT_Ceiling",
+      "base_color_srgb_hex": "#72706B",
+      "roughness": 0.85,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_Ceramic_Stone",
+      "base_color_srgb_hex": "#70716C",
+      "roughness": 0.84,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_City",
+      "base_color_srgb_hex": "#122237",
+      "roughness": 0.75,
+      "metallic": 0,
+      "emission_strength": 1.8,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png",
+        "base_color": "City_BaseColor.png",
+        "emission": "City_Emission.png"
+      }
+    },
+    {
+      "name": "MAT_Curtain_Charcoal",
+      "base_color_srgb_hex": "#242628",
+      "roughness": 0.9,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "base_color": "Curtain_BaseColor.png",
+        "normal": "Curtain_Normal.png",
+        "roughness": "Curtain_Roughness.png",
+        "metallic": "Curtain_Metallic.png",
+        "unity_metallic_smoothness": "Curtain_MetallicSmoothness.png"
+      }
+    },
+    {
+      "name": "MAT_Fabric_Carpet",
+      "base_color_srgb_hex": "#3A3A3A",
+      "roughness": 0.9,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "base_color": "Carpet_BaseColor.png",
+        "normal": "Carpet_Normal.png",
+        "roughness": "Carpet_Roughness.png",
+        "metallic": "Carpet_Metallic.png",
+        "unity_metallic_smoothness": "Carpet_MetallicSmoothness.png"
+      }
+    },
+    {
+      "name": "MAT_Glass",
+      "base_color_srgb_hex": "#CBD9E6",
+      "roughness": 0.18,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 0.025,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_LED_Warm",
+      "base_color_srgb_hex": "#FFD09A",
+      "roughness": 0.5,
+      "metallic": 0,
+      "emission_strength": 3,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_Leaf",
+      "base_color_srgb_hex": "#344E25",
+      "roughness": 0.57,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_Leaf_Light",
+      "base_color_srgb_hex": "#4B6230",
+      "roughness": 0.58,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_Leather_Charcoal",
+      "base_color_srgb_hex": "#252629",
+      "roughness": 0.48,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "base_color": "Leather_BaseColor.png",
+        "normal": "Leather_Normal.png",
+        "roughness": "Leather_Roughness.png",
+        "metallic": "Leather_Metallic.png",
+        "unity_metallic_smoothness": "Leather_MetallicSmoothness.png"
+      }
+    },
+    {
+      "name": "MAT_Metal_Exposed",
+      "base_color_srgb_hex": "#7D7F80",
+      "roughness": 0.32,
+      "metallic": 1,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_Metallic.png"
+      }
+    },
+    {
+      "name": "MAT_Metal_Painted",
+      "base_color_srgb_hex": "#202326",
+      "roughness": 0.48,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_Paper",
+      "base_color_srgb_hex": "#BAB7A7",
+      "roughness": 0.85,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_Red_Beacon",
+      "base_color_srgb_hex": "#B32C24",
+      "roughness": 0.7,
+      "metallic": 0,
+      "emission_strength": 1,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_Screen",
+      "base_color_srgb_hex": "#1B2636",
+      "roughness": 0.6,
+      "metallic": 0,
+      "emission_strength": 0.2,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_Sky",
+      "base_color_srgb_hex": "#0C1C32",
+      "roughness": 1,
+      "metallic": 0,
+      "emission_strength": 0.5,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png",
+        "base_color": "Sky_BaseColor.png"
+      },
+      "shader": "URP/Unlit"
+    },
+    {
+      "name": "MAT_Soil",
+      "base_color_srgb_hex": "#26211B",
+      "roughness": 1,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "normal": "Shared_FlatNormal.png",
+        "metallic": "Shared_NonMetallic.png"
+      }
+    },
+    {
+      "name": "MAT_Wall_WarmGray",
+      "base_color_srgb_hex": "#625D56",
+      "roughness": 0.8,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "base_color": "Wall_BaseColor.png",
+        "normal": "Wall_Normal.png",
+        "roughness": "Wall_Roughness.png",
+        "metallic": "Wall_Metallic.png",
+        "unity_metallic_smoothness": "Wall_MetallicSmoothness.png"
+      }
+    },
+    {
+      "name": "MAT_Wood_DarkWalnut",
+      "base_color_srgb_hex": "#3A2F26",
+      "roughness": 0.48,
+      "metallic": 0,
+      "emission_strength": 0,
+      "alpha": 1,
+      "normal_strength": 0.45,
+      "maps": {
+        "base_color": "Walnut_BaseColor.png",
+        "normal": "Walnut_Normal.png",
+        "roughness": "Walnut_Roughness.png",
+        "metallic": "Walnut_Metallic.png",
+        "unity_metallic_smoothness": "Walnut_MetallicSmoothness.png"
+      }
+    }
+  ],
+  "color_spaces": {
+    "base_color": "sRGB",
+    "emission": "sRGB",
+    "normal": "Linear non-color, tangent space +Y OpenGL, Unity NormalMap importer without green flip",
+    "roughness": "Linear grayscale",
+    "metallic": "Linear grayscale",
+    "unity_metallic_smoothness": "Linear RGBA; R=Metallic, A=1-Roughness; G/B=0"
+  },
+  "normal_strength": 0.45,
+  "basecolor_has_baked_lighting": false,
+  "orm_used": false
+}
