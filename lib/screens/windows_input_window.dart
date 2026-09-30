@@ -19,6 +19,7 @@ import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/voice/delayed_send.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/config/raim_config.dart';
 
@@ -54,6 +55,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   /// 呼ばれたあとに聞き取れた一言
   StreamSubscription<String>? _utteranceSub;
+
+  /// 聞き取った文を少し待ってから送る（設定「少し待ってから送る」）
+  final DelayedSend _delayed = DelayedSend();
 
   /// マイク検証用。録音中かどうか。
   bool _isRecordingDump = false;
@@ -145,11 +149,27 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
       text: placed.text,
       selection: TextSelection.collapsed(offset: placed.text.length),
     );
-    if (placed.send) {
-      _send();
-    } else if (_mascot.isVisible) {
-      _focusNode.requestFocus();
+    final action = decideUtteranceAction(
+      canSend: placed.send,
+      mode: context.read<VoiceSettingsProvider>().sendMode,
+    );
+    switch (action) {
+      case UtteranceAction.sendNow:
+        _send();
+      case UtteranceAction.sendLater:
+        // 送信ボタンの周りに残り時間を出す。入力欄を触れば止まる
+        _delayed.start(_sendAfterWaiting);
+      case UtteranceAction.keep:
+        _delayed.cancel();
+        if (_mascot.isVisible) _focusNode.requestFocus();
     }
+  }
+
+  /// 待ち終わったら送る。その間にまた話し始めていたら送らない（文は残る）。
+  void _sendAfterWaiting() {
+    if (!mounted) return;
+    if (context.read<VoiceController>().isTranscribing) return;
+    _send();
   }
 
   // ------------------------------------------------------------
@@ -270,6 +290,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     _unitySub?.cancel();
     _wakeSub?.cancel();
     _utteranceSub?.cancel();
+    _delayed.dispose();
     _controller.dispose();
     _focusNode.dispose();
     _windowFocusNode.dispose();
@@ -334,6 +355,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   // ------------------------------------------------------------
 
   void _send() {
+    // 待っている途中に送信ボタンや Enter で送ったときなど、二重に送らない
+    _delayed.cancel();
     if (context.read<ChatProvider>().isLoading) return;
     final text = _controller.text.trim();
     final camera = context.read<CameraProvider>();
@@ -600,6 +623,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                   controller: _controller,
                   focusNode: _focusNode,
                   enabled: !chat.isOffline,
+                  // 送るのを待っている間に触ったり直したりしたら、送らずに止める
+                  onTap: _delayed.cancel,
+                  onChanged: (_) => _delayed.cancel(),
                   style: const TextStyle(color: _text, fontSize: 13),
                   cursorColor: _lime,
                   decoration: InputDecoration(
@@ -644,25 +670,55 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
             SizedBox(
               width: 32,
               height: 32,
-              child: ElevatedButton(
-                onPressed: chat.isLoading ? null : _send,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF7CB827),
-                  foregroundColor: const Color(0xFF0D1116),
-                  disabledBackgroundColor: const Color(0xFF3A4450),
-                  padding: EdgeInsets.zero,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Positioned.fill(
+                    child: ElevatedButton(
+                      onPressed: chat.isLoading ? null : _send,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF7CB827),
+                        foregroundColor: const Color(0xFF0D1116),
+                        disabledBackgroundColor: const Color(0xFF3A4450),
+                        padding: EdgeInsets.zero,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: chat.isLoading
+                          ? const SizedBox(
+                              width: 13,
+                              height: 13,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: _mut),
+                            )
+                          : const Icon(Icons.send, size: 15),
+                    ),
                   ),
-                ),
-                child: chat.isLoading
-                    ? const SizedBox(
-                        width: 13,
-                        height: 13,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: _mut),
-                      )
-                    : const Icon(Icons.send, size: 15),
+                  // 聞き取った文を送るまでの残り時間。押せばすぐ送る
+                  ListenableBuilder(
+                    listenable: _delayed,
+                    builder: (context, _) => !_delayed.isPending
+                        ? const SizedBox.shrink()
+                        : IgnorePointer(
+                            child: SizedBox(
+                              width: 26,
+                              height: 26,
+                              child: TweenAnimationBuilder<double>(
+                                key: ValueKey(_delayed.startedAt),
+                                tween: Tween<double>(begin: 1.0, end: 0.0),
+                                duration: _delayed.delay,
+                                builder: (context, value, _) =>
+                                    CircularProgressIndicator(
+                                  value: value,
+                                  strokeWidth: 2,
+                                  color: const Color(0xFF0D1116),
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                ],
               ),
             ),
           ],

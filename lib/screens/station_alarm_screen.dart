@@ -25,10 +25,21 @@ const _warn = Color(0xFFFFB74D);
 const _err = Color(0xFFFF8A80);
 
 class StationAlarmScreen extends StatefulWidget {
-  const StationAlarmScreen({super.key});
+  const StationAlarmScreen({super.key, this.initialQuery});
 
-  static Future<void> open(BuildContext context) => Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const StationAlarmScreen()),
+  /// 最初から検索欄に入れておく文字。ライムに頼まれた駅が
+  /// 見つからなかったとき、その名前で候補を出しておくのに使う。
+  final String? initialQuery;
+
+  /// 開いている画面の数。ライムに頼まれて開くとき、二重に開かないため。
+  static int _openCount = 0;
+  static bool get isOpen => _openCount > 0;
+
+  static Future<void> open(BuildContext context, {String? query}) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => StationAlarmScreen(initialQuery: query),
+        ),
       );
 
   @override
@@ -44,6 +55,8 @@ class _StationAlarmScreenState extends State<StationAlarmScreen> {
   @override
   void initState() {
     super.initState();
+    StationAlarmScreen._openCount++;
+    _query.text = widget.initialQuery ?? '';
     _load();
   }
 
@@ -52,6 +65,7 @@ class _StationAlarmScreenState extends State<StationAlarmScreen> {
       final db = await StationDatabase.load();
       if (!mounted) return;
       setState(() => _db = db);
+      if (_query.text.isNotEmpty) _search(_query.text);
     } catch (e) {
       if (!mounted) return;
       setState(() => _loadError = '駅データを読み込めませんでした');
@@ -60,6 +74,7 @@ class _StationAlarmScreenState extends State<StationAlarmScreen> {
 
   @override
   void dispose() {
+    StationAlarmScreen._openCount--;
     _query.dispose();
     super.dispose();
   }

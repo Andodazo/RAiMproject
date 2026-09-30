@@ -230,6 +230,18 @@ class LLMResponse {
   bool get isChatEnd => type == 'chat_end';
   bool get isBubbleBreak => type == 'bubble_break';
 
+  /// ライムがアプリに頼む操作（駅アラームを始める など）か
+  bool get isClientAction => type == 'client_action';
+
+  /// client_action の操作名（例: station_alarm.start）
+  String get action => _readString(raw['action']) ?? '';
+
+  /// client_action の引数
+  Map<String, dynamic> get actionParams {
+    final params = raw['params'];
+    return params is Map ? Map<String, dynamic>.from(params) : const {};
+  }
+
   /// スレッド一覧の応答か
   bool get isThreadList => type == 'thread_list';
 

@@ -64,6 +64,28 @@ void main() {
       expect(response.isFiller, isFalse);
     });
 
+    test('client_action から操作名と引数を読める', () {
+      final response = LLMResponse.fromJson({
+        'type': 'client_action',
+        'action': 'station_alarm.start',
+        'params': {'station': '新宿', 'line': '中央線'},
+      });
+
+      expect(response.isClientAction, isTrue);
+      expect(response.action, 'station_alarm.start');
+      expect(response.actionParams, {'station': '新宿', 'line': '中央線'});
+    });
+
+    test('client_action の params が無くても落ちない', () {
+      final response = LLMResponse.fromJson({
+        'type': 'client_action',
+        'action': 'station_alarm.stop',
+      });
+
+      expect(response.isClientAction, isTrue);
+      expect(response.actionParams, isEmpty);
+    });
+
     test('旧形式の chat は終端として扱われる', () {
       final response = LLMResponse.fromJson({'type': 'chat', 'text': 'やあ'});
 

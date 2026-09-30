@@ -9,6 +9,7 @@ import 'package:raim_prototype/services/app_exit_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
+import 'package:raim_prototype/widgets/client_action_listener.dart';
 import 'package:raim_prototype/widgets/thread_selector_menu.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/providers/station_alarm_controller.dart';
@@ -38,14 +39,17 @@ class ChatScreen extends StatelessWidget {
     final screenSize = MediaQuery.of(context).size;
     final isWideScreen = screenSize.width >= 600;
 
-    return Scaffold(
-      // キーボード表示時に画面全体が縮むのを防ぐ。
-      // キャラクター表示や背景のサイズを固定したままにするため false にする。
-      resizeToAvoidBottomInset: false,
-      backgroundColor: const Color(0xFF1a1a2e),
-      body: isWideScreen
-          ? _buildWideLayout(context)
-          : _buildNarrowLayout(context),
+    // ライムに頼まれた操作（「新宿で起こして」→ 駅アラーム）を実行する
+    return ClientActionListener(
+      child: Scaffold(
+        // キーボード表示時に画面全体が縮むのを防ぐ。
+        // キャラクター表示や背景のサイズを固定したままにするため false にする。
+        resizeToAvoidBottomInset: false,
+        backgroundColor: const Color(0xFF1a1a2e),
+        body: isWideScreen
+            ? _buildWideLayout(context)
+            : _buildNarrowLayout(context),
+      ),
     );
   }
 

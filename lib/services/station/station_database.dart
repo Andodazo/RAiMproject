@@ -138,6 +138,9 @@ class StationDatabase {
   int get stationCount => _stations.length;
   int get lineCount => _lines.length;
 
+  /// すべての駅（並びは決まっていない）。
+  Iterable<Station> get stations => _stations.values;
+
   Station? station(int code) => _stations[code];
   RailLine? line(int code) => _lines[code];
 

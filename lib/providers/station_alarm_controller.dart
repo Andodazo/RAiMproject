@@ -43,6 +43,7 @@ import 'package:raim_prototype/services/station/ride_foreground_service.dart';
 import 'package:raim_prototype/services/station/station_alarm.dart';
 import 'package:raim_prototype/services/station/station_database.dart';
 import 'package:raim_prototype/services/station/station_listener.dart';
+import 'package:raim_prototype/services/station/station_lookup.dart';
 import 'package:raim_prototype/services/station/station_proximity.dart';
 import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 
@@ -195,6 +196,58 @@ class StationAlarmController extends ChangeNotifier {
       RaimLog.e('[StationAlarm] 開始できませんでした', e);
       await _teardown();
       _fail(_describe(e));
+    }
+  }
+
+  /// 駅名で乗車モードを始める。
+  ///
+  /// ライムに「新宿で起こして」と頼まれたとき（client_action）に使う。
+  /// 届くのは駅名の文字だけなので、駅データから探す。同じ名前の駅が
+  /// 複数あれば今いる場所に近い方を選ぶ（station_lookup.dart）。
+  ///
+  /// 始めた駅を返す。駅が見つからなければ null（乗車モードは始めない）。
+  Future<Station?> startByName(
+    String name, {
+    String? kana,
+    String? line,
+  }) async {
+    if (!isSupported) return null;
+
+    final db = await StationDatabase.load();
+    final here = await _lastKnownPosition();
+    final station = findStationByName(
+      db,
+      name,
+      kana: kana,
+      lat: here?.latitude,
+      lng: here?.longitude,
+    );
+    if (station == null) {
+      RaimLog.i('[StationAlarm] 頼まれた駅が見つかりませんでした: $name');
+      return null;
+    }
+
+    final railLine = findLineByName(db, station, line);
+    RaimLog.i(
+      '[StationAlarm] 頼まれて始めます: ${station.name}'
+      '（${railLine?.name ?? 'すべての路線'}）',
+    );
+    await start(station, line: railLine);
+    return station;
+  }
+
+  /// 最後に分かっている現在地。許可が無ければ聞かずに null を返す
+  /// （許可を求めるのは、乗車モードを始めるとき）。
+  Future<Position?> _lastKnownPosition() async {
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        return null;
+      }
+      return await Geolocator.getLastKnownPosition();
+    } catch (_) {
+      return null;
     }
   }
 

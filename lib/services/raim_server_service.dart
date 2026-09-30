@@ -98,6 +98,13 @@ class RaimServerService implements LLMService {
   /// アクセストークンを動的に取得するコールバック関数
   final Future<String?> Function()? accessTokenGetter;
 
+  /// このアプリで使える機能（例: station_alarm）。送信ごとにサーバーへ伝える。
+  ///
+  /// サーバーはこれを見て、ライムに見せるツールを決める。駅アラームの無い
+  /// 端末（Windows）で、ライムが「起こすね」と言って何も起きないのを防ぐ。
+  /// main.dart で設定する。
+  List<String> features = const [];
+
   RaimServerService({
     //required this.serverUrl,
     required String serverUrl,
@@ -529,6 +536,10 @@ class RaimServerService implements LLMService {
     // 呼び出し側が threadId を指定する。
     if (threadId != null && threadId.isNotEmpty) {
       payload['threadId'] = threadId;
+    }
+    // このアプリで使える機能（駅アラームなど）
+    if (features.isNotEmpty) {
+      payload['features'] = features;
     }
     // 送信後に返ってくる複数メッセージを順番に受け取るためのIterator
     final iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);

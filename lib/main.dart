@@ -99,6 +99,11 @@ void main() async {
 
   final authProvider = AuthProvider(AuthService());
   final raimService = RaimServerService(serverUrl: RaimConfig.serverUrl, accessTokenGetter: () => authProvider.getValidAccessToken(),);
+  // このアプリで使える機能をサーバーへ伝える。駅アラームを使える端末
+  // （iPhone・Android）だけ、ライムが「◯◯で起こして」に応えられるようになる
+  raimService.features = [
+    if (StationAlarmController.isSupported) 'station_alarm',
+  ];
   //RaimAppにraimServiceとunityBridgeを入れている
   runApp(
     RaimApp(

@@ -8,6 +8,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:raim_prototype/models/client_action.dart';
 import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/models/llm_response.dart';
 import 'package:raim_prototype/models/conversation_thread.dart';
@@ -126,6 +127,14 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   String? get toolStatus => _toolStatus;
   RaimConnectionState get connectionState => _connectionState;
   bool get isUsingTool => _isUsingTool;
+
+  /// ライムがアプリに頼んだ操作（駅アラームを始める など）。
+  ///
+  /// 実行には画面（Navigator）や他の Provider が要るので、ここでは流すだけ。
+  /// ChatScreen の ClientActionListener が受け取って実行する。
+  final StreamController<ClientAction> _clientActions =
+      StreamController<ClientAction>.broadcast();
+  Stream<ClientAction> get clientActions => _clientActions.stream;
 
   /// ライムが喋っている（TTS を再生中）か。
   ///
@@ -251,6 +260,18 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     _isLoading = true;
     notifyListeners();
   }
+  /// ライムがアプリに頼んだ操作を流す。実行は ClientActionListener が行う。
+  void _handleClientAction(LLMResponse response) {
+    final action = response.action;
+    if (action.isEmpty) return;
+    RaimLog.i('[ChatProvider] ライムから頼まれた操作: $action');
+    if (!_clientActions.isClosed) {
+      _clientActions.add(
+        ClientAction(action: action, params: response.actionParams),
+      );
+    }
+  }
+
   //音声Base64を再生キューに入れる処理
   void _handleAudioChunk(LLMResponse response) {
      // audio が空の場合は再生できないため、何もせず終了する
@@ -674,6 +695,7 @@ _toolStatus = null;
   @override
   void dispose() {
     _stateSubscription?.cancel();
+    unawaited(_clientActions.close());
     _audioAssembler.dispose();
     // ChatProvider が破棄されるとき、音声プレイヤーも破棄する
     unawaited(_audioQueue.dispose());
@@ -899,6 +921,9 @@ _toolStatus = null;
     // chat_end: 1回分のAI返答が完了した通知
     }  else if (response.isBubbleBreak) {   // ← v2.3 追加
       _handleBubbleBreak(response); 
+    // client_action: ライムがアプリに頼んだ操作（駅アラームなど）
+    } else if (response.isClientAction) {
+      _handleClientAction(response);
     } else if (response.isChatEnd) {
       _handleChatEnd(response);
     // chat: 古い形式の通常返答
