@@ -27,4 +27,11 @@ void main() {
     expect(c.state, StationAlarmState.idle);
     c.dispose();
   });
+
+  test('対応していない端末では駅名で始めようとしても始めない', () async {
+    final c = StationAlarmController();
+    expect(await c.startByName('新宿'), isNull);
+    expect(c.isActive, isFalse);
+    c.dispose();
+  });
 }
