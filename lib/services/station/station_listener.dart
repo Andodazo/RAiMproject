@@ -180,6 +180,7 @@ class StationListener {
 
       final text = _textOf(result);
       if (text.isEmpty) return;
+      RaimLog.d('[Station] 聞こえた: $text');
       if (!_heard.isClosed) _heard.add(text);
 
       final event = _detector.onResult(text);

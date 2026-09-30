@@ -18,6 +18,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
@@ -160,6 +161,7 @@ class MicStreamService {
         }
         _pushPreroll(chunk);
         _dump?.add(chunk);
+        _measure(chunk);
         controller.add(chunk);
       },
       onError: (Object e, StackTrace s) {
@@ -200,6 +202,7 @@ class MicStreamService {
     }
     await controller?.close();
     _openedDeviceId = null;
+    _resetMeter();
 
     _preroll.clear();
     _prerollBytes = 0;
@@ -235,6 +238,42 @@ class MicStreamService {
     final keep = all.sublist(all.length - _prerollLimit);
     _preroll.add(keep);
     _prerollBytes = keep.length;
+  }
+
+  // ─── 音量の記録（動作確認用） ───
+  //
+  // マイクが「開いたまま音が来なくなる」「無音しか来なくなる」を
+  // 見分けるため、数秒ごとに届いた回数と最大音量をログに出す。
+
+  static const Duration _meterInterval = Duration(seconds: 3);
+  DateTime? _meterFrom;
+  int _meterChunks = 0;
+  int _meterPeak = 0;
+
+  void _measure(Uint8List chunk) {
+    final data = ByteData.sublistView(chunk);
+    for (var i = 0; i + 1 < chunk.length; i += 2) {
+      final v = data.getInt16(i, Endian.little).abs();
+      if (v > _meterPeak) _meterPeak = v;
+    }
+    _meterChunks++;
+
+    final now = DateTime.now();
+    final from = _meterFrom ??= now;
+    if (now.difference(from) < _meterInterval) return;
+    final db = _meterPeak == 0
+        ? '-∞'
+        : (20 * math.log(_meterPeak / 32768) / math.ln10).toStringAsFixed(0);
+    RaimLog.d('[Mic] ${_meterInterval.inSeconds}秒: $_meterChunks回 最大 ${db}dB');
+    _meterFrom = now;
+    _meterChunks = 0;
+    _meterPeak = 0;
+  }
+
+  void _resetMeter() {
+    _meterFrom = null;
+    _meterChunks = 0;
+    _meterPeak = 0;
   }
 
   // ─── デバッグ用の録音 ───

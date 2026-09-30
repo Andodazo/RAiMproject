@@ -244,6 +244,7 @@ class WakeWordService {
   void suspend() {
     if (_suspended) return;
     _suspended = true;
+    RaimLog.d('[WakeWord] 一時停止');
     _pending.clear();
     _pendingBytes = 0;
     _clearCarry();
@@ -255,6 +256,7 @@ class WakeWordService {
   void resume() {
     if (!_suspended) return;
     _suspended = false;
+    RaimLog.d('[WakeWord] 再開');
   }
 
   Future<void> dispose() async {
