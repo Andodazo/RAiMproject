@@ -643,7 +643,7 @@ public class WindowsOverlayController : MonoBehaviour
     /// 引き算でウィンドウ内座標になる。
     /// Unity のスクリーン座標は左下原点なので Y だけ反転する。
     ///
-    /// 判定はスプライトの矩形。髪の横の透明な部分でも反応する。
+    /// スプライトの矩形の中でも、透明な部分（髪の横など）は外す。
     /// </summary>
     private bool IsCursorOverCharacter()
     {
@@ -662,6 +662,20 @@ public class WindowsOverlayController : MonoBehaviour
 
         IntPtr under = WindowFromPoint(p);
         if (under != self && GetAncestorRoot(under) != self) return false;
+
+        // カーソルの下が透明な画素なら、ライムの上ではない。
+        //
+        // 以前はスプライトの矩形だけで判定していたため、髪の横の透明な部分を
+        // クリックしても反応していた。UniWindowController は透明な画素の上では
+        // クリックを下のウィンドウへ通す（isClickThrough）が、ここは Win32 で
+        // カーソルを直接読んでいるので、それとは無関係に反応してしまう。
+        //
+        // isClickThrough は UniWindowController がフレームの描画結果の不透明度
+        // （opacityThreshold）から決めている。表情の差分やスプライトの差し替えにも
+        // そのまま追従するので、画像の読み取り設定を変えずに済む。
+        // 不透明度での判定を使っていない設定なら false のままなので、矩形の判定に戻る。
+        var controller = UniWindowController.current;
+        if (controller != null && controller.isClickThrough) return false;
 
         if (!TryGetWindowRect(out RECT r)) return false;
 
