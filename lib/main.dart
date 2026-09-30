@@ -31,6 +31,7 @@ import 'package:raim_prototype/providers/station_alarm_controller.dart';
 import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/screens/splash_screen.dart';
+import 'package:raim_prototype/services/approx_location.dart';
 import 'package:raim_prototype/services/auth_service.dart';
 import 'package:raim_prototype/services/transcribe_stt_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
@@ -104,6 +105,11 @@ void main() async {
   raimService.features = [
     if (StationAlarmController.isSupported) 'station_alarm',
   ];
+  // 場所を言わずに天気を聞いたとき用の、だいたいの現在地（設定で ON のときだけ）
+  raimService.locationGetter = () async {
+    if (!voiceSettings.weatherUsesLocation) return null;
+    return ApproxLocation.forRequest();
+  };
   //RaimAppにraimServiceとunityBridgeを入れている
   runApp(
     RaimApp(

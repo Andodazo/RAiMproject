@@ -72,7 +72,7 @@
 		<string>location</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>駅アラームで、降りる駅に近づいたことを知らせるために位置情報を使用します。</string>
+	<string>駅アラームで降りる駅に近づいたことを知らせるためと、場所を言わずに天気を聞いたときに今いるあたりの天気を調べるために位置情報を使用します。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ライムに話しかけるために、マイクを使用します。</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
