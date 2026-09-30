@@ -145,9 +145,20 @@ class WakeWordService {
   /// `getApplicationDocumentsDirectory()/models` で、Windows では
   /// OneDrive 配下になることがあるため。48MB のモデルが同期対象に
   /// なってしまうので、アプリ専用領域に置く。
-  Future<void> initialize() async {
-    if (_model != null) return;
+  ///
+  /// 読み込み中にもう一度呼ばれたら、同じ読み込みを待つ。
+  /// 以前は読み込み終わるまで「まだ無い」扱いだったため、「ねえライム」の起動と
+  /// 駅アラーム（sharedModel）が重なるとモデルを2回読み込んでいた。初回起動では
+  /// zip の展開も2回同時に走り、同じフォルダに書き込んで壊れる恐れがあった。
+  Future<void> initialize() {
+    if (_model != null) return Future.value();
+    return _loading ??= _load().whenComplete(() => _loading = null);
+  }
 
+  /// 読み込み中のもの。
+  Future<void>? _loading;
+
+  Future<void> _load() async {
     final support = await getApplicationSupportDirectory();
     final storage = '${support.path}${Platform.pathSeparator}vosk';
 
