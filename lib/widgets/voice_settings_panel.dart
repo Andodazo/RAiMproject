@@ -19,6 +19,7 @@ import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/voice/delayed_send.dart';
 
 /// 置く場所ごとの色。
 class VoiceSettingsPalette {
@@ -209,10 +210,36 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
           _switchRow(
             title: 'マイクボタンで話しかける',
             subtitle: settings.manualMicEnabled
-                ? '入力欄のマイクを押して話し、もう一度押すか黙ると送ります'
+                ? '入力欄のマイクを押して話し、もう一度押すか黙ると聞き終わります'
                 : 'マイクボタンを出しません',
             value: settings.manualMicEnabled,
             onChanged: voice.hasStt ? settings.setManualMicEnabled : null,
+          ),
+
+          // ─── 聞き取った文の送り方 ───
+          _divider(),
+          _label('聞き取った文の送り方'),
+          _choiceRow(
+            title: '少し待ってから送る（おすすめ）',
+            subtitle: '${DelayedSend.defaultDelay.inSeconds}秒待ってから送ります。'
+                'その間に入力欄を触ると止まり、直してから送れます',
+            selected: settings.sendMode == VoiceSendMode.delayed,
+            enabled: voice.hasStt,
+            onTap: () => settings.setSendMode(VoiceSendMode.delayed),
+          ),
+          _choiceRow(
+            title: 'すぐ送る',
+            subtitle: '聞き間違いや周りの声も、そのまま送られます',
+            selected: settings.sendMode == VoiceSendMode.immediate,
+            enabled: voice.hasStt,
+            onTap: () => settings.setSendMode(VoiceSendMode.immediate),
+          ),
+          _choiceRow(
+            title: '入力欄に入れるだけ',
+            subtitle: '確かめてから、送信ボタンで送ります',
+            selected: settings.sendMode == VoiceSendMode.manual,
+            enabled: voice.hasStt,
+            onTap: () => settings.setSendMode(VoiceSendMode.manual),
           ),
 
           // ─── マイク ───

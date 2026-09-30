@@ -14,6 +14,7 @@ import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/voice/delayed_send.dart';
 import 'package:raim_prototype/config/raim_config.dart';
 
 class ChatInput extends StatefulWidget {
@@ -31,6 +32,9 @@ class _ChatInputState extends State<ChatInput> {
   /// 声で聞き取れた一言（「ねえライム」やマイクボタンのあと）
   StreamSubscription<String>? _utteranceSub;
 
+  /// 聞き取った文を少し待ってから送る（設定「少し待ってから送る」）
+  final DelayedSend _delayed = DelayedSend();
+
   @override
   void initState() {
     super.initState();
@@ -42,7 +46,10 @@ class _ChatInputState extends State<ChatInput> {
         context.read<VoiceController>().utterances.listen(_onUtterance);
   }
 
-  /// 聞き取れた一言を送る。書きかけがあるときや返事の生成中は入力欄に足すだけ。
+  /// 聞き取れた一言を入力欄に入れ、設定に合わせて送る。
+  ///
+  /// 書きかけがあるときや返事の生成中は、設定に関係なく入力欄に足すだけ。
+  /// 「少し待ってから送る」では、待っている間に入力欄を触ると止まる。
   void _onUtterance(String text) {
     if (!mounted) return;
     final placed = placeUtterance(
@@ -54,7 +61,25 @@ class _ChatInputState extends State<ChatInput> {
       text: placed.text,
       selection: TextSelection.collapsed(offset: placed.text.length),
     );
-    if (placed.send) _sendMessage();
+    final action = decideUtteranceAction(
+      canSend: placed.send,
+      mode: context.read<VoiceSettingsProvider>().sendMode,
+    );
+    switch (action) {
+      case UtteranceAction.sendNow:
+        _sendMessage();
+      case UtteranceAction.sendLater:
+        _delayed.start(_sendAfterWaiting);
+      case UtteranceAction.keep:
+        _delayed.cancel();
+    }
+  }
+
+  /// 待ち終わったら送る。その間にまた話し始めていたら送らない（文は残る）。
+  void _sendAfterWaiting() {
+    if (!mounted) return;
+    if (context.read<VoiceController>().isTranscribing) return;
+    _sendMessage();
   }
 
   /// 入力欄のプレースホルダ。聞き取り中は途中経過を出す。
@@ -92,6 +117,7 @@ class _ChatInputState extends State<ChatInput> {
   @override
   void dispose() {
     _utteranceSub?.cancel();
+    _delayed.dispose();
 
     // 使い終わった FocusNode を破棄する
     _inputFocusNode.dispose();
@@ -102,6 +128,8 @@ class _ChatInputState extends State<ChatInput> {
   }
   
   void _sendMessage() {
+    // 待っている途中に送信ボタンで送ったときなど、二重に送らない
+    _delayed.cancel();
     final chatProvider = context.read<ChatProvider>();
 
     // 生成中の二重送信を防ぐ。Enter キーからもここを通る。
@@ -154,6 +182,35 @@ class _ChatInputState extends State<ChatInput> {
       children: [
         // 追加：選択した画像を入力欄の上に表示
         const _SelectedImagePreview(),
+        // 聞き取った文を送るまでの待ち時間（設定「少し待ってから送る」）
+        ListenableBuilder(
+          listenable: _delayed,
+          builder: (context, _) => !_delayed.isPending
+              ? const SizedBox.shrink()
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 4, 16, 0),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'このまま送ります（入力欄を触ると止まります）',
+                          style: TextStyle(
+                            color: Color(0xFFB7F35A),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _delayed.cancel,
+                        child: const Text(
+                          '送らない',
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
         Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -165,6 +222,9 @@ class _ChatInputState extends State<ChatInput> {
                     // Enterキーの処理を受け取るために FocusNode を設定する
                     focusNode: _inputFocusNode,
                     controller: _controller,
+                    // 送るのを待っている間に触ったり直したりしたら、送らずに止める
+                    onTap: _delayed.cancel,
+                    onChanged: (_) => _delayed.cancel(),
                     keyboardType: TextInputType.multiline,
                     textInputAction: TextInputAction.newline,
                     minLines: 1,
@@ -242,12 +302,38 @@ class _ChatInputState extends State<ChatInput> {
                     ),
                   ],
                 ),
-                child: IconButton(
-                  icon: const Icon(
-                    Icons.send,
-                    color: Colors.white,
-                  ),
-                  onPressed: _sendMessage,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // 送るまでの残り時間。押せばすぐ送る
+                    ListenableBuilder(
+                      listenable: _delayed,
+                      builder: (context, _) => !_delayed.isPending
+                          ? const SizedBox.shrink()
+                          : SizedBox(
+                              width: 44,
+                              height: 44,
+                              child: TweenAnimationBuilder<double>(
+                                key: ValueKey(_delayed.startedAt),
+                                tween: Tween<double>(begin: 1.0, end: 0.0),
+                                duration: _delayed.delay,
+                                builder: (context, value, _) =>
+                                    CircularProgressIndicator(
+                                  value: value,
+                                  strokeWidth: 3,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.send,
+                        color: Colors.white,
+                      ),
+                      onPressed: _sendMessage,
+                    ),
+                  ],
                 ),
               ),
             ],

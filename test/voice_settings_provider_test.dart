@@ -14,6 +14,19 @@ void main() {
     expect(s.sttEnabled, isTrue);
     expect(s.micDeviceId, isNull);
     expect(s.wakePhraseMode, WakePhraseMode.polite);
+    // 聞き間違いがそのまま送られないよう、既定は「少し待ってから送る」
+    expect(s.sendMode, VoiceSendMode.delayed);
+  });
+
+  test('聞き取った文の送り方は保存され、読み直しても残る', () async {
+    SharedPreferences.setMockInitialValues({});
+    final a = VoiceSettingsProvider();
+    await a.load();
+    await a.setSendMode(VoiceSendMode.manual);
+
+    final b = VoiceSettingsProvider();
+    await b.load();
+    expect(b.sendMode, VoiceSendMode.manual);
   });
 
   test('変更は保存され、読み直しても残る', () async {

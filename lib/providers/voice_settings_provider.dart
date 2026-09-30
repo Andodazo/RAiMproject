@@ -22,8 +22,21 @@ enum WakePhraseMode {
   both,
 }
 
+/// 声で聞き取った文をどう送るか。
+enum VoiceSendMode {
+  /// 聞き取ったらすぐ送る。
+  immediate,
+
+  /// 数秒待ってから送る。その間に入力欄を触れば止まり、直してから送れる。
+  delayed,
+
+  /// 入力欄に入れるだけ。送信ボタンで送る。
+  manual,
+}
+
 class VoiceSettingsProvider extends ChangeNotifier {
   static const _kWakeWordEnabled = 'voice.wakeWordEnabled';
+  static const _kSendMode = 'voice.sendMode';
   static const _kManualMicEnabled = 'voice.manualMicEnabled';
   static const _kWakePhraseMode = 'voice.wakePhraseMode';
   static const _kMicDeviceId = 'voice.micDeviceId';
@@ -36,6 +49,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
   WakePhraseMode _wakePhraseMode = WakePhraseMode.polite;
   String? _micDeviceId;
   bool _sttEnabled = true;
+  VoiceSendMode _sendMode = VoiceSendMode.delayed;
 
   /// 常時待機（ウェイクワード検知）を使うか。
   bool get wakeWordEnabled => _wakeWordEnabled;
@@ -53,6 +67,12 @@ class VoiceSettingsProvider extends ChangeNotifier {
   /// OFF にすると、呼ばれても入力小窓を開くだけになる。
   /// 聞き取りは Transcribe の利用料がかかるので、止められるようにしておく。
   bool get sttEnabled => _sttEnabled;
+
+  /// 聞き取った文をどう送るか。
+  ///
+  /// 既定は「少し待ってから送る」。周りの声や聞き間違いが、そのまま
+  /// ライムに送られてしまうのを防ぐため。
+  VoiceSendMode get sendMode => _sendMode;
 
   /// 何らかの形でマイクを使うか。権限要求の要否判断に使う。
   bool get needsMicrophone => _wakeWordEnabled || _manualMicEnabled;
@@ -80,6 +100,12 @@ class VoiceSettingsProvider extends ChangeNotifier {
     _micDeviceId = prefs.getString(_kMicDeviceId);
     _sttEnabled = prefs.getBool(_kSttEnabled) ?? true;
 
+    final sendName = prefs.getString(_kSendMode);
+    _sendMode = VoiceSendMode.values.firstWhere(
+      (m) => m.name == sendName,
+      orElse: () => VoiceSendMode.delayed,
+    );
+
     final modeName = prefs.getString(_kWakePhraseMode);
     _wakePhraseMode = WakePhraseMode.values.firstWhere(
       (m) => m.name == modeName,
@@ -89,7 +115,8 @@ class VoiceSettingsProvider extends ChangeNotifier {
     RaimLog.i(
       '[VoiceSettings] 読み込み wake=$_wakeWordEnabled '
       'manual=$_manualMicEnabled mode=${_wakePhraseMode.name} '
-      'stt=$_sttEnabled mic=${_micDeviceId == null ? "既定" : "指定"}',
+      'stt=$_sttEnabled send=${_sendMode.name} '
+      'mic=${_micDeviceId == null ? "既定" : "指定"}',
     );
     notifyListeners();
   }
@@ -122,6 +149,14 @@ class VoiceSettingsProvider extends ChangeNotifier {
     notifyListeners();
     await _prefs?.setBool(_kSttEnabled, value);
     RaimLog.i('[VoiceSettings] 聞き取り: ${value ? "ON" : "OFF"}');
+  }
+
+  Future<void> setSendMode(VoiceSendMode mode) async {
+    if (_sendMode == mode) return;
+    _sendMode = mode;
+    notifyListeners();
+    await _prefs?.setString(_kSendMode, mode.name);
+    RaimLog.i('[VoiceSettings] 聞き取った文の送り方: ${mode.name}');
   }
 
   Future<void> setMicDeviceId(String? id) async {
