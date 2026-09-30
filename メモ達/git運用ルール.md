@@ -277,7 +277,7 @@ app.*.map.json
 #### 手順
 
 ```powershell
-cd H:\dev\RAiM_prot\Flutter_Test\raim_prototype
+cd H:\dev\RAiM_prot\RAiMproject
 
 # 1. まず .gitignore を編集して保存
 
@@ -469,7 +469,7 @@ git revert <コミットID>               # 削除を取り消すコミットを
 ### 朝の開発開始時(必須ルーチン)
 
 ```powershell
-cd H:\dev\RAiM_prot\Flutter_Test\raim_prototype
+cd H:\dev\RAiM_prot\RAiMproject
 git checkout main
 git pull origin main                  # 班員の変更を取り込む
 flutter pub get                       # 依存パッケージが更新されてるかも
