@@ -31,6 +31,8 @@ fi
 echo "取得中（約170MB）..."
 git clone --quiet "$REPO" "$WORK/src"
 git -C "$WORK/src" checkout --quiet "$COMMIT"
+# この PC で git lfs install をしていなくても取れるように、このクローンだけで有効にする
+git -C "$WORK/src" lfs install --local >/dev/null
 git -C "$WORK/src" lfs pull
 
 check() {

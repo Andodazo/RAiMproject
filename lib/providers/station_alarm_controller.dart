@@ -21,6 +21,8 @@
 //   - 降りる駅から遠いところで聞こえたアナウンスは無視する（聞き間違い対策）
 //   - アナウンスを聞き逃しても、駅に近づいたら知らせる
 //   - 地下などで位置が取れないときは、音声だけで判定する
+//   - 駅の近くにいると分かっているときは、「次は」が聞き取れなくても
+//     駅名の繰り返しで知らせる
 // 許可が無くても、音声だけで動く。
 //
 // 【知らせ方】
@@ -140,7 +142,14 @@ class StationAlarmController extends ChangeNotifier {
     try {
       final db = await StationDatabase.load();
       final plan = StationAlarmPlan.build(db, destination, line: line);
-      final listener = StationListener(plan: plan, speaking: _speaking);
+      final listener = StationListener(
+        plan: plan,
+        speaking: _speaking,
+        // GPS で駅の近くにいると分かっているときは、「次は」が聞き取れなくても
+        // 駅名の繰り返しで知らせる
+        allowRepeated: () =>
+            _proximity?.isNearByGps(DateTime.now()) ?? false,
+      );
       _listener = listener;
       _proximity = StationProximity(plan);
       _eventSub = listener.events.listen(_onVoiceEvent);

@@ -54,6 +54,16 @@ void main() {
       expect(p.allowsVoice(t0), isTrue);
     });
 
+    test('駅の近くにいると GPS で分かっているか', () {
+      expect(p.isNearByGps(t0), isFalse); // 位置が分からない
+      move('高尾');
+      expect(p.isNearByGps(t0), isFalse); // 遠い
+      move('東京');
+      expect(p.isNearByGps(t0), isTrue);
+      // 古くなったら（地下など）分からない扱い
+      expect(p.isNearByGps(t0.add(const Duration(minutes: 2))), isFalse);
+    });
+
     test('位置が古くなったら（地下など）受け入れる', () {
       move('高尾');
       expect(p.allowsVoice(t0.add(const Duration(minutes: 2))), isTrue);
