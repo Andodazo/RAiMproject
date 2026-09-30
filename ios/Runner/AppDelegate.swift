@@ -1,6 +1,7 @@
 import Flutter
 import Darwin
 import UIKit
+import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -8,6 +9,10 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // アプリを開いている最中にも、駅アラームの通知をバナーで出すため。
+    // これが無いと、iOS はアプリが前面にいるときの通知を表示しない。
+    // FlutterAppDelegate が受け取り、flutter_local_notifications へ渡す。
+    UNUserNotificationCenter.current().delegate = self
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
