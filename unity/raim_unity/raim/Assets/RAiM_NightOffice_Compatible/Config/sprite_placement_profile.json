@@ -1,0 +1,266 @@
+{
+  "alphaThreshold": 30,
+  "targetHeightMeters": 1.65,
+  "sprites": [
+    {
+      "spriteName": "amused",
+      "visibleRect": {
+        "x": 0.16069057104913678,
+        "y": 0.16802297750119674,
+        "width": 0.6719787516600265,
+        "height": 0.8157012924844423
+      },
+      "pixelsPerUnit": 261.0,
+      "imageSize": [
+        753,
+        2089
+      ],
+      "alphaBoxPixelsTopLeft": [
+        121,
+        34,
+        627,
+        1738
+      ]
+    },
+    {
+      "spriteName": "angry-removebg-preview",
+      "visibleRect": {
+        "x": 0.05185185185185185,
+        "y": 0.0914419695193435,
+        "width": 0.8814814814814815,
+        "height": 0.9062133645955451
+      },
+      "pixelsPerUnit": 100.0,
+      "imageSize": [
+        270,
+        853
+      ],
+      "alphaBoxPixelsTopLeft": [
+        14,
+        2,
+        252,
+        775
+      ]
+    },
+    {
+      "spriteName": "caring",
+      "visibleRect": {
+        "x": 0.16600265604249667,
+        "y": 0.15222594542843465,
+        "width": 0.6799468791500664,
+        "height": 0.8353279080899952
+      },
+      "pixelsPerUnit": 261.0,
+      "imageSize": [
+        753,
+        2089
+      ],
+      "alphaBoxPixelsTopLeft": [
+        125,
+        26,
+        637,
+        1771
+      ]
+    },
+    {
+      "spriteName": "curious",
+      "visibleRect": {
+        "x": 0.16069057104913678,
+        "y": 0.10483484921014839,
+        "width": 0.6958831341301461,
+        "height": 0.8755385351842987
+      },
+      "pixelsPerUnit": 261.0,
+      "imageSize": [
+        753,
+        2089
+      ],
+      "alphaBoxPixelsTopLeft": [
+        121,
+        41,
+        645,
+        1870
+      ]
+    },
+    {
+      "spriteName": "default-removebg-preview",
+      "visibleRect": {
+        "x": 0.10897435897435898,
+        "y": 0.09136420525657071,
+        "width": 0.7147435897435898,
+        "height": 0.9061326658322904
+      },
+      "pixelsPerUnit": 100.0,
+      "imageSize": [
+        312,
+        799
+      ],
+      "alphaBoxPixelsTopLeft": [
+        34,
+        2,
+        257,
+        726
+      ]
+    },
+    {
+      "spriteName": "embarrassed",
+      "visibleRect": {
+        "x": 0.16733067729083664,
+        "y": 0.14743896601244616,
+        "width": 0.6626826029216467,
+        "height": 0.8338918142651986
+      },
+      "pixelsPerUnit": 261.0,
+      "imageSize": [
+        753,
+        2089
+      ],
+      "alphaBoxPixelsTopLeft": [
+        126,
+        39,
+        625,
+        1781
+      ]
+    },
+    {
+      "spriteName": "excited",
+      "visibleRect": {
+        "x": 0.14475431606905712,
+        "y": 0.14073719483006222,
+        "width": 0.7158034528552457,
+        "height": 0.8516036381043561
+      },
+      "pixelsPerUnit": 261.0,
+      "imageSize": [
+        753,
+        2089
+      ],
+      "alphaBoxPixelsTopLeft": [
+        109,
+        16,
+        648,
+        1795
+      ]
+    },
+    {
+      "spriteName": "happy-removebg-preview",
+      "visibleRect": {
+        "x": 0.07526881720430108,
+        "y": 0.0914419695193435,
+        "width": 0.8530465949820788,
+        "height": 0.9062133645955451
+      },
+      "pixelsPerUnit": 100.0,
+      "imageSize": [
+        279,
+        853
+      ],
+      "alphaBoxPixelsTopLeft": [
+        21,
+        2,
+        259,
+        775
+      ]
+    },
+    {
+      "spriteName": "investigate",
+      "visibleRect": {
+        "x": 0.3368756641870351,
+        "y": 0.09988038277511961,
+        "width": 0.3517534537725824,
+        "height": 0.8833732057416268
+      },
+      "pixelsPerUnit": 210.0,
+      "imageSize": [
+        941,
+        1672
+      ],
+      "alphaBoxPixelsTopLeft": [
+        317,
+        28,
+        648,
+        1505
+      ]
+    },
+    {
+      "spriteName": "playful",
+      "visibleRect": {
+        "x": 0.13811420982735723,
+        "y": 0.14552417424605074,
+        "width": 0.6985391766268261,
+        "height": 0.8319770224988032
+      },
+      "pixelsPerUnit": 261.0,
+      "imageSize": [
+        753,
+        2089
+      ],
+      "alphaBoxPixelsTopLeft": [
+        104,
+        47,
+        630,
+        1785
+      ]
+    },
+    {
+      "spriteName": "sad-removebg-preview",
+      "visibleRect": {
+        "x": 0.052830188679245285,
+        "y": 0.08995327102803738,
+        "width": 0.8981132075471698,
+        "height": 0.9042056074766355
+      },
+      "pixelsPerUnit": 100.0,
+      "imageSize": [
+        265,
+        856
+      ],
+      "alphaBoxPixelsTopLeft": [
+        14,
+        5,
+        252,
+        779
+      ]
+    },
+    {
+      "spriteName": "surprise-removebg-preview",
+      "visibleRect": {
+        "x": 0.04814814814814815,
+        "y": 0.0914419695193435,
+        "width": 0.8777777777777778,
+        "height": 0.9062133645955451
+      },
+      "pixelsPerUnit": 100.0,
+      "imageSize": [
+        270,
+        853
+      ],
+      "alphaBoxPixelsTopLeft": [
+        13,
+        2,
+        250,
+        775
+      ]
+    },
+    {
+      "spriteName": "thoughtful",
+      "visibleRect": {
+        "x": 0.24435590969455512,
+        "y": 0.11153662039253232,
+        "width": 0.5577689243027888,
+        "height": 0.8798468166586884
+      },
+      "pixelsPerUnit": 261.0,
+      "imageSize": [
+        753,
+        2089
+      ],
+      "alphaBoxPixelsTopLeft": [
+        184,
+        18,
+        604,
+        1856
+      ]
+    }
+  ]
+}

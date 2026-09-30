@@ -1,3 +1,4 @@
+#if UNITY_STANDALONE_WIN
 using System;
 using System.Collections;
 using System.Runtime.InteropServices;
@@ -20,7 +21,7 @@ using Kirurobo;
 /// 旧来の UnityEngine.Input が反応しないため。
 /// クリックスルー中はウィンドウがフォーカスを取れないという事情もある。
 ///
-/// Android / iOS では何も起きない。
+/// Windows ビルド対象でのみコンパイルする。Android / iOS ではクラス自体を含めない。
 /// </summary>
 public class WindowsOverlayController : MonoBehaviour
 {
@@ -103,6 +104,7 @@ public class WindowsOverlayController : MonoBehaviour
     [Tooltip("起動時にウィンドウサイズ・座標・キャラの占有範囲をログに出す")]
     [SerializeField] private bool logWindowInfoOnStart = true;
 
+
     private bool isWindowsOverlay = false;
 
     // 毎フレーム参照するのでキャッシュする。
@@ -132,7 +134,6 @@ public class WindowsOverlayController : MonoBehaviour
     // Win32
     // ------------------------------------------------------------
 
-#if UNITY_STANDALONE_WIN
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
 
@@ -357,7 +358,6 @@ public class WindowsOverlayController : MonoBehaviour
         if (vKey == 0) return false;
         return (GetAsyncKeyState(vKey) & 0x8000) != 0;
     }
-#endif
 
     private bool quitComboWasDown = false;
     private bool leftButtonWasDown = false;
@@ -383,7 +383,6 @@ public class WindowsOverlayController : MonoBehaviour
 
     private void Awake()
     {
-#if UNITY_STANDALONE_WIN
         isWindowsOverlay = true;
 
         // 背景など、透過の邪魔になるものを先に消す。
@@ -440,9 +439,6 @@ public class WindowsOverlayController : MonoBehaviour
 
         // 最小化されても Flutter からのメッセージを処理し続ける
         Application.runInBackground = true;
-#else
-        isWindowsOverlay = false;
-#endif
     }
 
     /// <summary>
@@ -545,7 +541,6 @@ public class WindowsOverlayController : MonoBehaviour
     {
         if (!enableQuitShortcut) return;
 
-#if UNITY_STANDALONE_WIN
         // GetAsyncKeyState はフォーカスと無関係にキー状態を返す。
         // つまり素通しだと事実上のグローバルホットキーになり、
         // Firefox やエディタで Ctrl+Q（＝多くのアプリの終了）を押しただけで
@@ -569,7 +564,6 @@ public class WindowsOverlayController : MonoBehaviour
             StartCoroutine(QuitRoutine());
         }
         quitComboWasDown = down;
-#endif
     }
 
     /// <summary>
@@ -612,7 +606,6 @@ public class WindowsOverlayController : MonoBehaviour
     {
         if (!notifyClick) return;
 
-#if UNITY_STANDALONE_WIN
         bool down = IsKeyDown(VK_LBUTTON);
 
         // 押した瞬間
@@ -641,10 +634,8 @@ public class WindowsOverlayController : MonoBehaviour
         }
 
         leftButtonWasDown = down;
-#endif
     }
 
-#if UNITY_STANDALONE_WIN
     /// <summary>
     /// カーソルがライムのスプライト範囲にあるか。
     ///
@@ -705,7 +696,6 @@ public class WindowsOverlayController : MonoBehaviour
         if (code == KeyCode.Escape) return 0x1B;
         return 0;
     }
-#endif
 
     // ============================================================
     // 画面外へのはみ出し防止
@@ -994,3 +984,4 @@ public class WindowsOverlayController : MonoBehaviour
         SaveWindowPosition();
     }
 }
+#endif

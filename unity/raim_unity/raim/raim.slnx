@@ -1,4 +1,6 @@
 ﻿<Solution>
-  <Project Path="Assembly-CSharp-Editor.csproj" />
   <Project Path="Assembly-CSharp.csproj" />
+  <Project Path="Kirurobo.UniWindowController.csproj" />
+  <Project Path="Assembly-CSharp-Editor.csproj" />
+  <Project Path="Kirurobo.UniWindowController.Editor.csproj" />
 </Solution>
