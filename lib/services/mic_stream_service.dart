@@ -128,6 +128,14 @@ class MicStreamService {
         // 「喋っている間は検知に渡さない」ことで対処する。
         echoCancel: true,
         noiseSuppress: true,
+        // 他の音（ライムの声・駅アラームの声・音楽）が鳴っても録音を止めない。
+        //
+        // record の既定（pause）は、録音のために音声フォーカスを取り、
+        // 他のアプリや自分のプレーヤーにフォーカスを取られると録音を一時停止する。
+        // 再開は手動なので、Android ではライムが一度喋るとそれ以降マイクの音が
+        // 一切届かなくなっていた（「ねえライム」も聞き取りも反応しない）。
+        // ライムが喋っている間の扱いは、こちらで suspend/mute して決めている。
+        audioInterruption: AudioInterruptionMode.none,
         // iOS: 録音中もライムの声をスピーカーから鳴らし、音楽アプリの再生も
         // 止めない（電車で音楽を聴きながら駅アラームを使えるように）
         iosConfig: const IosRecordConfig(
