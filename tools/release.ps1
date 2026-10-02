@@ -164,7 +164,8 @@ if (-not $SkipWindows) {
   $unityStage = Join-Path $stage 'unity'
   New-Item -ItemType Directory $unityStage | Out-Null
   Get-ChildItem $unityBuild |
-    Where-Object { $_.Name -notlike '*_DoNotShip' } |   # Burst のデバッグ情報など、配らなくていいもの
+    # 配らなくていいもの: Burst のデバッグ情報（*_DoNotShip）と IL2CPP のバックアップ（*_ButDontShipItWithYourGame、1GB 超）
+    Where-Object { $_.Name -notlike '*_DoNotShip' -and $_.Name -notlike '*_ButDontShipItWithYourGame' } |
     ForEach-Object { Copy-Item $_.FullName $unityStage -Recurse }
 
   # VC++ ランタイム。デモ用 PC に入っていないと Flutter の exe が起動しない
