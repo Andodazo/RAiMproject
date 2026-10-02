@@ -3,192 +3,306 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RAiM ダウンロード</title>
-<meta name="description" content="AI コンパニオン「ライム」のダウンロードページ">
+<title>RAiM</title>
+<meta name="description" content="RAiM（Real Ai Mate）の Windows / Android 版">
 <meta name="robots" content="noindex">
-<link rel="icon" href="logo.png">
+<meta name="theme-color" content="#0f1622">
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+<!-- LINE などに URL を貼ったときのプレビュー。画像は絶対 URL でないと出ない -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://andodazo.github.io/RAiMproject/">
+<meta property="og:title" content="RAiM">
+<meta property="og:description" content="Real Ai Mate の Windows / Android 版">
+<meta property="og:image" content="https://andodazo.github.io/RAiMproject/ogp.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap" rel="stylesheet">
+
 <style>
   /*
-   * RAiM の配布ページ。GitHub Pages（main ブランチの docs/）で公開する。
+   * RAiM の配布ページ（班員向け）。GitHub Pages（main ブランチの docs/）で公開する。
    *
    * ダウンロードのリンクは「最新のリリース」の固定ファイル名を指す。
    * tools/release.ps1 -Publish で新しい版を出せば、このページは触らなくても新しい版になる。
+   *
+   * 見た目はアプリの画面に合わせている: 夜のオフィス（assets/images/background.png）に
+   * ライムが立つ構図を一番上に置き、下はアプリと同じ紺の地に文字だけで並べる。
    */
   :root {
-    --bg: #0d0f0c;
-    --panel: #171a15;
-    --line: #2a3026;
-    --text: #e9eee4;
-    --muted: #9aa392;
-    --lime: #b2f56f;
-    --lime-dark: #1c2a0e;
+    --night: #0f1622;      /* オフィスの窓の夜空 */
+    --night-2: #172433;    /* アプリのボタンの紺 */
+    --ink: #e8ece4;
+    --muted: #9aa6b5;
+    --lime: #b2f56f;       /* ロゴの緑 */
+    --rule: rgba(232, 236, 228, .14);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
   body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
-    line-height: 1.7;
+    background: var(--night);
+    color: var(--ink);
+    font-family: "Zen Kaku Gothic New", system-ui, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+    font-size: 16px;
+    line-height: 1.8;
   }
-  .wrap {
-    max-width: 760px;
+  a { color: var(--lime); }
+  a:focus-visible, .get:focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }
+
+  /* ---------- 一番上: 夜のオフィスに立つライム ---------- */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    min-height: 560px;
+    height: 78vh;
+    max-height: 760px;
+    background: var(--night) url("office.jpg") 70% 40% / cover no-repeat;
+  }
+  /* 左側を暗くして文字を読めるようにする。下は本文の紺へつなぐ */
+  .hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(90deg, rgba(10, 14, 22, .92) 0%, rgba(10, 14, 22, .6) 45%, rgba(10, 14, 22, .15) 75%),
+      linear-gradient(180deg, transparent 70%, var(--night) 100%);
+  }
+  /* ライムの足元を本文の紺に溶かす（ライムより手前に重ねる） */
+  .hero::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 18%;
+    background: linear-gradient(180deg, rgba(15, 22, 34, 0) 0%, var(--night) 100%);
+    pointer-events: none;
+  }
+  .hero .raim {
+    position: absolute;
+    right: max(-60px, calc(50% - 640px));
+    bottom: 0;
+    height: 96%;
+    width: auto;
+    max-width: none;
+  }
+  .hero .title {
+    position: relative;
+    max-width: 1080px;
     margin: 0 auto;
-    padding: 40px 16px 64px;
+    padding: 0 40px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
-  header {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: end;
-    gap: 16px;
+  .hero h1 { margin: 0; line-height: 0; }
+  .hero h1 img { width: min(440px, 62vw); height: auto; }
+  .hero .mate {
+    margin: 22px 0 0 6px;
+    font-family: "Outfit", sans-serif;
+    font-size: clamp(24px, 3.2vw, 38px);
+    letter-spacing: .01em;
+    line-height: 1.2;
   }
-  .logo { width: 100%; max-width: 360px; height: auto; display: block; }
-  .tagline { margin: 12px 0 0; color: var(--muted); }
-  .chara { width: 110px; height: auto; display: block; }
-  @media (max-width: 480px) { .chara { width: 76px; } }
 
-  .main {
-    margin-top: 28px;
-    padding: 24px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 14px;
+  /* スマホ: 文字を上に、ライムは下から大きめに */
+  @media (max-width: 640px) {
+    .hero { height: 86vh; min-height: 600px; background-position: 78% 50%; }
+    .hero::before {
+      background:
+        linear-gradient(180deg, rgba(10, 14, 22, .9) 0%, rgba(10, 14, 22, .35) 40%, transparent 60%),
+        linear-gradient(180deg, transparent 75%, var(--night) 100%);
+    }
+    .hero .title { justify-content: flex-start; padding: 56px 20px 0; }
+    .hero .raim { height: 66%; right: 50%; transform: translateX(50%); }
   }
-  .main h2 { margin: 0 0 4px; font-size: 1.15rem; }
-  .ver { margin: 0 0 18px; color: var(--muted); font-size: .9rem; min-height: 1.5em; }
 
-  .btn {
+  /* ---------- 本文 ---------- */
+  main {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 36px 40px 72px;
+  }
+  @media (max-width: 640px) { main { padding: 20px 20px 56px; } }
+
+  .download {
+    display: flex;
+    gap: 48px;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .get {
     display: inline-block;
-    padding: 14px 22px;
-    border-radius: 10px;
+    padding: 16px 30px;
+    border-radius: 999px;
     background: var(--lime);
-    color: #10140c;
+    color: #12200a;
     font-weight: 700;
+    font-size: 1.05rem;
     text-decoration: none;
   }
-  .btn:hover { filter: brightness(1.08); }
-  .btn.sub {
-    background: transparent;
-    color: var(--lime);
-    border: 1px solid var(--lime);
-    padding: 10px 16px;
-    font-weight: 600;
-  }
-  .btn[aria-disabled="true"] { opacity: .4; pointer-events: none; }
+  .get:hover { background: #c3fa86; }
+  .get[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+  .ver { margin: 14px 0 0; color: var(--muted); font-size: .9rem; min-height: 1.6em; }
+  .alt { margin: 4px 0 0; font-size: .95rem; }
+  .alt a[aria-disabled="true"] { color: var(--muted); pointer-events: none; }
 
-  .note {
-    margin: 16px 0 0;
-    padding: 12px 14px;
-    background: var(--lime-dark);
-    border-radius: 8px;
-    font-size: .92rem;
-  }
+  /* PC で開いたときだけ出す QR */
+  .qr { display: none; align-items: center; gap: 16px; color: var(--muted); font-size: .88rem; line-height: 1.6; }
+  .qr img { width: 112px; height: 112px; border-radius: 6px; background: #fff; }
+  .pc .qr { display: flex; }
 
-  h3 { margin: 36px 0 10px; font-size: 1rem; }
-  .others { display: flex; flex-wrap: wrap; gap: 10px; }
-
-  details {
-    margin-top: 10px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--panel);
+  /* 入れ方などは折りたたみ。見出しの行を押すと開く */
+  .fold { border-bottom: 1px solid var(--rule); }
+  .fold:first-of-type { margin-top: 64px; border-top: 1px solid var(--rule); }
+  .fold summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 2px;
   }
-  summary { cursor: pointer; padding: 12px 16px; font-weight: 600; }
-  details > div { padding: 0 16px 14px; }
-  ol { margin: 0; padding-left: 1.3em; }
-  li + li { margin-top: 4px; }
+  .fold summary::-webkit-details-marker { display: none; }
+  .fold summary:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+  .fold summary:hover h2 { color: #fff; }
+  /* 開閉の印（下向きの山形。開くと上向き） */
+  .fold summary::after {
+    content: "";
+    width: 9px;
+    height: 9px;
+    margin-right: 6px;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: translateY(-3px) rotate(45deg);
+    transition: transform .15s;
+  }
+  .fold[open] summary::after { transform: translateY(2px) rotate(-135deg); }
+  @media (prefers-reduced-motion: reduce) { .fold summary::after { transition: none; } }
+  .fold .body { padding: 0 0 28px; }
+  .fold .body > h3:first-child, .fold .steps h3 { margin-top: 4px; }
+  h2 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+  }
+  .steps {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+  }
+  @media (max-width: 760px) { .steps { grid-template-columns: 1fr; gap: 8px; } }
+  h3 { margin: 28px 0 8px; font-size: 1.05rem; font-weight: 700; }
+  ol { margin: 0; padding-left: 1.4em; }
+  li + li { margin-top: 6px; }
+  li::marker { color: var(--lime); }
+  .aside { margin: 12px 0 0; color: var(--muted); font-size: .9rem; }
+  p { margin: 0; max-width: 40em; }
+  .steps p + p { margin-top: 8px; }
   code {
-    background: #0a0c09;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 0 4px;
-    font-size: .9em;
+    font-family: inherit;
+    font-weight: 700;
+    color: var(--ink);
   }
-  footer { margin-top: 48px; color: var(--muted); font-size: .85rem; }
-  a { color: var(--lime); }
+
+  footer {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 28px 40px 48px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    color: var(--muted);
+    font-size: .88rem;
+  }
+  footer img { width: 112px; height: auto; }
+  @media (max-width: 640px) { footer { padding: 24px 20px 40px; flex-direction: column; align-items: flex-start; gap: 12px; } }
 </style>
 </head>
 <body>
-<div class="wrap">
 
-  <header>
+<header class="hero">
+  <img class="raim" src="raim.webp" alt="ライム">
+  <div class="title">
+    <h1><img src="logo.png" alt="RAiM"></h1>
+    <p class="mate">Real Ai Mate</p>
+  </div>
+</header>
+
+<main>
+  <section class="download" aria-label="ダウンロード">
     <div>
-      <img class="logo" src="logo.png" alt="RAiM">
-      <p class="tagline">AI コンパニオン「ライム」</p>
+      <a class="get" id="get" href="#">ダウンロード</a>
+      <p class="ver" id="ver"></p>
+      <p class="alt" id="alt"></p>
     </div>
-    <img class="chara" src="raim.png" alt="">
-  </header>
-
-  <section class="main" id="main">
-    <h2 id="mainTitle">ダウンロード</h2>
-    <p class="ver" id="ver">最新の版を確認しています…</p>
-    <div id="mainBody"></div>
+    <div class="qr">
+      <img src="qr.svg" alt="このページの QR コード">
+      <span>スマホで入れるときは<br>カメラで読み取って<br>このページを開いてください</span>
+    </div>
   </section>
 
-  <h3>ほかの端末</h3>
-  <div class="others" id="others"></div>
-
-  <h3>インストールのしかた</h3>
-
-  <details id="howAndroid">
-    <summary>Android</summary>
-    <div>
+  <details class="fold" id="foldInstall">
+    <summary><h2>入れ方</h2></summary>
+    <div class="body">
+  <div class="steps" id="steps">
+    <section id="howAndroid">
+      <h3>Android</h3>
       <ol>
-        <li>「Android 版をダウンロード」を押して APK を保存します。</li>
-        <li>ダウンロードした <code>RAiM-android.apk</code> を開きます。</li>
-        <li>「提供元不明のアプリ」の確認が出たら、ブラウザに許可を出してインストールします。</li>
-        <li>初回の起動時に、マイクと位置情報の許可を求められます。駅アラームを使うなら位置情報は「常に許可」にしてください。</li>
+        <li>ダウンロードした <code>RAiM-android.apk</code> を開く</li>
+        <li>「提供元不明のアプリ」の確認が出たら、ブラウザに許可を出してインストール</li>
+        <li>初回起動でマイクと位置情報の許可を聞かれる。駅アラームを使うなら位置情報は「常に許可」</li>
       </ol>
-      <p class="note">
-        開発中に PC から直接入れた版が残っていると、インストールに失敗することがあります。
-        その場合は古い RAiM を一度アンインストールしてから入れ直してください（最初の1回だけです）。
-      </p>
-    </div>
-  </details>
+      <p class="aside">サイズが大きいので Wi-Fi のあるところで入れてください。<br>
+      <code>flutter run</code> で入れた RAiM が残っているとインストールに失敗します。先にアンインストールしてください（最初の1回だけ）。</p>
+    </section>
 
-  <details id="howWindows">
-    <summary>Windows</summary>
-    <div>
+    <section id="howWindows">
+      <h3>Windows</h3>
       <ol>
-        <li>「Windows 版をダウンロード」を押して zip を保存します。</li>
-        <li>zip を右クリック →「すべて展開」で好きな場所に展開します。</li>
-        <li>展開した <code>RAiM</code> フォルダの <code>RAiM.exe</code> を起動します。</li>
-        <li>「Windows によって PC が保護されました」と出たら、「詳細情報」→「実行」を押します。</li>
+        <li>zip を右クリック →「すべて展開」</li>
+        <li>展開した <code>RAiM</code> フォルダの <code>RAiM.exe</code> を起動</li>
+        <li>「Windows によって PC が保護されました」が出たら「詳細情報」→「実行」</li>
       </ol>
-      <p class="note">
-        <code>unity</code> フォルダの中身はライム本体です。<code>RAiM.exe</code> と同じ場所に置いたままにしてください。
-      </p>
+      <p class="aside"><code>unity</code> フォルダはライム本体です。<code>RAiM.exe</code> と同じ場所に置いたままにしてください。</p>
+    </section>
+  </div>
     </div>
   </details>
 
-  <details id="howUpdate">
-    <summary>新しい版が出たとき</summary>
-    <div>
-      <ol>
-        <li>このページから同じようにダウンロードします。</li>
-        <li>Android：そのままインストールすると上書きされます。ログイン状態や設定は残ります。</li>
-        <li>Windows：RAiM を終了してから、古い <code>RAiM</code> フォルダを消して、新しい zip を展開します。ログイン状態や設定は残ります。</li>
-      </ol>
+  <details class="fold">
+    <summary><h2>新しい版が出たら</h2></summary>
+    <div class="body">
+  <div class="steps" id="updates">
+    <section>
+      <h3>Android</h3>
+      <p>同じボタンからダウンロードして、そのままインストールすれば上書きされます。ログインと設定はそのまま残ります。</p>
+    </section>
+    <section id="updateWindows">
+      <h3>Windows</h3>
+      <p>RAiM を終了して、古い <code>RAiM</code> フォルダを新しい zip の中身に入れ替えてください。ログインと設定はそのまま残ります。</p>
+    </section>
+  </div>
     </div>
   </details>
 
-  <details id="howIos">
-    <summary>iPhone / iPad</summary>
-    <div>
-      <p style="margin:0">
-        iPhone 版はこのページからは配布していません。
-        App Store の外でアプリを配るには Apple の有料の開発者登録が必要なためです。
-        試したい場合は開発メンバーに声をかけてください。
-      </p>
+  <details class="fold">
+    <summary><h2>iPhone で使いたいとき</h2></summary>
+    <div class="body">
+      <p>このページからは入れられません（Apple の有料登録が無いため）。Mac から直接入れるので、安藤に声をかけてください。</p>
     </div>
   </details>
+</main>
 
-  <footer>
-    日本工学院八王子専門学校 ITスペシャリスト科 卒業研究 ／
-    <a href="https://github.com/Andodazo/RAiMproject/releases" id="allReleases">過去の版</a>
-  </footer>
-
-</div>
+<footer>
+  <img src="sign.png" alt="Sign">
+  <span>チーム Sign ／ 日本工学院八王子専門学校 ITスペシャリスト科 卒業研究</span>
+</footer>
 
 <script>
   const REPO = 'Andodazo/RAiMproject';
@@ -196,8 +310,8 @@
 
   // tools/release.ps1 が付けるファイル名と合わせる
   const PLATFORMS = {
-    android: { label: 'Android 版をダウンロード', file: 'RAiM-android.apk', how: 'howAndroid' },
-    windows: { label: 'Windows 版をダウンロード', file: 'RAiM-windows.zip', how: 'howWindows' },
+    android: { name: 'Android', file: 'RAiM-android.apk' },
+    windows: { name: 'Windows', file: 'RAiM-windows.zip' },
   };
 
   function detect() {
@@ -205,44 +319,32 @@
     if (/android/i.test(ua)) return 'android';
     // iPadOS は Mac と名乗るので、タッチ対応かどうかで見分ける
     if (/iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
-    if (/windows/i.test(ua)) return 'windows';
-    return 'other';
-  }
-
-  function button(key, cls) {
-    const p = PLATFORMS[key];
-    const a = document.createElement('a');
-    a.className = cls;
-    a.href = DOWNLOAD(p.file);
-    a.textContent = p.label;
-    a.dataset.file = p.file;
-    return a;
-  }
-
-  function mb(bytes) {
-    return (bytes / 1024 / 1024).toFixed(0) + 'MB';
+    return 'pc';
   }
 
   const device = detect();
-  const mainBody = document.getElementById('mainBody');
-  const others = document.getElementById('others');
+  // 開いた端末の版を大きく、もう片方を小さく出す。iPhone や Mac は Android を大きく出す
+  const main = device === 'pc' && /windows/i.test(navigator.userAgent) ? 'windows' : 'android';
+  const other = main === 'android' ? 'windows' : 'android';
+  if (device === 'pc') document.body.classList.add('pc');
 
-  if (PLATFORMS[device]) {
-    document.getElementById('mainTitle').textContent =
-      device === 'android' ? 'この Android 端末にインストール' : 'この PC にインストール';
-    mainBody.appendChild(button(device, 'btn'));
-    document.getElementById(PLATFORMS[device].how).open = true;
-  } else if (device === 'ios') {
-    document.getElementById('mainTitle').textContent = 'iPhone / iPad をお使いの方へ';
-    mainBody.innerHTML = '<p style="margin:0">iPhone 版はこのページからは配布していません。下の「iPhone / iPad」を見てください。</p>';
-    document.getElementById('howIos').open = true;
-  } else {
-    mainBody.innerHTML = '<p style="margin:0">この端末向けの版はありません。下から選んでください。</p>';
+  // 入れ方も、開いた端末のほうを先に
+  if (main === 'windows') {
+    document.getElementById('steps').prepend(document.getElementById('howWindows'));
+    document.getElementById('updates').prepend(document.getElementById('updateWindows'));
   }
 
-  for (const key of Object.keys(PLATFORMS)) {
-    if (key !== device) others.appendChild(button(key, 'btn sub'));
-  }
+  const get = document.getElementById('get');
+  get.href = DOWNLOAD(PLATFORMS[main].file);
+  get.textContent = `${PLATFORMS[main].name} 版をダウンロード`;
+
+  const alt = document.getElementById('alt');
+  const altLink = document.createElement('a');
+  altLink.href = DOWNLOAD(PLATFORMS[other].file);
+  altLink.textContent = `${PLATFORMS[other].name} 版はこちら`;
+  alt.append(altLink);
+
+  const mb = (bytes) => `${Math.round(bytes / 1024 / 1024)}MB`;
 
   // 版の番号・日付・サイズを出す。取れなくてもダウンロードのリンクは動く
   const ver = document.getElementById('ver');
@@ -253,27 +355,27 @@
       return r.json();
     })
     .then((rel) => {
-      const date = new Date(rel.published_at).toLocaleDateString('ja-JP');
-      ver.textContent = `最新: ${rel.tag_name}（${date}）`;
+      const d = new Date(rel.published_at);
       const sizes = Object.fromEntries((rel.assets || []).map((a) => [a.name, a.size]));
-      document.querySelectorAll('a[data-file]').forEach((a) => {
-        const size = sizes[a.dataset.file];
-        if (size) {
-          a.textContent += `（${mb(size)}）`;
-        } else {
-          // 最新の版にそのファイルが無い（片方だけ出した版など）
-          a.setAttribute('aria-disabled', 'true');
-          a.textContent += '（この版にはありません）';
-        }
-      });
+      const mainSize = sizes[PLATFORMS[main].file];
+      ver.textContent = `${rel.tag_name}（${d.getMonth() + 1}月${d.getDate()}日 更新）`
+        + (mainSize ? `　${mb(mainSize)}` : '');
+      if (!mainSize) {
+        get.setAttribute('aria-disabled', 'true');
+        ver.textContent += '　この版には入っていません';
+      }
+      const otherSize = sizes[PLATFORMS[other].file];
+      if (otherSize) {
+        altLink.textContent += `（${mb(otherSize)}）`;
+      } else {
+        altLink.setAttribute('aria-disabled', 'true');
+      }
     })
     .catch((e) => {
       if (e.message === 'none') {
-        ver.textContent = 'まだ公開されている版がありません。';
-        document.querySelectorAll('a[data-file]').forEach((a) => a.setAttribute('aria-disabled', 'true'));
-      } else {
-        // API の回数制限などで取れなかっただけ。リンクはそのまま使える
-        ver.textContent = '';
+        ver.textContent = 'まだ公開されている版がありません';
+        get.setAttribute('aria-disabled', 'true');
+        altLink.setAttribute('aria-disabled', 'true');
       }
     });
 </script>
