@@ -41,6 +41,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
   static const _kWakePhraseMode = 'voice.wakePhraseMode';
   static const _kMicDeviceId = 'voice.micDeviceId';
   static const _kSttEnabled = 'voice.sttEnabled';
+  static const _kWeatherUsesLocation = 'weather.usesLocation';
 
   SharedPreferences? _prefs;
 
@@ -50,6 +51,14 @@ class VoiceSettingsProvider extends ChangeNotifier {
   String? _micDeviceId;
   bool _sttEnabled = true;
   VoiceSendMode _sendMode = VoiceSendMode.delayed;
+  bool _weatherUsesLocation = false;
+
+  /// 場所を言わずに天気を聞いたとき、今いるあたり（約10km）の天気を返すか。
+  ///
+  /// ON の間は送信のたびに丸めた現在地を送るので、既定は OFF。
+  /// ON にするときに位置情報の許可を求める（画面側）。
+  /// 音声の設定ではないが、設定の置き場所がここしか無いので一緒に持つ。
+  bool get weatherUsesLocation => _weatherUsesLocation;
 
   /// 常時待機（ウェイクワード検知）を使うか。
   bool get wakeWordEnabled => _wakeWordEnabled;
@@ -99,6 +108,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
     _manualMicEnabled = prefs.getBool(_kManualMicEnabled) ?? true;
     _micDeviceId = prefs.getString(_kMicDeviceId);
     _sttEnabled = prefs.getBool(_kSttEnabled) ?? true;
+    _weatherUsesLocation = prefs.getBool(_kWeatherUsesLocation) ?? false;
 
     final sendName = prefs.getString(_kSendMode);
     _sendMode = VoiceSendMode.values.firstWhere(
@@ -119,6 +129,14 @@ class VoiceSettingsProvider extends ChangeNotifier {
       'mic=${_micDeviceId == null ? "既定" : "指定"}',
     );
     notifyListeners();
+  }
+
+  Future<void> setWeatherUsesLocation(bool value) async {
+    if (_weatherUsesLocation == value) return;
+    _weatherUsesLocation = value;
+    notifyListeners();
+    await _prefs?.setBool(_kWeatherUsesLocation, value);
+    RaimLog.i('[Settings] 天気に現在地を使う: ${value ? "ON" : "OFF"}');
   }
 
   Future<void> setWakeWordEnabled(bool value) async {

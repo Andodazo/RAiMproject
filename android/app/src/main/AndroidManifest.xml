@@ -18,7 +18,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <application
-        android:label="raim_prototype"
+        android:label="RAiM"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:name="${applicationName}"

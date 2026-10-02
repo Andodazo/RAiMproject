@@ -105,6 +105,12 @@ class RaimServerService implements LLMService {
   /// main.dart で設定する。
   List<String> features = const [];
 
+  /// 送信に付ける現在地（約10kmに丸めたもの）を返す。使わないなら null を返す。
+  ///
+  /// 場所を言わずに天気を聞かれたときに、サーバーがこの位置の天気を返す。
+  /// main.dart で設定する（設定「天気に現在地を使う」と位置情報の許可を見る）。
+  Future<Map<String, double>?> Function()? locationGetter;
+
   RaimServerService({
     //required this.serverUrl,
     required String serverUrl,
@@ -540,6 +546,13 @@ class RaimServerService implements LLMService {
     // このアプリで使える機能（駅アラームなど）
     if (features.isNotEmpty) {
       payload['features'] = features;
+    }
+    // だいたいの現在地（天気用）。取れなくても送信は続ける
+    try {
+      final location = await locationGetter?.call();
+      if (location != null) payload['location'] = location;
+    } catch (_) {
+      // 位置が無ければ、ライムが「どこの天気？」と聞く
     }
     // 送信後に返ってくる複数メッセージを順番に受け取るためのIterator
     final iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);

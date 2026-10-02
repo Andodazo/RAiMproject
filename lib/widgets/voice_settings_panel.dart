@@ -6,6 +6,7 @@
 //   呼び方              … 「ねえライム」だけ / 「ライム」でも
 //   呼んだあと話しかける … Transcribe で聞き取って送るか（既定 ON）
 //   マイク              … 使うマイク（既定は OS の既定）
+//   天気に現在地を使う  … 場所を言わずに天気を聞いたとき（スマホのみ、既定 OFF）
 //
 // 【プライバシーの説明を画面に書く理由】
 // 常時マイクを聞く機能なので、何がどこへ送られるかを ON にする場所で
@@ -17,6 +18,7 @@ import 'package:provider/provider.dart';
 
 import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
+import 'package:raim_prototype/services/approx_location.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/voice/delayed_send.dart';
@@ -97,6 +99,25 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
   List<MicDevice>? _devices;
   bool _loadingDevices = false;
   String? _deviceError;
+
+  /// 「天気に現在地を使う」を ON にできなかった理由。
+  String? _locationError;
+
+  /// ON にするときは位置情報の許可を求める。もらえなければ ON にしない。
+  Future<void> _setWeatherUsesLocation(
+    VoiceSettingsProvider settings,
+    bool value,
+  ) async {
+    if (value && !await ApproxLocation.requestPermission()) {
+      if (!mounted) return;
+      setState(() => _locationError =
+          '位置情報を使えません。端末の設定で位置情報と、このアプリへの許可を確認してください');
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _locationError = null);
+    await settings.setWeatherUsesLocation(value);
+  }
 
   VoiceSettingsPalette get _p => widget.palette;
   double get _fs => widget.fontScale;
@@ -247,6 +268,25 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
             _divider(),
             _label('マイク'),
             _micSelector(settings),
+          ],
+
+          // ─── 天気（音声ではないが、設定の置き場所がここしか無い） ───
+          if (ApproxLocation.isSupported) ...[
+            _divider(),
+            _switchRow(
+              title: '天気に現在地を使う',
+              subtitle: _locationError ??
+                  (settings.weatherUsesLocation
+                      ? '場所を言わずに天気を聞くと、今いるあたりの天気を答えます'
+                      : '場所を言わずに天気を聞くと、どこの天気か聞き返します'),
+              subtitleColor: _locationError != null ? _p.error : null,
+              value: settings.weatherUsesLocation,
+              onChanged: (v) => _setWeatherUsesLocation(settings, v),
+            ),
+            _note(
+              'ON の間は、送信のたびに今いる場所を約10kmの粗さにして送ります。'
+              '天気を調べるときだけ使い、保存はしません。',
+            ),
           ],
           const SizedBox(height: 8),
         ],
