@@ -128,31 +128,10 @@ class ChatScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          //キャプチャーボタン
-          ChatCaptureButton(
-            onTap: () {
-              showImageSourceSelector(context);
-            },
-          ),
+          // 音量ボタン（ライムの声を消す / 出す）。
+          // 以前ここにあった CAPTURE は入力欄の左に移した
+          const ChatVolumeButton(),
         ],
-      ),
-    );
-  }
-
-  /// 下部の丸い操作ボタン
-  /// 音量を表示する。
-  // 音量ボタンは画面右上寄りに固定する。
-  // bottom を指定するとキーボード表示時に位置がずれるため、top と right のみ使う。
-  Widget _buildVolumeButton(BuildContext context) {
-    final safeTop = MediaQuery.of(context).padding.top;
-
-    return Positioned(
-      top: safeTop + 125,
-      right: 36,
-      child: ChatVolumeButton(
-        onTap: () {
-          RaimLog.d('[ChatScreen] 音量ボタンが押されました');
-        },
       ),
     );
   }
@@ -260,11 +239,8 @@ class ChatScreen extends StatelessWidget {
           ),
         ),
 
-        // 参考UI風の上部ヘッダー
+        // 参考UI風の上部ヘッダー（メニュー・新しい会話・音量）
         _buildReferenceTopBar(context),
-
-        // 参考UI風の下部操作ボタン
-        _buildVolumeButton(context),
       ],
     );
   }
@@ -303,28 +279,13 @@ class ChatScreen extends StatelessWidget {
           ),
         ),
 
-        // CAPTUREボタン
-        Positioned(
-          bottom: 10,
-          right: 520,
-          child: ChatCaptureButton(
-            isWide: true,
-            onTap: () {
-              showImageSourceSelector(context);
-            },
-          ),
-        ),
+        // 画像の添付は入力欄の左のボタンから（ChatInput に含まれる）
 
         // 音量ボタン
         Positioned(
           top: safeTop + 30,
           right: 32,
-          child: ChatVolumeButton(
-            isWide: true,
-            onTap: () {
-              RaimLog.d('[ChatScreen] 音量ボタンが押されました');
-            },
-          ),
+          child: const ChatVolumeButton(isWide: true),
         ),
       ],
     );

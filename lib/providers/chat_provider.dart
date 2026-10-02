@@ -102,12 +102,16 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     this._unityBridge, {
     AwsImageService? imageService,
     Future<String?> Function()? idTokenGetter,
+    bool Function()? isSpeechMuted,
   })  : _imageService = imageService ?? AwsImageService(),
-        _idTokenGetter = idTokenGetter ?? (() async => null) {
+        _idTokenGetter = idTokenGetter ?? (() async => null),
+        _isSpeechMuted = isSpeechMuted ?? (() => false) {
     _audioAssembler = AudioChunkAssembler(
       onAudioReady: (audio) {
         // ユーザーが話し始めて止めた返答の、残りの音声は鳴らさない
         if (_voiceMuted) return;
+        // 音量ボタンで声を消しているときも鳴らさない（文字は出る）
+        if (_isSpeechMuted()) return;
         // キューは1つの AudioPlayer で直列に鳴らすので、
         // 前の返答の言い残しと重なることはない。後ろに並ぶだけ。
         _audioQueue.enqueueBytes(bytes: audio.bytes, format: audio.format);
@@ -140,6 +144,9 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   ///
   /// ウェイクワード検知が、ライム自身の声で反応しないように使う。
   ValueListenable<bool> get isSpeaking => _audioQueue.playing;
+
+  /// 音量ボタンで声を消しているか（VoiceSettingsProvider.speechMuted を見る）。
+  final bool Function() _isSpeechMuted;
 
   /// [stopSpeaking] で止めたか。次に送信するまで音声を鳴らさない。
   bool _voiceMuted = false;

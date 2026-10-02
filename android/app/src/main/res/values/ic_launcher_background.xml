@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- tools/make_icons.py で作ったもの。手で直さない -->
+<resources>
+    <color name="ic_launcher_background">#172433</color>
+</resources>

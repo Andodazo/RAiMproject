@@ -42,6 +42,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
   static const _kMicDeviceId = 'voice.micDeviceId';
   static const _kSttEnabled = 'voice.sttEnabled';
   static const _kWeatherUsesLocation = 'weather.usesLocation';
+  static const _kSpeechMuted = 'voice.speechMuted';
 
   SharedPreferences? _prefs;
 
@@ -52,6 +53,13 @@ class VoiceSettingsProvider extends ChangeNotifier {
   bool _sttEnabled = true;
   VoiceSendMode _sendMode = VoiceSendMode.delayed;
   bool _weatherUsesLocation = false;
+  bool _speechMuted = false;
+
+  /// ライムの声（読み上げ）を消しているか。画面右上の音量ボタンで切り替える。
+  ///
+  /// 電車の中など、声を出したくない場面のため。文字はふだんどおり出る。
+  /// 駅アラームの知らせる音は別の仕組みで鳴らしているので、これでは消えない。
+  bool get speechMuted => _speechMuted;
 
   /// 場所を言わずに天気を聞いたとき、今いるあたり（約10km）の天気を返すか。
   ///
@@ -109,6 +117,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
     _micDeviceId = prefs.getString(_kMicDeviceId);
     _sttEnabled = prefs.getBool(_kSttEnabled) ?? true;
     _weatherUsesLocation = prefs.getBool(_kWeatherUsesLocation) ?? false;
+    _speechMuted = prefs.getBool(_kSpeechMuted) ?? false;
 
     final sendName = prefs.getString(_kSendMode);
     _sendMode = VoiceSendMode.values.firstWhere(
@@ -125,7 +134,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
     RaimLog.i(
       '[VoiceSettings] 読み込み wake=$_wakeWordEnabled '
       'manual=$_manualMicEnabled mode=${_wakePhraseMode.name} '
-      'stt=$_sttEnabled send=${_sendMode.name} '
+      'stt=$_sttEnabled send=${_sendMode.name} mute=$_speechMuted '
       'mic=${_micDeviceId == null ? "既定" : "指定"}',
     );
     notifyListeners();
@@ -137,6 +146,14 @@ class VoiceSettingsProvider extends ChangeNotifier {
     notifyListeners();
     await _prefs?.setBool(_kWeatherUsesLocation, value);
     RaimLog.i('[Settings] 天気に現在地を使う: ${value ? "ON" : "OFF"}');
+  }
+
+  Future<void> setSpeechMuted(bool value) async {
+    if (_speechMuted == value) return;
+    _speechMuted = value;
+    notifyListeners();
+    await _prefs?.setBool(_kSpeechMuted, value);
+    RaimLog.i('[VoiceSettings] ライムの声: ${value ? "消す" : "出す"}');
   }
 
   Future<void> setWakeWordEnabled(bool value) async {
