@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAiM ダウンロード</title>
+<meta name="description" content="AI コンパニオン「ライム」のダウンロードページ">
+<meta name="robots" content="noindex">
+<link rel="icon" href="logo.png">
+<style>
+  /*
+   * RAiM の配布ページ。GitHub Pages（main ブランチの docs/）で公開する。
+   *
+   * ダウンロードのリンクは「最新のリリース」の固定ファイル名を指す。
+   * tools/release.ps1 -Publish で新しい版を出せば、このページは触らなくても新しい版になる。
+   */
+  :root {
+    --bg: #0d0f0c;
+    --panel: #171a15;
+    --line: #2a3026;
+    --text: #e9eee4;
+    --muted: #9aa392;
+    --lime: #b2f56f;
+    --lime-dark: #1c2a0e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+    line-height: 1.7;
+  }
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 40px 16px 64px;
+  }
+  header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 16px;
+  }
+  .logo { width: 100%; max-width: 360px; height: auto; display: block; }
+  .tagline { margin: 12px 0 0; color: var(--muted); }
+  .chara { width: 110px; height: auto; display: block; }
+  @media (max-width: 480px) { .chara { width: 76px; } }
+
+  .main {
+    margin-top: 28px;
+    padding: 24px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+  }
+  .main h2 { margin: 0 0 4px; font-size: 1.15rem; }
+  .ver { margin: 0 0 18px; color: var(--muted); font-size: .9rem; min-height: 1.5em; }
+
+  .btn {
+    display: inline-block;
+    padding: 14px 22px;
+    border-radius: 10px;
+    background: var(--lime);
+    color: #10140c;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn.sub {
+    background: transparent;
+    color: var(--lime);
+    border: 1px solid var(--lime);
+    padding: 10px 16px;
+    font-weight: 600;
+  }
+  .btn[aria-disabled="true"] { opacity: .4; pointer-events: none; }
+
+  .note {
+    margin: 16px 0 0;
+    padding: 12px 14px;
+    background: var(--lime-dark);
+    border-radius: 8px;
+    font-size: .92rem;
+  }
+
+  h3 { margin: 36px 0 10px; font-size: 1rem; }
+  .others { display: flex; flex-wrap: wrap; gap: 10px; }
+
+  details {
+    margin-top: 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+  }
+  summary { cursor: pointer; padding: 12px 16px; font-weight: 600; }
+  details > div { padding: 0 16px 14px; }
+  ol { margin: 0; padding-left: 1.3em; }
+  li + li { margin-top: 4px; }
+  code {
+    background: #0a0c09;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0 4px;
+    font-size: .9em;
+  }
+  footer { margin-top: 48px; color: var(--muted); font-size: .85rem; }
+  a { color: var(--lime); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <img class="logo" src="logo.png" alt="RAiM">
+      <p class="tagline">AI コンパニオン「ライム」</p>
+    </div>
+    <img class="chara" src="raim.png" alt="">
+  </header>
+
+  <section class="main" id="main">
+    <h2 id="mainTitle">ダウンロード</h2>
+    <p class="ver" id="ver">最新の版を確認しています…</p>
+    <div id="mainBody"></div>
+  </section>
+
+  <h3>ほかの端末</h3>
+  <div class="others" id="others"></div>
+
+  <h3>インストールのしかた</h3>
+
+  <details id="howAndroid">
+    <summary>Android</summary>
+    <div>
+      <ol>
+        <li>「Android 版をダウンロード」を押して APK を保存します。</li>
+        <li>ダウンロードした <code>RAiM-android.apk</code> を開きます。</li>
+        <li>「提供元不明のアプリ」の確認が出たら、ブラウザに許可を出してインストールします。</li>
+        <li>初回の起動時に、マイクと位置情報の許可を求められます。駅アラームを使うなら位置情報は「常に許可」にしてください。</li>
+      </ol>
+      <p class="note">
+        開発中に PC から直接入れた版が残っていると、インストールに失敗することがあります。
+        その場合は古い RAiM を一度アンインストールしてから入れ直してください（最初の1回だけです）。
+      </p>
+    </div>
+  </details>
+
+  <details id="howWindows">
+    <summary>Windows</summary>
+    <div>
+      <ol>
+        <li>「Windows 版をダウンロード」を押して zip を保存します。</li>
+        <li>zip を右クリック →「すべて展開」で好きな場所に展開します。</li>
+        <li>展開した <code>RAiM</code> フォルダの <code>RAiM.exe</code> を起動します。</li>
+        <li>「Windows によって PC が保護されました」と出たら、「詳細情報」→「実行」を押します。</li>
+      </ol>
+      <p class="note">
+        <code>unity</code> フォルダの中身はライム本体です。<code>RAiM.exe</code> と同じ場所に置いたままにしてください。
+      </p>
+    </div>
+  </details>
+
+  <details id="howUpdate">
+    <summary>新しい版が出たとき</summary>
+    <div>
+      <ol>
+        <li>このページから同じようにダウンロードします。</li>
+        <li>Android：そのままインストールすると上書きされます。ログイン状態や設定は残ります。</li>
+        <li>Windows：RAiM を終了してから、古い <code>RAiM</code> フォルダを消して、新しい zip を展開します。ログイン状態や設定は残ります。</li>
+      </ol>
+    </div>
+  </details>
+
+  <details id="howIos">
+    <summary>iPhone / iPad</summary>
+    <div>
+      <p style="margin:0">
+        iPhone 版はこのページからは配布していません。
+        App Store の外でアプリを配るには Apple の有料の開発者登録が必要なためです。
+        試したい場合は開発メンバーに声をかけてください。
+      </p>
+    </div>
+  </details>
+
+  <footer>
+    日本工学院八王子専門学校 ITスペシャリスト科 卒業研究 ／
+    <a href="https://github.com/Andodazo/RAiMproject/releases" id="allReleases">過去の版</a>
+  </footer>
+
+</div>
+
+<script>
+  const REPO = 'Andodazo/RAiMproject';
+  const DOWNLOAD = (name) => `https://github.com/${REPO}/releases/latest/download/${name}`;
+
+  // tools/release.ps1 が付けるファイル名と合わせる
+  const PLATFORMS = {
+    android: { label: 'Android 版をダウンロード', file: 'RAiM-android.apk', how: 'howAndroid' },
+    windows: { label: 'Windows 版をダウンロード', file: 'RAiM-windows.zip', how: 'howWindows' },
+  };
+
+  function detect() {
+    const ua = navigator.userAgent;
+    if (/android/i.test(ua)) return 'android';
+    // iPadOS は Mac と名乗るので、タッチ対応かどうかで見分ける
+    if (/iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
+    if (/windows/i.test(ua)) return 'windows';
+    return 'other';
+  }
+
+  function button(key, cls) {
+    const p = PLATFORMS[key];
+    const a = document.createElement('a');
+    a.className = cls;
+    a.href = DOWNLOAD(p.file);
+    a.textContent = p.label;
+    a.dataset.file = p.file;
+    return a;
+  }
+
+  function mb(bytes) {
+    return (bytes / 1024 / 1024).toFixed(0) + 'MB';
+  }
+
+  const device = detect();
+  const mainBody = document.getElementById('mainBody');
+  const others = document.getElementById('others');
+
+  if (PLATFORMS[device]) {
+    document.getElementById('mainTitle').textContent =
+      device === 'android' ? 'この Android 端末にインストール' : 'この PC にインストール';
+    mainBody.appendChild(button(device, 'btn'));
+    document.getElementById(PLATFORMS[device].how).open = true;
+  } else if (device === 'ios') {
+    document.getElementById('mainTitle').textContent = 'iPhone / iPad をお使いの方へ';
+    mainBody.innerHTML = '<p style="margin:0">iPhone 版はこのページからは配布していません。下の「iPhone / iPad」を見てください。</p>';
+    document.getElementById('howIos').open = true;
+  } else {
+    mainBody.innerHTML = '<p style="margin:0">この端末向けの版はありません。下から選んでください。</p>';
+  }
+
+  for (const key of Object.keys(PLATFORMS)) {
+    if (key !== device) others.appendChild(button(key, 'btn sub'));
+  }
+
+  // 版の番号・日付・サイズを出す。取れなくてもダウンロードのリンクは動く
+  const ver = document.getElementById('ver');
+  fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
+    .then((r) => {
+      if (r.status === 404) throw new Error('none');
+      if (!r.ok) throw new Error('api');
+      return r.json();
+    })
+    .then((rel) => {
+      const date = new Date(rel.published_at).toLocaleDateString('ja-JP');
+      ver.textContent = `最新: ${rel.tag_name}（${date}）`;
+      const sizes = Object.fromEntries((rel.assets || []).map((a) => [a.name, a.size]));
+      document.querySelectorAll('a[data-file]').forEach((a) => {
+        const size = sizes[a.dataset.file];
+        if (size) {
+          a.textContent += `（${mb(size)}）`;
+        } else {
+          // 最新の版にそのファイルが無い（片方だけ出した版など）
+          a.setAttribute('aria-disabled', 'true');
+          a.textContent += '（この版にはありません）';
+        }
+      });
+    })
+    .catch((e) => {
+      if (e.message === 'none') {
+        ver.textContent = 'まだ公開されている版がありません。';
+        document.querySelectorAll('a[data-file]').forEach((a) => a.setAttribute('aria-disabled', 'true'));
+      } else {
+        // API の回数制限などで取れなかっただけ。リンクはそのまま使える
+        ver.textContent = '';
+      }
+    });
+</script>
+</body>
+</html>

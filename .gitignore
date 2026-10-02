@@ -247,3 +247,6 @@ ios/Runner.xcworkspace/xcuserdata/
 # テスト用一時ファイル
 **/test_temp/
 **/*.tmp
+
+# 配布用ビルドの出力（tools/release.ps1）
+dist/

@@ -68,3 +68,51 @@ flutter test
 `print` / `debugPrint` は使わず、`RaimLog` を通してください。
 会話本文・画像・トークン・URL はログに出しません。長さや件数だけを出します。
 release ビルドでは error 以外は出力されません。
+
+## 配布（リリース）
+
+配布ページ: https://andodazo.github.io/RAiMproject/
+
+開いた端末に合わせて Windows 版（zip）か Android 版（APK）のボタンが出ます。
+ファイル本体は GitHub Releases に置いていて、ページは常に最新の版を指します。
+iOS は Apple の有料登録が無いと配れないため、ページには載せていません
+（`flutter run --release` でケーブルから入れる。無料の署名は7日で切れる）。
+
+### 新しい版を出す
+
+1. `pubspec.yaml` の `version` を上げる（例: `1.0.0+1` → `1.0.1+2`）。
+   `+` の後ろの数字は Android の上書きインストールの判定に使うので、毎回必ず増やす
+2. コミットして push する
+3. Windows の PowerShell でリポジトリ直下から実行する
+
+```powershell
+.\tools\release.ps1            # dist\ に作るだけ（中身を確かめたいとき）
+.\tools\release.ps1 -Publish   # 作って GitHub Releases に公開する
+```
+
+公開すると配布ページは自動で新しい版になります。使う側は同じボタンから
+入れ直すだけです（Android は上書き、Windows はフォルダを差し替え。
+どちらもログイン状態と設定は残る）。
+
+`-SkipWindows` / `-SkipAndroid` で片方だけ作れますが、配布ページは
+「最新の版」のファイルしか見ないので、公開するときは両方そろえてください。
+
+### 事前に必要なもの
+
+- `android\key.properties` と配布用の keystore。
+  **鍵をなくすと、配った APK に上書きできなくなる**（全員アンインストールが必要になる）ので
+  keystore はリポジトリの外にバックアップしておく
+- `android\unityLibrary`（Unity から Android 向けに Export）
+- `unity\raim_unity\builds\Windows\raim.exe`（Unity の Windows ビルド）
+- GitHub CLI（`winget install GitHub.cli` → `gh auth login`）
+
+### アプリを更新しなくていい変更
+
+人格プロンプト、ツール、天気・検索の挙動など、サーバー（`raim_aws`）側の変更は
+Lambda にデプロイした時点で全員に反映されます。アプリを出し直すのは
+Flutter / Unity 側を変えたときだけです。
+
+### 配布ページの設定（最初の1回だけ）
+
+GitHub の Settings → Pages → Source を「Deploy from a branch」、
+Branch を `main` / `/docs` にする。ページの中身は `docs/index.html`。
