@@ -51,6 +51,18 @@ void main() {
     expect(c.micDeviceId, isNull);
   });
 
+  test('ライムの声を消す設定は既定 OFF で、保存され読み直しても残る', () async {
+    SharedPreferences.setMockInitialValues({});
+    final a = VoiceSettingsProvider();
+    await a.load();
+    expect(a.speechMuted, isFalse);
+
+    await a.setSpeechMuted(true);
+    final b = VoiceSettingsProvider();
+    await b.load();
+    expect(b.speechMuted, isTrue);
+  });
+
   test('「ライム」だけでも呼ぶ設定では単独の語も入る', () async {
     SharedPreferences.setMockInitialValues({});
     final s = VoiceSettingsProvider();

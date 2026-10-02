@@ -215,6 +215,9 @@ class _ChatInputState extends State<ChatInput> {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
+              // 画像を添える（カメラ / ギャラリー）。以前は画面上部の CAPTURE ボタンだった
+              const _AttachImageButton(),
+              const SizedBox(width: 8),
               Expanded(
                 child: ValueListenableBuilder<String>(
                   valueListenable: voice.heardText,
@@ -769,73 +772,70 @@ class ChatNewConversationButton extends StatelessWidget {
   }
 }
 
-/// CAPTUREボタン
-class ChatCaptureButton extends StatelessWidget {
-  const ChatCaptureButton({
-    super.key,
-    required this.onTap,
-    this.isWide = false,
-  });
-
-  final VoidCallback onTap;
-  final bool isWide;
+/// 入力欄の左の画像ボタン。押すとカメラかギャラリーを選ぶシートが出る。
+///
+/// 入力欄（白の半透明・角丸）と同じ見た目にして、入力欄の一部に見せる。
+class _AttachImageButton extends StatelessWidget {
+  const _AttachImageButton();
 
   @override
   Widget build(BuildContext context) {
-    return _ChatGlassButton(
-      width: isWide ? 150 : null,
-      height: isWide ? 44 : 48,
-      isAccent: isWide,
-      onTap: onTap,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.camera_alt_rounded,
-            color: Colors.white,
-            size: isWide ? 20 : 18,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'CAPTURE',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: isWide ? 13 : 12,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.1,
-            ),
-          ),
-        ],
+    return Material(
+      color: Colors.white.withValues(alpha: 0.15),
+      shape: CircleBorder(
+        side: BorderSide(
+          color: Colors.white.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: IconButton(
+        tooltip: '画像を添える',
+        icon: const Icon(Icons.photo_camera_rounded, color: Colors.white70),
+        onPressed: () {
+          FocusManager.instance.primaryFocus?.unfocus();
+          showImageSourceSelector(context);
+        },
       ),
     );
   }
 }
 
-/// 音量ボタン
+/// 音量ボタン。押すとライムの声を消す / 出すを切り替える。
+///
+/// 状態は VoiceSettingsProvider に保存するので、アプリを閉じても残る。
+/// 消したときに喋っている途中なら、その場で止める。
 class ChatVolumeButton extends StatelessWidget {
   const ChatVolumeButton({
     super.key,
-    required this.onTap,
     this.isWide = false,
   });
 
-  final VoidCallback onTap;
   final bool isWide;
 
   @override
   Widget build(BuildContext context) {
-    return _ChatGlassButton(
-      width: isWide ? 52 : 64,
-      height: isWide ? 47 : 54,
-      borderRadius: isWide ? 26 : 18,
-      isAccent: true,
-      padding: EdgeInsets.zero,
-      onTap: onTap,
-      child: Icon(
-        Icons.volume_up_rounded,
-        color: Colors.white,
-        size: 28,
+    final settings = context.watch<VoiceSettingsProvider>();
+    final muted = settings.speechMuted;
+
+    return Tooltip(
+      message: muted ? 'ライムの声を出す' : 'ライムの声を消す',
+      child: _ChatGlassButton(
+        width: isWide ? 52 : 56,
+        height: isWide ? 47 : 48,
+        borderRadius: isWide ? 26 : 18,
+        isAccent: !muted,
+        padding: EdgeInsets.zero,
+        onTap: () {
+          final mute = !muted;
+          settings.setSpeechMuted(mute);
+          if (mute) context.read<ChatProvider>().stopSpeaking();
+        },
+        child: Icon(
+          muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+          color: muted ? Colors.white54 : Colors.white,
+          size: isWide ? 26 : 24,
+        ),
       ),
     );
   }
