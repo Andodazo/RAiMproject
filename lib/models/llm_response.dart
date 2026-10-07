@@ -115,6 +115,11 @@ class LLMResponse {
   final String? tool;
   final String? description;
 
+  /// サーバーの人格（'bright' | 'downer'）。metadata と chat_end に入る。
+  /// 駅アラームの声など、アプリで鳴らすセリフを人格に合わせるために使う。
+  /// 古いサーバーでは入らない（null）。
+  final String? persona;
+
   LLMResponse({
     this.type = 'chat',
     this.text = '',
@@ -137,6 +142,7 @@ class LLMResponse {
     this.raw = const {},
     this.tool,
     this.description,
+    this.persona,
   });
 
   /// JSON から LLMResponse を組み立てる
@@ -217,6 +223,7 @@ class LLMResponse {
       raw: json,
       tool: _readString(json['tool']),
       description: _readString(json['description']),
+      persona: _readString(json['persona']),
       // サーバーが 3.0 のような数値を返しても落ちないよう num 経由で読む
     );
   }

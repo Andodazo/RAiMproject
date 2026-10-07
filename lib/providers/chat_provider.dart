@@ -145,6 +145,11 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   /// ウェイクワード検知が、ライム自身の声で反応しないように使う。
   ValueListenable<bool> get isSpeaking => _audioQueue.playing;
 
+  /// サーバーの人格（'bright' | 'downer'）。metadata / chat_end で更新する。
+  /// 駅アラームの声を人格に合わせるため、StationAlarmController が参照する。
+  final ValueNotifier<String> _persona = ValueNotifier<String>('bright');
+  ValueListenable<String> get persona => _persona;
+
   /// 音量ボタンで声を消しているか（VoiceSettingsProvider.speechMuted を見る）。
   final bool Function() _isSpeechMuted;
 
@@ -704,6 +709,7 @@ _toolStatus = null;
     _stateSubscription?.cancel();
     unawaited(_clientActions.close());
     _audioAssembler.dispose();
+    _persona.dispose();
     // ChatProvider が破棄されるとき、音声プレイヤーも破棄する
     unawaited(_audioQueue.dispose());
     super.dispose();
@@ -913,6 +919,12 @@ _toolStatus = null;
   // RAiM v2.2では metadata / text_chunk / audio_chunk / tool_call / chat_end が届く。
   // ここで type を見て、それぞれ専用の処理へ渡す。
   void _handleResponse(LLMResponse response) {
+    // サーバーが人格を知らせてきたら覚えておく（駅アラームの声に使う）
+    final persona = response.persona;
+    if (persona != null && persona.isNotEmpty && persona != _persona.value) {
+      _persona.value = persona;
+    }
+
     // metadata: 返答本文より先に届く感情・シーン情報
     if (response.isMetadata) {
       _handleMetadata(response);

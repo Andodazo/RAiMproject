@@ -56,10 +56,18 @@ import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 enum StationAlarmState { idle, starting, riding, arrived, error }
 
 class StationAlarmController extends ChangeNotifier {
-  StationAlarmController({ValueListenable<bool>? speaking})
-      : _speaking = speaking;
+  StationAlarmController({
+    ValueListenable<bool>? speaking,
+    ValueListenable<String>? persona,
+  })  : _speaking = speaking,
+        _persona = persona;
 
   final ValueListenable<bool>? _speaking;
+
+  /// サーバーの人格（'bright' | 'downer'）。声と通知の文を合わせる。
+  final ValueListenable<String>? _persona;
+
+  bool get _isDowner => _persona?.value == 'downer';
 
   /// 着いたあと、聞き続ける時間。「次は」「まもなく」の2回目のアナウンスで
   /// 何度も鳴らさないよう、少しだけ残してから終える。
@@ -442,17 +450,19 @@ class StationAlarmController extends ChangeNotifier {
         unawaited(HapticFeedback.mediumImpact());
         unawaited(_notifyUser(
           title: 'もうすぐ $dest',
-          text: '次は ${event.station.name}。降りる準備をしておいてね',
+          text: _isDowner
+              ? '次は ${event.station.name}。そろそろ準備しよ'
+              : '次は ${event.station.name}。降りる準備をしておいてね',
         ));
-        unawaited(_speak('sounds/station_approaching.wav'));
+        unawaited(_speakLine('station_approaching'));
         _notify();
       case StationAlarmStage.arriving:
         unawaited(_buzz());
         unawaited(_notifyUser(
-          title: 'まもなく $dest！',
-          text: '降りる準備をして！',
+          title: _isDowner ? 'まもなく $dest' : 'まもなく $dest！',
+          text: _isDowner ? '着くよ。降りる準備して' : '降りる準備をして！',
         ));
-        unawaited(_speak('sounds/station_arriving.wav'));
+        unawaited(_speakLine('station_arriving'));
         _setState(StationAlarmState.arrived);
         _endTimer?.cancel();
         _endTimer = Timer(afterArrival, () => unawaited(stop()));
@@ -472,17 +482,28 @@ class StationAlarmController extends ChangeNotifier {
     return StationNotifications.alert(title: title, body: text);
   }
 
+  /// 人格に合ったライムの声で知らせる。
+  ///
+  /// ダウナー版は `<name>_downer.wav` を鳴らす。無ければ通常版を鳴らす。
+  Future<void> _speakLine(String name) async {
+    if (_isDowner && await _speak('sounds/${name}_downer.wav')) return;
+    await _speak('sounds/$name.wav');
+  }
+
   /// ライムの声で知らせる。ファイルが無ければ何もしない。
   ///
   /// 鳴らしている間は聞くのを止める。ライムの声に自分で反応しないため。
-  Future<void> _speak(String asset) async {
+  /// 鳴らせたら true。
+  Future<bool> _speak(String asset) async {
     _listener?.muteFor(voiceMute);
     try {
       final player = _voice ??= AudioPlayer();
       await player.stop();
       await player.play(AssetSource(asset));
+      return true;
     } catch (e) {
       RaimLog.d('[StationAlarm] ライムの声を鳴らせませんでした（$asset が無い？）');
+      return false;
     }
   }
 
