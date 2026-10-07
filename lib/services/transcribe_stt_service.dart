@@ -56,7 +56,17 @@ enum SttEndReason {
 
 /// 聞き取りの結果。
 class SttOutcome {
-  const SttOutcome({required this.text, required this.reason, this.error});
+  const SttOutcome({
+    required this.text,
+    required this.reason,
+    this.error,
+    this.aboutWakeWord = false,
+  });
+
+  /// ライムに話しかけたのではなく、ライムのことを話していたようだ
+  /// （「ライムが二つあって…」のように、名前のすぐ後に「が」「を」などが続いた）。
+  /// そのまま送らず、入力欄に入れて確かめてもらうのに使う。
+  final bool aboutWakeWord;
 
   /// 聞き取れた文字。無ければ空。
   final String text;
@@ -540,7 +550,14 @@ class SttSession {
     }
 
     final heard = reason == SttEndReason.cancelled ? '' : text;
-    final outcome = SttOutcome(text: heard, reason: reason, error: error);
+    final outcome = SttOutcome(
+      text: heard,
+      reason: reason,
+      error: error,
+      aboutWakeWord: _strip &&
+          heard.isNotEmpty &&
+          soundsLikeTalkingAboutLime(_transcript.text),
+    );
     final seconds =
         _service._clock().difference(_startedAt).inMilliseconds / 1000;
     RaimLog.i(
@@ -585,6 +602,23 @@ String stripWakePhrase(String text) {
   final stripped = text.replaceFirst(_wakePrefix, '');
   return stripped.trim();
 }
+
+/// 呼びかけではなく、ライムのことを話しているように聞こえるか。
+///
+/// 「ライムが二つあると思うんだよね」のように、名前のすぐ後に「が」「を」「に」
+/// などが続くときは、ライムに話しかけたのではなく、人と話していてライムの
+/// 名前が出ただけのことが多い。ウェイクワードはそこにも反応してしまい、
+/// 以前は「が二つあると思うんだよね」がそのままライムに送られていた。
+///
+/// 「は」「って」は含めない。「ライムは何が好き？」「ライムって何歳？」のように、
+/// 本人に話しかけるときにもよく使うため。
+bool soundsLikeTalkingAboutLime(String text) => _talkingAbout.hasMatch(text);
+
+final RegExp _talkingAbout = RegExp(
+  r'^\s*(?:ねえ|ねぇ|ねー|ね)?[、,，\s]*(?:ライム|らいむ|raim)(?:さん|ちゃん)?'
+  r'(?:が|を|に|と|も|で|へ|から|より|の)',
+  caseSensitive: false,
+);
 
 final RegExp _wakePrefix = RegExp(
   r'^\s*(?:ねえ|ねぇ|ねー|ね)?[、,，\s]*(?:ライム|らいむ|raim)(?:さん|ちゃん)?'

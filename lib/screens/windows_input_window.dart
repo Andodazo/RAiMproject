@@ -137,7 +137,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   /// 入力欄に書きかけの文があるとき、応答の生成中のときは送らずに
   /// 入力欄へ足すだけにする。書きかけを消したり、送れずに
   /// 聞き取った内容が消えたりしないようにするため。
-  void _onUtterance(String text) {
+  void _onUtterance(HeardUtterance utterance) {
+    final text = utterance.text;
     if (!mounted) return;
 
     final placed = placeUtterance(
@@ -150,7 +151,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
       selection: TextSelection.collapsed(offset: placed.text.length),
     );
     final action = decideUtteranceAction(
-      canSend: placed.send,
+      // ライムのことを話していただけに聞こえるときは、送らずに入力欄へ
+      canSend: placed.send && !utterance.mustConfirm,
       mode: context.read<VoiceSettingsProvider>().sendMode,
     );
     switch (action) {

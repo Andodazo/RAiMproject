@@ -151,8 +151,8 @@ class VoiceController extends ChangeNotifier {
   final TranscribeSttService? _stt;
   SttSession? _session;
   final ValueNotifier<String> _heard = ValueNotifier<String>('');
-  final StreamController<String> _utterances =
-      StreamController<String>.broadcast();
+  final StreamController<HeardUtterance> _utterances =
+      StreamController<HeardUtterance>.broadcast();
   String? _sttError;
   Timer? _sttErrorTimer;
 
@@ -215,7 +215,7 @@ class VoiceController extends ChangeNotifier {
   ///
   /// 送信するかどうかは画面側で決める。入力欄に書きかけの文があるときや
   /// 応答の生成中は、送らずに入力欄へ入れる方がよいため。
-  Stream<String> get utterances => _utterances.stream;
+  Stream<HeardUtterance> get utterances => _utterances.stream;
 
   /// 直前の聞き取りが失敗したときの説明。しばらくすると null に戻る。
   String? get sttError => _sttError;
@@ -466,8 +466,14 @@ class VoiceController extends ChangeNotifier {
     });
 
     if (outcome.text.isNotEmpty && !_utterances.isClosed) {
-      RaimLog.i('[Voice] 聞き取りました ${outcome.text.length}文字');
-      _utterances.add(outcome.text);
+      RaimLog.i(
+        '[Voice] 聞き取りました ${outcome.text.length}文字'
+        '${outcome.aboutWakeWord ? '（ライムのことを話していたようなので、送らずに入力欄へ）' : ''}',
+      );
+      _utterances.add(HeardUtterance(
+        outcome.text,
+        mustConfirm: outcome.aboutWakeWord,
+      ));
     }
 
     _endAwake();
@@ -616,4 +622,17 @@ class VoiceController extends ChangeNotifier {
   final current = typed.trim();
   if (current.isEmpty && !busy) return (text: heard, send: true);
   return (text: current.isEmpty ? heard : '$current $heard', send: false);
+}
+
+/// 聞き取れた一言。
+class HeardUtterance {
+  const HeardUtterance(this.text, {this.mustConfirm = false});
+
+  final String text;
+
+  /// 送らずに入力欄へ入れて、本人に確かめてもらう。
+  ///
+  /// ライムに話しかけたのではなく、人と話していてライムの名前が出ただけに
+  /// 聞こえるとき（soundsLikeTalkingAboutLime）に true。
+  final bool mustConfirm;
 }

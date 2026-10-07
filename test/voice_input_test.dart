@@ -46,6 +46,25 @@ void main() {
     });
   });
 
+  group('soundsLikeTalkingAboutLime', () {
+    test('名前のすぐ後に「が」「を」などが続けば、ライムのことを話している', () {
+      expect(soundsLikeTalkingAboutLime('ライムが二つあると思うんだよね'), isTrue);
+      expect(soundsLikeTalkingAboutLime('ねえライムをインストールした'), isTrue);
+      expect(soundsLikeTalkingAboutLime('らいむの声って誰がやってるの'), isTrue);
+    });
+
+    test('呼びかけてから話したときは false', () {
+      expect(soundsLikeTalkingAboutLime('ねえ、ライム、今日の天気は？'), isFalse);
+      expect(soundsLikeTalkingAboutLime('ねえライム今日の天気は？'), isFalse);
+      expect(soundsLikeTalkingAboutLime('ライム、おはよう'), isFalse);
+    });
+
+    test('「は」「って」は本人に話しかけるときにも使うので false', () {
+      expect(soundsLikeTalkingAboutLime('ライムは何が好き？'), isFalse);
+      expect(soundsLikeTalkingAboutLime('ライムって何歳？'), isFalse);
+    });
+  });
+
   group('placeUtterance', () {
     test('入力欄が空で返事待ちでなければそのまま送る', () {
       final r = placeUtterance(typed: '', heard: '今日の天気は？', busy: false);

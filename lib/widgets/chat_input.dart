@@ -50,7 +50,8 @@ class _ChatInputState extends State<ChatInput> {
   ///
   /// 書きかけがあるときや返事の生成中は、設定に関係なく入力欄に足すだけ。
   /// 「少し待ってから送る」では、待っている間に入力欄を触ると止まる。
-  void _onUtterance(String text) {
+  void _onUtterance(HeardUtterance utterance) {
+    final text = utterance.text;
     if (!mounted) return;
     final placed = placeUtterance(
       typed: _controller.text,
@@ -62,7 +63,8 @@ class _ChatInputState extends State<ChatInput> {
       selection: TextSelection.collapsed(offset: placed.text.length),
     );
     final action = decideUtteranceAction(
-      canSend: placed.send,
+      // ライムのことを話していただけに聞こえるときは、送らずに入力欄へ
+      canSend: placed.send && !utterance.mustConfirm,
       mode: context.read<VoiceSettingsProvider>().sendMode,
     );
     switch (action) {
