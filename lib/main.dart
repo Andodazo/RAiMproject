@@ -285,6 +285,8 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
         ChangeNotifierProvider(
           create: (context) => StationAlarmController(
             speaking: context.read<ChatProvider>().isSpeaking,
+            // サーバーの人格に合わせて声と通知の文を変える
+            persona: context.read<ChatProvider>().persona,
           ),
         ),
       ],
