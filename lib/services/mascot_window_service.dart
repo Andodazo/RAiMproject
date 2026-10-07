@@ -43,6 +43,9 @@ class MascotWindowService {
 
   static const double windowWidth = 420;
 
+  /// 「発信中」を出しているときの高さ（Unity の起動待ち）
+  static const double callingHeight = 128;
+
   /// 認証前・ログイン画面のときのサイズ
   static const Size normalSize = Size(900, 700);
 
@@ -70,6 +73,12 @@ class MascotWindowService {
   /// 入力小窓を表示しているか
   bool _visible = false;
   bool get isVisible => _visible;
+
+  /// Unity の起動を待つ間、小窓に「発信中」を出しているか。
+  ///
+  /// 入力小窓は普段ライムの足元に出すが、起動中はライムがまだいないので
+  /// 画面の中央に出す。入力小窓を開いたり隠したりすると false に戻る。
+  final ValueNotifier<bool> calling = ValueNotifier<bool>(false);
 
   /// Unity の位置がまだ届いていない間に表示を頼まれたか。
   /// 届いた時点で改めて表示する。
@@ -160,6 +169,7 @@ class MascotWindowService {
     _mascotMode = false;
     _visible = false;
     _pendingShow = false;
+    calling.value = false;
     _currentHeight = barHeight;
 
     await windowManager.setAlwaysOnTop(false);
@@ -371,6 +381,13 @@ class MascotWindowService {
       return;
     }
 
+    // 「発信中」を出していたら、入力バーの大きさに戻してから動かす
+    if (calling.value) {
+      calling.value = false;
+      _currentHeight = _collapsedHeight;
+      await windowManager.setSize(Size(windowWidth, _currentHeight));
+    }
+
     await _placeUnderCharacter();
     await windowManager.show();
     await windowManager.focus();
@@ -388,6 +405,7 @@ class MascotWindowService {
 
     _visible = false;
     _pendingShow = false;
+    calling.value = false;
 
     // 次に開いたときバーだけの状態から始まるよう畳んでおく。
     // 隠れている間はリサイズしても見えないので位置は動かさない。
@@ -395,6 +413,26 @@ class MascotWindowService {
     await windowManager.setSize(Size(windowWidth, _currentHeight));
 
     await windowManager.hide();
+  }
+
+  /// Unity の起動を待つ間、画面の中央に「発信中」の小窓を出す。
+  ///
+  /// 入力小窓を開いているときは何もしない。
+  Future<void> showCalling() async {
+    if (!isSupported || !_mascotMode || _visible) return;
+
+    calling.value = true;
+    await windowManager.setSize(const Size(windowWidth, callingHeight));
+    await windowManager.center();
+    await windowManager.show();
+  }
+
+  /// 「発信中」の小窓を消す。
+  ///
+  /// その間に入力小窓を開いていたら（[calling] が false に戻っている）何もしない。
+  Future<void> endCalling() async {
+    if (!calling.value) return;
+    await hide();
   }
 
   /// クリックのたびに開閉を切り替える。

@@ -20,20 +20,12 @@ class RaimCallingOverlay extends StatefulWidget {
   State<RaimCallingOverlay> createState() => _RaimCallingOverlayState();
 }
 
-class _RaimCallingOverlayState extends State<RaimCallingOverlay>
-    with SingleTickerProviderStateMixin {
-  static const Color _accent = Color(0xFFB7F35A);
+class _RaimCallingOverlayState extends State<RaimCallingOverlay> {
   static const Color _background = Color(0xFF14141F);
-  static const double _faceSize = 120;
 
   /// 「つながりました」を見せておく時間
   static const Duration _connectedHold = Duration(milliseconds: 700);
   static const Duration _fadeDuration = Duration(milliseconds: 400);
-
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1800),
-  );
 
   Timer? _timeoutTimer;
   Timer? _holdTimer;
@@ -50,9 +42,9 @@ class _RaimCallingOverlayState extends State<RaimCallingOverlay>
       _gone = true;
       return;
     }
-    _pulse.repeat();
     UnityReadySignal.ready.addListener(_onReadyChanged);
-    _timeoutTimer = Timer(RaimCallingOverlay.timeout, () => _finish(connected: false));
+    _timeoutTimer =
+        Timer(RaimCallingOverlay.timeout, () => _finish(connected: false));
   }
 
   @override
@@ -60,7 +52,6 @@ class _RaimCallingOverlayState extends State<RaimCallingOverlay>
     UnityReadySignal.ready.removeListener(_onReadyChanged);
     _timeoutTimer?.cancel();
     _holdTimer?.cancel();
-    _pulse.dispose();
     super.dispose();
   }
 
@@ -79,7 +70,6 @@ class _RaimCallingOverlayState extends State<RaimCallingOverlay>
 
   void _onFadeEnd() {
     if (!_fading || !mounted) return;
-    _pulse.stop();
     setState(() => _gone = true);
   }
 
@@ -96,63 +86,126 @@ class _RaimCallingOverlayState extends State<RaimCallingOverlay>
           color: _background,
           child: Align(
             alignment: const Alignment(0, -0.2),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: _faceSize * 2,
-                  height: _faceSize * 2,
-                  child: AnimatedBuilder(
-                    animation: _pulse,
-                    builder: (context, child) => CustomPaint(
-                      painter: _RingsPainter(
-                        progress: _pulse.value,
-                        innerRadius: _faceSize / 2,
-                        color: _accent,
-                      ),
-                      child: child,
-                    ),
-                    child: Center(child: _buildFace()),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'RAiM',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 4,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                AnimatedBuilder(
-                  animation: _pulse,
-                  builder: (context, _) => Text(
-                    _statusText(),
-                    style: TextStyle(
-                      color: _connected ? _accent : Colors.white70,
-                      fontSize: 15,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            child: RaimCallingCard(connected: _connected),
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildFace() {
+/// ライムの顔のまわりに輪が広がり、「発信中...」と出る部品。
+///
+/// スマホの起動待ち（縦並び）と、Windows の入力小窓（横並び）で使う。
+class RaimCallingCard extends StatefulWidget {
+  const RaimCallingCard({
+    super.key,
+    required this.connected,
+    this.horizontal = false,
+    this.faceSize = 120,
+  });
+
+  /// true なら「つながりました」を出す
+  final bool connected;
+
+  /// true なら顔と文字を横に並べる（Windows の小窓用）
+  final bool horizontal;
+
+  /// 顔の円の直径。輪はこの2倍まで広がる。
+  final double faceSize;
+
+  static const Color accent = Color(0xFFB7F35A);
+
+  @override
+  State<RaimCallingCard> createState() => _RaimCallingCardState();
+}
+
+class _RaimCallingCardState extends State<RaimCallingCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final faceSize = widget.faceSize;
+    // 横並びの小窓では、文字も少し小さくする
+    final scale = widget.horizontal ? 0.75 : 1.0;
+
+    final face = SizedBox(
+      width: faceSize * 2,
+      height: faceSize * 2,
+      child: AnimatedBuilder(
+        animation: _pulse,
+        builder: (context, child) => CustomPaint(
+          painter: _RingsPainter(
+            progress: _pulse.value,
+            innerRadius: faceSize / 2,
+            color: RaimCallingCard.accent,
+          ),
+          child: child,
+        ),
+        child: Center(child: _buildFace(faceSize)),
+      ),
+    );
+
+    final texts = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: widget.horizontal
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.center,
+      children: [
+        Text(
+          'RAiM',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 28 * scale,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 4 * scale,
+          ),
+        ),
+        SizedBox(height: 8 * scale),
+        AnimatedBuilder(
+          animation: _pulse,
+          builder: (context, _) => Text(
+            _statusText(),
+            style: TextStyle(
+              color: widget.connected ? RaimCallingCard.accent : Colors.white70,
+              fontSize: 15 * scale,
+              letterSpacing: 1,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (widget.horizontal) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [face, const SizedBox(width: 4), texts],
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [face, const SizedBox(height: 16), texts],
+    );
+  }
+
+  Widget _buildFace(double size) {
     return Container(
-      width: _faceSize,
-      height: _faceSize,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: const Color(0xFF1E2024),
-        border: Border.all(color: _accent, width: 2),
+        border: Border.all(color: RaimCallingCard.accent, width: 2),
       ),
       child: ClipOval(
         child: Image.asset(
@@ -164,8 +217,8 @@ class _RaimCallingOverlayState extends State<RaimCallingOverlay>
   }
 
   String _statusText() {
-    if (_connected) return 'つながりました';
-    // 「発信中.」「発信中..」「発信中...」を順に出す（幅が変わらないよう全角の点は使わない）
+    if (widget.connected) return 'つながりました';
+    // 「発信中.」「発信中..」「発信中...」を順に出す
     final dots = (_pulse.value * 3).floor() % 3 + 1;
     return '発信中${'.' * dots}';
   }

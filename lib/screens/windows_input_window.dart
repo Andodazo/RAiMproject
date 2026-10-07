@@ -20,6 +20,7 @@ import 'package:raim_prototype/services/tray_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/voice/delayed_send.dart';
+import 'package:raim_prototype/widgets/raim_calling_overlay.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/config/raim_config.dart';
 
@@ -99,6 +100,18 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   bool _isSwitching = false;
   String? _switchNote;
 
+  // ---- Unity の起動待ち（「発信中」の小窓） ----
+
+  /// これだけ待ってもライムが来なければ「発信中」を消す。
+  /// Unity は起動に数秒かかり、Flutter は Unity を起こす前に2秒待つので長めに取る。
+  static const Duration _callingTimeout = Duration(seconds: 20);
+
+  /// 「つながりました」を見せておく時間
+  static const Duration _connectedHold = Duration(milliseconds: 700);
+
+  Timer? _callingTimer;
+  bool _callConnected = false;
+
   @override
   void initState() {
     super.initState();
@@ -116,7 +129,35 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     if (mounted) {
       _listenUnity();
       _listenWakeWord();
+      await _startCallingIfNeeded();
     }
+  }
+
+  /// Unity がまだ来ていなければ、画面の中央に「発信中」の小窓を出す。
+  ///
+  /// 以前はログインすると窓が消え、ライムが出るまで数秒間なにも映らなかった。
+  /// ログアウトして戻ってきたときなど、Unity がもう繋がっていれば出さない。
+  Future<void> _startCallingIfNeeded() async {
+    if (context.read<UnityCommunicator>().isUnityConnected) return;
+
+    _callConnected = false;
+    _callingTimer?.cancel();
+    _callingTimer = Timer(_callingTimeout, _endCalling);
+    await _mascot.showCalling();
+  }
+
+  /// Unity から最初の知らせが届いたら「つながりました」にして、少しして消す。
+  void _onUnityArrived() {
+    if (!mounted || !_mascot.calling.value || _callConnected) return;
+    setState(() => _callConnected = true);
+    _callingTimer?.cancel();
+    _callingTimer = Timer(_connectedHold, _endCalling);
+  }
+
+  void _endCalling() {
+    _callingTimer?.cancel();
+    _callingTimer = null;
+    _mascot.endCalling();
   }
 
   /// 「ねえライム」と呼ばれたら入力小窓を開く。
@@ -220,6 +261,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   void _listenUnity() {
     final bridge = context.read<UnityCommunicator>();
     _unitySub = bridge.unityEvents.listen((event) async {
+      // Unity は繋がるとすぐ、そのあとも2秒おきに位置を送ってくる。
+      // 何か届いた時点で、ライムが出たとみなす
+      _onUnityArrived();
+
       switch (event['type']) {
         case 'unity.clicked':
           // こちらの窓の中のクリックが、重なったライムへのクリックとして
@@ -289,6 +334,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   @override
   void dispose() {
     trayManager.removeListener(this);
+    _callingTimer?.cancel();
     _unitySub?.cancel();
     _wakeSub?.cancel();
     _utteranceSub?.cancel();
@@ -532,6 +578,35 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   Widget build(BuildContext context) {
     _syncImageStripHeight(context.watch<CameraProvider>().hasImage);
 
+    // Unity の起動待ちの間は「発信中」を出す
+    return ValueListenableBuilder<bool>(
+      valueListenable: _mascot.calling,
+      builder: (context, calling, child) =>
+          calling ? _buildCalling() : child!,
+      child: _buildInputWindow(),
+    );
+  }
+
+  Widget _buildCalling() {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Container(
+        decoration: BoxDecoration(
+          color: _bg,
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: _line),
+        ),
+        alignment: Alignment.center,
+        child: RaimCallingCard(
+          connected: _callConnected,
+          horizontal: true,
+          faceSize: 56,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInputWindow() {
     return Listener(
       onPointerDown: (_) => _lastLocalPointer = DateTime.now(),
       onPointerUp: (_) => _lastLocalPointer = DateTime.now(),
