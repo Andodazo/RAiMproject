@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_embed_unity/flutter_embed_unity.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
+import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/services/app_exit_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/widgets/message_list.dart';
@@ -50,9 +51,12 @@ class ChatScreen extends StatelessWidget {
         // キャラクター表示や背景のサイズを固定したままにするため false にする。
         resizeToAvoidBottomInset: false,
         backgroundColor: const Color(0xFF1a1a2e),
-        body: isWideScreen
-            ? _buildWideLayout(context)
-            : _buildNarrowLayout(context),
+        body: _ChatVisibilityReporter(
+          enabled: _isMobile,
+          child: isWideScreen
+              ? _buildWideLayout(context)
+              : _buildNarrowLayout(context),
+        ),
       ),
     );
   }
@@ -529,5 +533,59 @@ class _HeadLayoutReporterState extends State<_HeadLayoutReporter> {
     // 画面の大きさが変わったときに didChangeDependencies が呼ばれるようにする
     MediaQuery.sizeOf(context);
     return KeyedSubtree(key: _key, child: widget.child);
+  }
+}
+
+/// チャット画面が見えているかを VoiceController へ伝える（スマホのみ）。
+///
+/// 駅アラームの画面・設定・メニューなどが上に開いている間は「ねえライム」を止める。
+/// 以前はどの画面にいても聞いていたので、会話の中の「ライム」に反応すると、
+/// 見えていないチャットの入力欄に文が入ったり送られたりしていた。
+///
+/// Windows は入力小窓を閉じた状態で呼ぶのが本来の使い方なので対象外。
+class _ChatVisibilityReporter extends StatefulWidget {
+  const _ChatVisibilityReporter({required this.enabled, required this.child});
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  State<_ChatVisibilityReporter> createState() =>
+      _ChatVisibilityReporterState();
+}
+
+class _ChatVisibilityReporterState extends State<_ChatVisibilityReporter> {
+  VoiceController? _voice;
+  bool? _lastVisible;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _voice = context.read<VoiceController>();
+  }
+
+  @override
+  void dispose() {
+    // ログアウトなどでチャット画面が無くなるときは、止めたままにしない
+    if (widget.enabled) _voice?.setChatVisible(true);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.enabled) {
+      // 上に別の画面（ボトムシート・ダイアログ・メニューも含む）が
+      // 開くと isCurrent が false になり、ここが作り直される
+      final visible = ModalRoute.of(context)?.isCurrent ?? true;
+      if (visible != _lastVisible) {
+        _lastVisible = visible;
+        final voice = _voice;
+        // build 中に通知を出さないよう、描き終わってから伝える
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          voice?.setChatVisible(visible);
+        });
+      }
+    }
+    return widget.child;
   }
 }

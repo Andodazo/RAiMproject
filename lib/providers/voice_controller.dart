@@ -115,6 +115,47 @@ class VoiceController extends ChangeNotifier {
     _onInputsChanged();
   }
 
+  /// チャット画面が隠れているか（駅アラームの画面・設定などが上に開いている）。
+  ///
+  /// 隠れている間は「ねえライム」の検知を止める。以前はどの画面にいても
+  /// 聞いていたので、会話の中の「ライム」に反応すると、見えていない
+  /// チャットの入力欄に文が入ったり送られたりしていた。
+  /// マイクは開いたまま検知だけ止める（戻ったときにすぐ聞けるように）。
+  bool _chatHidden = false;
+
+  /// チャット画面が見えているかを伝える（スマホの ChatScreen から呼ぶ）。
+  void setChatVisible(bool visible) {
+    final hidden = !visible;
+    if (_disposed || _chatHidden == hidden) return;
+    _chatHidden = hidden;
+
+    if (hidden) {
+      RaimLog.d('[Voice] チャット画面が隠れたので「ねえライム」を止めます');
+      // 聞き取りの途中なら取り消す（見えていない入力欄に入れない）
+      _cancelSession();
+      _awakeTimer?.cancel();
+      _awakeTimer = null;
+      _resumeTimer?.cancel();
+      _resumeTimer = null;
+      if (_state == VoiceState.awake) _setState(VoiceState.listening);
+      if (_state == VoiceState.listening) _wake.suspend();
+      // 「ねえライム」を使っていない（マイクボタンだけ）なら、開いたマイクも閉じる
+      _op = _op.then((_) async {
+        if (_session == null &&
+            (_state == VoiceState.off || _state == VoiceState.error)) {
+          await _releaseMic();
+        }
+      }).catchError((Object e) {
+        RaimLog.e('[Voice] マイクを閉じられませんでした', e);
+      });
+      notifyListeners();
+      return;
+    }
+
+    RaimLog.d('[Voice] チャット画面に戻ったので「ねえライム」を再開します');
+    if (_state == VoiceState.listening && !isSpeaking) _wake.resume();
+  }
+
   /// 聞き取りを使わない場合に、呼ばれてから待機に戻るまでの時間。
   ///
   /// その間は検知を止めておく。窓が開いた直後にもう一度
@@ -302,8 +343,8 @@ class VoiceController extends ChangeNotifier {
     _setState(VoiceState.listening);
     _startWarmUp();
 
-    // 起動した時点でライムが喋っていれば、すぐ止める
-    if (isSpeaking) _wake.suspend();
+    // 起動した時点でライムが喋っている、またはチャット画面が隠れていれば、すぐ止める
+    if (isSpeaking || _chatHidden) _wake.suspend();
   }
 
   Future<void> _startWake(List<String> words, String? micId) async {
@@ -345,6 +386,7 @@ class VoiceController extends ChangeNotifier {
 
   void _onDetected(WakeWordDetection detection) {
     if (_state != VoiceState.listening) return;
+    if (_chatHidden) return;
 
     // 喋り終わり直後の再開待ちの間に届いたものも捨てる。
     // suspend 前にマイクへ入っていたライムの声の可能性があるため。
@@ -524,7 +566,7 @@ class VoiceController extends ChangeNotifier {
     if (_state != VoiceState.awake) return;
 
     _setState(VoiceState.listening);
-    if (!isSpeaking) _wake.resume();
+    if (!isSpeaking && !_chatHidden) _wake.resume();
   }
 
   // ─── ライムの発話との調停 ───
@@ -545,7 +587,7 @@ class VoiceController extends ChangeNotifier {
     _resumeTimer?.cancel();
     _resumeTimer = Timer(resumeDelay, () {
       _resumeTimer = null;
-      if (_state == VoiceState.listening && !isSpeaking) {
+      if (_state == VoiceState.listening && !isSpeaking && !_chatHidden) {
         _wake.resume();
       }
     });
