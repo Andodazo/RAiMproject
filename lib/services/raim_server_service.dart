@@ -111,6 +111,12 @@ class RaimServerService implements LLMService {
   /// main.dart で設定する（設定「天気に現在地を使う」と位置情報の許可を見る）。
   Future<Map<String, double>?> Function()? locationGetter;
 
+  /// ライムの声（読み上げ）を出すか。false のときはサーバーに読み上げを作らせない。
+  ///
+  /// 音量ボタンで声を消していても、以前はサーバーが毎回読み上げを作って送り、
+  /// アプリ側で捨てていた（TTS の料金と通信の無駄）。main.dart で設定する。
+  bool Function()? speechEnabledGetter;
+
   RaimServerService({
     //required this.serverUrl,
     required String serverUrl,
@@ -546,6 +552,10 @@ class RaimServerService implements LLMService {
     // このアプリで使える機能（駅アラームなど）
     if (features.isNotEmpty) {
       payload['features'] = features;
+    }
+    // 声を消しているときは、読み上げを作らないよう伝える
+    if (speechEnabledGetter?.call() == false) {
+      payload['speech'] = false;
     }
     // だいたいの現在地（天気用）。取れなくても送信は続ける
     try {

@@ -106,6 +106,8 @@ void main() async {
     if (StationAlarmController.isSupported) 'station_alarm',
   ];
   // 場所を言わずに天気を聞いたとき用の、だいたいの現在地（設定で ON のときだけ）
+  // 音量ボタンで声を消しているときは、サーバーに読み上げを作らせない
+  raimService.speechEnabledGetter = () => !voiceSettings.speechMuted;
   raimService.locationGetter = () async {
     if (!voiceSettings.weatherUsesLocation) return null;
     return ApproxLocation.forRequest();
