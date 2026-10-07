@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
@@ -276,6 +278,9 @@ class MascotWindowService {
       );
     }
 
+    // 次に起動したとき「発信中」をここに出せるよう覚えておく
+    _scheduleSaveLastPlace();
+
     if (!_mascotMode) return;
 
     // 位置が分からずに表示を保留していたなら、ここで開く
@@ -320,15 +325,13 @@ class MascotWindowService {
   }
 
   Future<void> _applyPosition() async {
-    final rect = _unityRect;
-    if (rect == null) return;
-
     // Unity が送ってきた足元の座標を使う。
     // 無ければウィンドウ幅からの推測に落とす（古いビルド向け）。
+    final point = _footPoint();
+    if (point == null) return;
     final foot = _characterFoot;
-    final centerX =
-        foot?.dx ?? (rect.left + rect.width * characterCenterRatio);
-    final footY = foot?.dy ?? rect.bottom;
+    final centerX = point.dx;
+    final footY = point.dy;
 
     // 入力バーの下端がライムの足元の少し下に来るようにする。
     // パネルを開いて上に伸びてもバーの位置は変わらない。
@@ -415,7 +418,9 @@ class MascotWindowService {
     await windowManager.hide();
   }
 
-  /// Unity の起動を待つ間、画面の中央に「発信中」の小窓を出す。
+  /// Unity の起動を待つ間、「発信中」の小窓を出す。
+  ///
+  /// 前回ライムがいた場所の足元に出す。初めて起動したときは画面の中央。
   ///
   /// 入力小窓を開いているときは何もしない。
   Future<void> showCalling() async {
@@ -423,8 +428,103 @@ class MascotWindowService {
 
     calling.value = true;
     await windowManager.setSize(const Size(windowWidth, callingHeight));
-    await windowManager.center();
+
+    final place = await _lastCallingPosition();
+    if (place == null) {
+      await windowManager.center();
+    } else {
+      await windowManager.setPosition(place);
+    }
     await windowManager.show();
+
+    // 非表示中の setPosition は Windows で効かないことがあるため、表示してからもう一度
+    if (place != null) await windowManager.setPosition(place);
+  }
+
+  // ------------------------------------------------------------
+  // 前回ライムがいた場所
+  // ------------------------------------------------------------
+  // 「発信中」は Unity の起動を待つ間に出すので、まだライムの位置が分からない。
+  // 前回ライムがいた場所を覚えておき、入力小窓と同じくその足元に出す。
+  // ライムは前回の場所に戻ってくるので、そのまま「つながる」ように見える。
+
+  static const String _kLastFootX = 'mascot.lastFootX';
+  static const String _kLastFootY = 'mascot.lastFootY';
+  static const String _kLastAreaLeft = 'mascot.lastAreaLeft';
+  static const String _kLastAreaTop = 'mascot.lastAreaTop';
+  static const String _kLastAreaWidth = 'mascot.lastAreaWidth';
+  static const String _kLastAreaHeight = 'mascot.lastAreaHeight';
+
+  /// ドラッグ中は位置が細かく届くので、止まってから保存する
+  Timer? _saveTimer;
+
+  void _scheduleSaveLastPlace() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(seconds: 1), () {
+      unawaited(_saveLastPlace());
+    });
+  }
+
+  /// ライムの中心X・足元Y（論理ピクセル）。位置が分からなければ null。
+  Offset? _footPoint() {
+    final rect = _unityRect;
+    if (rect == null) return null;
+    // 足元の座標が無い古い Unity ビルドでは、ウィンドウ幅から推測する
+    final foot = _characterFoot;
+    return Offset(
+      foot?.dx ?? (rect.left + rect.width * characterCenterRatio),
+      foot?.dy ?? rect.bottom,
+    );
+  }
+
+  Future<void> _saveLastPlace() async {
+    final foot = _footPoint();
+    final area = _workArea;
+    if (foot == null || area == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_kLastFootX, foot.dx);
+      await prefs.setDouble(_kLastFootY, foot.dy);
+      await prefs.setDouble(_kLastAreaLeft, area.left);
+      await prefs.setDouble(_kLastAreaTop, area.top);
+      await prefs.setDouble(_kLastAreaWidth, area.width);
+      await prefs.setDouble(_kLastAreaHeight, area.height);
+    } catch (e) {
+      RaimLog.w('[Mascot] ライムの位置を保存できませんでした: ${e.runtimeType}');
+    }
+  }
+
+  /// 「発信中」を出す位置。前回の場所が無ければ null（画面の中央に出す）。
+  Future<Offset?> _lastCallingPosition() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final x = prefs.getDouble(_kLastFootX);
+      final y = prefs.getDouble(_kLastFootY);
+      final al = prefs.getDouble(_kLastAreaLeft);
+      final at = prefs.getDouble(_kLastAreaTop);
+      final aw = prefs.getDouble(_kLastAreaWidth);
+      final ah = prefs.getDouble(_kLastAreaHeight);
+      if (x == null || y == null || al == null || at == null ||
+          aw == null || ah == null || aw <= 0 || ah <= 0) {
+        return null;
+      }
+      final area = Rect.fromLTWH(al, at, aw, ah);
+
+      // 入力バーと同じく、ライムの足元の少し下に出す。
+      // 縦に長いので、画面の下にはみ出すぶんは上へずらす（_applyPosition と同じ考え方）
+      var left = x - windowWidth / 2;
+      var top = y + gapBelowCharacter;
+
+      final maxLeft = area.right - windowWidth;
+      if (maxLeft > area.left) left = left.clamp(area.left, maxLeft);
+      final maxTop = area.bottom - callingHeight;
+      if (maxTop > area.top) top = top.clamp(area.top, maxTop);
+
+      return Offset(left, top);
+    } catch (e) {
+      RaimLog.w('[Mascot] 前回の位置を読めませんでした: ${e.runtimeType}');
+      return null;
+    }
   }
 
   /// 「発信中」の小窓を消す。
