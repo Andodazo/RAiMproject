@@ -55,7 +55,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   StreamSubscription<WakeWordDetection>? _wakeSub;
 
   /// 呼ばれたあとに聞き取れた一言
-  StreamSubscription<String>? _utteranceSub;
+  StreamSubscription<HeardUtterance>? _utteranceSub;
 
   /// 聞き取った文を少し待ってから送る（設定「少し待ってから送る」）
   final DelayedSend _delayed = DelayedSend();

@@ -30,7 +30,7 @@ class _ChatInputState extends State<ChatInput> {
   final FocusNode _inputFocusNode = FocusNode();
 
   /// 声で聞き取れた一言（「ねえライム」やマイクボタンのあと）
-  StreamSubscription<String>? _utteranceSub;
+  StreamSubscription<HeardUtterance>? _utteranceSub;
 
   /// 聞き取った文を少し待ってから送る（設定「少し待ってから送る」）
   final DelayedSend _delayed = DelayedSend();
