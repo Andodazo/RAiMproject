@@ -447,6 +447,10 @@ class WindowsUnityBridge implements UnityCommunicator {
     }));
   }
 
+  /// Windows はデスクトップマスコットなので、画面の並びに合わせる必要が無い。
+  @override
+  void sendLayout({required double headTop}) {}
+
   @override
   void sendBubbleBreak() {
     _broadcast(jsonEncode({'type': 'bubble_break'}));

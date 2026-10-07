@@ -17,6 +17,12 @@ namespace RAiM.NightOffice.Compatible {
         public Transform avatarAnchor;
         public TextAsset placementProfile;
         [Min(.1f)] public float visibleHeight=1.65f;
+        // スマホで、ライムの頭のてっぺんを画面の上から何割の位置に置くか（0〜0.6）。
+        // 0 なら合わせない（visibleHeight の大きさのまま）。
+        // 画面の高さに対する割合なので、端末が変わっても見え方が同じになる。
+        // Flutter が「新しい会話」のバーのすぐ下の位置を送ってくる（SetHeadTopFromScreenTop）。
+        // 届くまではこの値を使う。
+        [Range(0f,.6f)] public float headTopFromScreenTop=.22f;
         public Vector3 roomCameraPosition=new Vector3(4.1f,1.4f,.25f);
         public Vector3 roomCameraTarget=new Vector3(2.75f,1.15f,2.95f);
         [Range(10,120)] public float roomVerticalFov=54;
@@ -65,6 +71,7 @@ namespace RAiM.NightOffice.Compatible {
         bool[] savedActive=Array.Empty<bool>();
         Profile profile;
         Sprite lastSprite;
+        int lastScreenWidth,lastScreenHeight;
 
         void OnEnable() {if(Application.isPlaying)ApplyMode();}
         void OnDisable() {if(Application.isPlaying)LeaveRoom();}
@@ -72,6 +79,15 @@ namespace RAiM.NightOffice.Compatible {
             if(!Application.isPlaying)return;
             if(mode!=lastMode)ApplyMode();
             if(roomApplied && savedCharacter && savedCharacter.sprite!=lastSprite)PlaceSprite();
+            // 画面の大きさが変わったら（回転・分割表示など）頭の位置を合わせ直す
+            else if(roomApplied && (Screen.width!=lastScreenWidth || Screen.height!=lastScreenHeight))PlaceSprite();
+        }
+        /// <summary>
+        /// 頭のてっぺんの位置（画面の上からの割合）を変える。Flutter から呼ばれる。
+        /// </summary>
+        public void SetHeadTopFromScreenTop(float value) {
+            headTopFromScreenTop=Mathf.Clamp(value,0f,.6f);
+            if(roomApplied)PlaceSprite();
         }
         public void SetMode(DisplayMode value) {mode=value;if(Application.isPlaying && isActiveAndEnabled)ApplyMode();}
         public void ApplyMode() {
@@ -125,7 +141,7 @@ namespace RAiM.NightOffice.Compatible {
             if(profile?.sprites!=null)foreach(var entry in profile.sprites)if(entry.spriteName==sprite.name) {region=entry.visibleRect;break;}
             var size=sprite.rect.size/sprite.pixelsPerUnit;var pivot=sprite.pivot/sprite.pixelsPerUnit;
             if(region==null || size.y<=0 || region.height<=0 || visibleHeight<=0)return;
-            float scale=visibleHeight/(size.y*region.height);
+            float scale=visibleHeight/(size.y*region.height)*HeadFitFactor();
             var parentScale=savedCharacter.transform.parent?savedCharacter.transform.parent.lossyScale:Vector3.one;
             if(parentScale.x<=0 || Mathf.Abs(parentScale.x-parentScale.y)>.0001f || Mathf.Abs(parentScale.x-parentScale.z)>.0001f)return;
             savedCharacter.transform.localScale=Vector3.one*(scale/parentScale.x);
@@ -133,6 +149,31 @@ namespace RAiM.NightOffice.Compatible {
             var offset=new Vector3((pivot.x-size.x*(region.x+region.width*.5f))*scale,(pivot.y-size.y*region.y)*scale,0);
             savedCharacter.transform.position=avatarAnchor.position+avatarAnchor.rotation*offset;
             lastSprite=sprite;
+            lastScreenWidth=Screen.width;lastScreenHeight=Screen.height;
+        }
+        /// <summary>
+        /// 頭のてっぺんが headTopFromScreenTop の高さに来るよう、足元を基準に何倍にするか。
+        ///
+        /// 足元（avatarAnchor）は動かさず、上へ伸ばす。カメラは遠近法なので
+        /// 拡大率と画面上の高さは比例しない。二分探索で合わせる。
+        /// 画面の高さに対する割合で決めるので、端末の解像度や縦横比が変わっても
+        /// 頭の位置は同じ割合になる（縦の画角は固定のため）。
+        /// </summary>
+        float HeadFitFactor() {
+            var camera=savedCamera!=null?savedCamera.camera:null;
+            if(!camera || !avatarAnchor || headTopFromScreenTop<=0f)return 1f;
+            float target=1f-headTopFromScreenTop; // ビューポートは下が0・上が1
+            Vector3 feet=avatarAnchor.position,up=avatarAnchor.up;
+            float TopY(float k) {
+                var p=camera.WorldToViewportPoint(feet+up*(visibleHeight*k));
+                return p.z>0?p.y:float.PositiveInfinity;
+            }
+            // 極端な値にならないよう、元の大きさの 0.5〜2.5 倍の範囲で合わせる
+            float lo=.5f,hi=2.5f;
+            if(TopY(lo)>=target)return lo;
+            if(TopY(hi)<=target)return hi;
+            for(int i=0;i<24;i++) {float mid=(lo+hi)*.5f;if(TopY(mid)<target)lo=mid;else hi=mid;}
+            return (lo+hi)*.5f;
         }
         void LeaveRoom() {
             if(roomContent)roomContent.SetActive(false);

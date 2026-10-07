@@ -206,6 +206,37 @@ public class RAiMCharacterController : MonoBehaviour
     }
 
     /// <summary>
+    /// 画面の並びを受信する（スマホのみ）。
+    ///
+    /// Flutter が「新しい会話」のバーのすぐ下の位置を、画面の高さに対する
+    /// 割合で送ってくる。例：{"head_top":0.215}
+    /// ライムの頭のてっぺんがそこに来るよう、部屋の中での大きさを合わせる。
+    /// 割合なので、端末の画面サイズが違っても見え方がそろう。
+    /// </summary>
+    public void ReceiveLayout(string json)
+    {
+        try
+        {
+            var data = JsonUtility.FromJson<LayoutMessage>(json);
+            if (data == null || data.head_top <= 0f) return;
+
+            var room = FindFirstObjectByType<RAiM.NightOffice.Compatible.NightOfficePresentation>();
+            if (room == null)
+            {
+                Debug.LogWarning("[Unity] NightOfficePresentation が見つからないため、大きさを合わせられません");
+                return;
+            }
+
+            room.SetHeadTopFromScreenTop(data.head_top);
+            Debug.Log($"[Unity] 頭の位置を画面の上から {data.head_top:F3} に合わせました");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"レイアウトJSONエラー: {e.Message}");
+        }
+    }
+
+    /// <summary>
     /// Tool使用状態を受信する
     /// </summary>
     public void ReceiveToolState(string json)
@@ -887,6 +918,13 @@ public class ToolStateMessage
     public string type;
     public bool is_using_tool;
     public string description;
+}
+
+[Serializable]
+public class LayoutMessage
+{
+    /// <summary>頭のてっぺんの位置（画面の上からの割合、0〜1）</summary>
+    public float head_top;
 }
 
 [Serializable]

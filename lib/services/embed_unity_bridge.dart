@@ -22,6 +22,7 @@ class EmbedUnityBridge implements UnityCommunicator {
   /// Unity 側の RAiMCharacterController.ReceiveEmotion に対応する。
   static const String emotionsMethodName = "ReceiveEmotions";
   static const String toolStateMethodName = "ReceiveToolState";
+  static const String layoutMethodName = "ReceiveLayout";
   @override
   Future<void> start() async {
     // flutter_embed_unity は Unity ウィジェット描画時に初期化されるため、ここでは何もしません。
@@ -74,6 +75,13 @@ void sendToolState({
     bool isFiller = false,
   }) {
     // 何もしない
+  }
+
+  @override
+  void sendLayout({required double headTop}) {
+    final json = jsonEncode({'head_top': headTop});
+    sendToUnity(gameObjectName, layoutMethodName, json);
+    RaimLog.d('[EmbedUnityBridge] 送信 $layoutMethodName($json)');
   }
 
   @override

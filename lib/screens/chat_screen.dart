@@ -1,4 +1,5 @@
 //画面にUIの配置や位置調整
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/providers/station_alarm_controller.dart';
 import 'package:raim_prototype/screens/station_alarm_screen.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/unity_communicator.dart';
 
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
@@ -104,35 +106,38 @@ class ChatScreen extends StatelessWidget {
   /// FlutterのUIとして上に重ねる。
   Widget _buildReferenceTopBar(BuildContext context) {
     final safeTop = MediaQuery.of(context).padding.top;
+    final bar = Row(
+      children: [
+        ChatMenuButton(
+          onSettings: () => showVoiceSettingsSheet(context),
+          onStationAlarm: StationAlarmController.isSupported
+              ? () => StationAlarmScreen.open(context)
+              : null,
+          onLogout: () {
+            _confirmLogoutAndClose(context);
+          },
+        ),
+        const SizedBox(width: 12),
+        //新しい会話ボタン
+        Expanded(
+          child: ChatNewConversationButton(
+            onTap: (buttonContext) => showThreadMenu(buttonContext),
+          ),
+        ),
+        const SizedBox(width: 12),
+        // 音量ボタン（ライムの声を消す / 出す）。
+        // 以前ここにあった CAPTURE は入力欄の左に移した
+        const ChatVolumeButton(),
+      ],
+    );
+
     //ハンバーガーメニュー
     return Positioned(
       top: safeTop + 60, //上部三つのボタンの位置を変える
       left: 24,
       right: 24,
-      child: Row(
-        children: [
-          ChatMenuButton(
-            onSettings: () => showVoiceSettingsSheet(context),
-            onStationAlarm: StationAlarmController.isSupported
-                ? () => StationAlarmScreen.open(context)
-                : null,
-            onLogout: () {
-              _confirmLogoutAndClose(context);
-            },
-          ),
-          const SizedBox(width: 12),
-          //新しい会話ボタン
-          Expanded(
-            child: ChatNewConversationButton(
-              onTap: (buttonContext) => showThreadMenu(buttonContext),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // 音量ボタン（ライムの声を消す / 出す）。
-          // 以前ここにあった CAPTURE は入力欄の左に移した
-          const ChatVolumeButton(),
-        ],
-      ),
+      // スマホでは、このバーのすぐ下にライムの頭が来るよう Unity へ伝える
+      child: _isMobile ? _HeadLayoutReporter(child: bar) : bar,
     );
   }
 
@@ -419,5 +424,89 @@ class ChatScreen extends StatelessWidget {
       // （iOS 実機など）。トークンは消えているので、画面も未認証へ戻す。
       authProvider.notifyLogoutFallback();
     }
+  }
+}
+
+/// 上部のバーの下端を測り、ライムの頭をその少し下に置くよう Unity へ伝える（スマホのみ）。
+///
+/// 以前はライムの大きさが部屋の中で固定（身長 1.65m 相当）で、スマホでは
+/// バーとの間が大きく空き、ライムが小さく見えていた。
+/// バーの位置は端末（ノッチの有無・画面の高さ）で変わるので、ピクセルではなく
+/// 画面の高さに対する割合で送る。Unity は縦の画角が固定なので、割合で合わせれば
+/// どの端末でも同じ見え方になる。
+class _HeadLayoutReporter extends StatefulWidget {
+  const _HeadLayoutReporter({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_HeadLayoutReporter> createState() => _HeadLayoutReporterState();
+}
+
+class _HeadLayoutReporterState extends State<_HeadLayoutReporter> {
+  /// バーとライムの頭の間の隙間（論理ピクセル）
+  static const double gap = 12;
+
+  /// Unity は起動に数秒かかり、読み込み前に送ったメッセージは届かない。
+  /// 起動直後は間を置いて何度か送る（Unity 側は同じ値なら何度受け取っても同じ）。
+  static const List<Duration> _retries = [
+    Duration(milliseconds: 300),
+    Duration(seconds: 2),
+    Duration(seconds: 5),
+    Duration(seconds: 10),
+  ];
+
+  final GlobalKey _key = GlobalKey();
+  final List<Timer> _timers = [];
+  double? _lastSent;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final delay in _retries) {
+      _timers.add(Timer(delay, () => _report(force: true)));
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 画面の大きさ（回転・分割表示など）が変わったら測り直す
+    WidgetsBinding.instance.addPostFrameCallback((_) => _report());
+  }
+
+  @override
+  void dispose() {
+    for (final timer in _timers) {
+      timer.cancel();
+    }
+    super.dispose();
+  }
+
+  void _report({bool force = false}) {
+    if (!mounted) return;
+    final box = _key.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    if (screenHeight <= 0) return;
+
+    final barBottom = box.localToGlobal(Offset(0, box.size.height)).dy;
+    final headTop = ((barBottom + gap) / screenHeight).clamp(0.05, 0.6);
+
+    if (!force &&
+        _lastSent != null &&
+        (headTop - _lastSent!).abs() < 0.002) {
+      return;
+    }
+    _lastSent = headTop;
+    context.read<UnityCommunicator>().sendLayout(headTop: headTop);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 画面の大きさが変わったときに didChangeDependencies が呼ばれるようにする
+    MediaQuery.sizeOf(context);
+    return KeyedSubtree(key: _key, child: widget.child);
   }
 }
