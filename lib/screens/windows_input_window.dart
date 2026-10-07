@@ -55,7 +55,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   StreamSubscription<WakeWordDetection>? _wakeSub;
 
   /// 呼ばれたあとに聞き取れた一言
-  StreamSubscription<HeardUtterance>? _utteranceSub;
+  StreamSubscription<String>? _utteranceSub;
 
   /// 聞き取った文を少し待ってから送る（設定「少し待ってから送る」）
   final DelayedSend _delayed = DelayedSend();
@@ -162,7 +162,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   /// 「ねえライム」と呼ばれたら入力小窓を開く。
   ///
-  /// ライムをクリックしたときと同じ動き。続けて話した内容は
+  /// ライムをクリックしたときと同じ動き。窓が開いてから話した内容は
   /// 聞き取り中に入力欄のプレースホルダへ出し、聞き取れたら送る。
   void _listenWakeWord() {
     final voice = context.read<VoiceController>();
@@ -178,8 +178,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   /// 入力欄に書きかけの文があるとき、応答の生成中のときは送らずに
   /// 入力欄へ足すだけにする。書きかけを消したり、送れずに
   /// 聞き取った内容が消えたりしないようにするため。
-  void _onUtterance(HeardUtterance utterance) {
-    final text = utterance.text;
+  void _onUtterance(String text) {
     if (!mounted) return;
 
     final placed = placeUtterance(
@@ -192,8 +191,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
       selection: TextSelection.collapsed(offset: placed.text.length),
     );
     final action = decideUtteranceAction(
-      // ライムのことを話していただけに聞こえるときは、送らずに入力欄へ
-      canSend: placed.send && !utterance.mustConfirm,
+      canSend: placed.send,
       mode: context.read<VoiceSettingsProvider>().sendMode,
     );
     switch (action) {

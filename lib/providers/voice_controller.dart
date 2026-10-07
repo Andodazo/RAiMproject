@@ -19,12 +19,14 @@
 // 状態を分けないのは、喋り終われば何もしなくても listening に戻るため。
 //
 // 【呼ばれたあと】
-//   「ねえライム」→ 入力小窓が開く（wakeEvents）
-//   → 続けて話した内容を Transcribe で文字にする（heardText に途中経過）
+//   「ねえライム」→ スマホは合図の音と振動、Windows は入力小窓が開く（wakeEvents）
+//   → そのあと話した内容を Transcribe で文字にする（heardText に途中経過）
 //   → 聞き取れたら utterances に流す。送信するかは画面側が決める
 //   → listening に戻る
 // 聞き取り中はウェイクワードの検知を止めている。自分の話の中の
 // 「ライム」で呼び直されないようにするため。
+// 「ねえライム」のすぐ後に間を空けずに話が続いたときは、呼ばれていないとみなす
+// （人と話していてライムの名前が出ただけのことが多いため）。
 //
 // 【マイクボタン】
 // toggleTalk() で、呼ばずに聞き取りだけを始められる。Vosk を使わないので
@@ -192,8 +194,8 @@ class VoiceController extends ChangeNotifier {
   final TranscribeSttService? _stt;
   SttSession? _session;
   final ValueNotifier<String> _heard = ValueNotifier<String>('');
-  final StreamController<HeardUtterance> _utterances =
-      StreamController<HeardUtterance>.broadcast();
+  final StreamController<String> _utterances =
+      StreamController<String>.broadcast();
   String? _sttError;
   Timer? _sttErrorTimer;
 
@@ -256,7 +258,7 @@ class VoiceController extends ChangeNotifier {
   ///
   /// 送信するかどうかは画面側で決める。入力欄に書きかけの文があるときや
   /// 応答の生成中は、送らずに入力欄へ入れる方がよいため。
-  Stream<HeardUtterance> get utterances => _utterances.stream;
+  Stream<String> get utterances => _utterances.stream;
 
   /// 直前の聞き取りが失敗したときの説明。しばらくすると null に戻る。
   String? get sttError => _sttError;
@@ -395,6 +397,17 @@ class VoiceController extends ChangeNotifier {
       return;
     }
 
+    // 「ねえライム」のすぐ後に続けて喋っていたら、呼ばれたのではないとみなす。
+    // 人と話していてライムの名前が出たとき（「ライムが二つあって…」）は
+    // 名前のあとも話が切れずに続く。本当に呼ぶときは、反応（合図の音・振動、
+    // Windows なら入力小窓）を待ってから話すので、間が空く。
+    // 以前は続けて喋った分もそのまま聞き取って送っていたため、
+    // 会話の中の「ライム」で勝手に入力されていた。
+    if (detection.utterance != null) {
+      RaimLog.d('[Voice] 呼びかけのすぐ後に話が続いていたので、呼ばれていないとみなしました');
+      return;
+    }
+
     RaimLog.i('[Voice] 呼ばれました');
     _wake.suspend();
     _setState(VoiceState.awake);
@@ -406,8 +419,7 @@ class VoiceController extends ChangeNotifier {
       _awakeTimer = Timer(awakeDuration, _endAwake);
       return;
     }
-    // 「ねえライム、今日の天気は」と続けて言われていたら、その音から始める
-    unawaited(_listen(stt, initialAudio: detection.utterance));
+    unawaited(_listen(stt));
   }
 
   // ─── マイクボタン ───
@@ -508,14 +520,8 @@ class VoiceController extends ChangeNotifier {
     });
 
     if (outcome.text.isNotEmpty && !_utterances.isClosed) {
-      RaimLog.i(
-        '[Voice] 聞き取りました ${outcome.text.length}文字'
-        '${outcome.aboutWakeWord ? '（ライムのことを話していたようなので、送らずに入力欄へ）' : ''}',
-      );
-      _utterances.add(HeardUtterance(
-        outcome.text,
-        mustConfirm: outcome.aboutWakeWord,
-      ));
+      RaimLog.i('[Voice] 聞き取りました ${outcome.text.length}文字');
+      _utterances.add(outcome.text);
     }
 
     _endAwake();
@@ -664,17 +670,4 @@ class VoiceController extends ChangeNotifier {
   final current = typed.trim();
   if (current.isEmpty && !busy) return (text: heard, send: true);
   return (text: current.isEmpty ? heard : '$current $heard', send: false);
-}
-
-/// 聞き取れた一言。
-class HeardUtterance {
-  const HeardUtterance(this.text, {this.mustConfirm = false});
-
-  final String text;
-
-  /// 送らずに入力欄へ入れて、本人に確かめてもらう。
-  ///
-  /// ライムに話しかけたのではなく、人と話していてライムの名前が出ただけに
-  /// 聞こえるとき（soundsLikeTalkingAboutLime）に true。
-  final bool mustConfirm;
 }
