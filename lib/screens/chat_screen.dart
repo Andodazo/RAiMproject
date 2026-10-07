@@ -11,12 +11,14 @@ import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
 import 'package:raim_prototype/widgets/client_action_listener.dart';
+import 'package:raim_prototype/widgets/raim_calling_overlay.dart';
 import 'package:raim_prototype/widgets/thread_selector_menu.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/providers/station_alarm_controller.dart';
 import 'package:raim_prototype/screens/station_alarm_screen.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
+import 'package:raim_prototype/services/unity_ready_signal.dart';
 
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
@@ -92,13 +94,21 @@ class ChatScreen extends StatelessWidget {
     return const SizedBox.shrink();
   }
 
+  /// Layer 2.5: Unity の準備ができるまで、ライムに電話をかけているような画面を重ねる
+  ///
+  /// Windows は Unity が別ウィンドウなので出さない。
+  Widget _buildCallingOverlay() {
+    if (!_isMobile) return const SizedBox.shrink();
+    return const Positioned.fill(child: RaimCallingOverlay());
+  }
+
 
   /// Unity からのメッセージハンドラ
   ///
-  /// 現状は Flutter → Unity の一方通行なので空実装。
-  /// 将来 Unity 側でクリック検知やアニメ完了通知が必要になったらここで処理。
+  /// 今届くのは、Unity の準備ができたという合図（unity.ready）だけ。
   static void _handleUnityMessage(String message) {
     RaimLog.d('[ChatScreen] Unity から受信 ${RaimLog.size(message)}');
+    UnityReadySignal.handleMessage(message);
   }
 
   /// 参考UI風の上部ヘッダー
@@ -171,6 +181,9 @@ class ChatScreen extends StatelessWidget {
         // Layer 2: キャラクター(Unity または立ち絵)
         // ====================================================
         _buildCharacterLayer(context),
+
+        // Layer 2.5: Unity の準備ができるまでの「発信中」の画面（スマホのみ）
+        _buildCallingOverlay(),
 
         // ====================================================
         // Layer 3: UI オーバーレイ
@@ -306,6 +319,7 @@ class ChatScreen extends StatelessWidget {
         _buildBackground(),
         _buildBackgroundOverlay(),
         _buildCharacterLayer(context),
+        _buildCallingOverlay(),
 
         // 左上タイトル
         Positioned(
@@ -466,6 +480,12 @@ class _HeadLayoutReporterState extends State<_HeadLayoutReporter> {
     for (final delay in _retries) {
       _timers.add(Timer(delay, () => _report(force: true)));
     }
+    // Unity の準備ができたらすぐ送る。「発信中」の画面が消える前に大きさを合わせておく
+    UnityReadySignal.ready.addListener(_onUnityReady);
+  }
+
+  void _onUnityReady() {
+    if (UnityReadySignal.ready.value) _report(force: true);
   }
 
   @override
@@ -477,6 +497,7 @@ class _HeadLayoutReporterState extends State<_HeadLayoutReporter> {
 
   @override
   void dispose() {
+    UnityReadySignal.ready.removeListener(_onUnityReady);
     for (final timer in _timers) {
       timer.cancel();
     }

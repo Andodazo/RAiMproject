@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -131,6 +132,9 @@ public class RAiMCharacterController : MonoBehaviour
         useWebSocket = false;
         Debug.Log("モバイル版: WebSocket無効、flutter_embed_unity経由で受信");
 
+        // Flutter は Unity の準備ができるまで「発信中」の画面を出している
+        StartCoroutine(NotifyFlutterReady());
+
 #elif UNITY_STANDALONE_WIN
         // Windows版UnityはWebSocket経由
         useWebSocket = true;
@@ -141,6 +145,30 @@ public class RAiMCharacterController : MonoBehaviour
         if (useWebSocket)
         {
             await ConnectWebSocket();
+        }
+    }
+
+    /// <summary>
+    /// 最初の画面を描き終えたら、Flutter に準備ができたことを伝える（Android/iOS）。
+    /// Flutter はそれまでライムに電話をかけているような画面を出していて、
+    /// これを受け取ったら消す。
+    /// </summary>
+    private IEnumerator NotifyFlutterReady()
+    {
+        // 部屋とライムを置いた状態の絵を1枚描き終えてから知らせる
+        yield return null;
+        yield return new WaitForEndOfFrame();
+
+        try
+        {
+            // このクラスにも SendToFlutter という名前のメソッド（Windows用）があるので、
+            // flutter_embed_unity のクラスだと分かるよう global:: を付ける
+            global::SendToFlutter.Send("{\"type\":\"unity.ready\"}");
+            Debug.Log("[Unity] Flutter に準備完了を送りました");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"準備完了の送信に失敗: {e.Message}");
         }
     }
 
