@@ -362,7 +362,7 @@ public class WindowsOverlayController : MonoBehaviour
     /// 動作しない。FindWindowEx なら hWndChildAfter で列挙を継続でき、
     /// コールバックが要らない。
     /// </summary>
-    private IntPtr FindOwnWindowByClass(string className, uint myPid)
+    private static IntPtr FindOwnWindowByClass(string className, uint myPid)
     {
         IntPtr h = IntPtr.Zero;
         for (int i = 0; i < 200; i++)
@@ -374,7 +374,7 @@ public class WindowsOverlayController : MonoBehaviour
         return IntPtr.Zero;
     }
 
-    private bool IsOwnWindow(IntPtr hWnd, uint myPid)
+    private static bool IsOwnWindow(IntPtr hWnd, uint myPid)
     {
         if (hWnd == IntPtr.Zero) return false;
         if (!IsWindowVisible(hWnd)) return false;
@@ -432,6 +432,65 @@ public class WindowsOverlayController : MonoBehaviour
     // 位置保存用のキー
     private const string PrefKeyX = "raim_window_x";
     private const string PrefKeyY = "raim_window_y";
+
+    // ------------------------------------------------------------
+    // 起動直後はウィンドウを画面の外に置く
+    // ------------------------------------------------------------
+    //
+    // Unity は起動すると、まず枠の付いた普通のウィンドウを出してからシーンを読む。
+    // 透過にするのは Awake で UniWindowController を有効にしたときなので、
+    // それまでの間、黒い四角いウィンドウが画面に見えていた。
+    //
+    // スクリプトが動ける一番早いタイミングで画面の外へ出しておき、
+    // 透過の準備が済んでから、前回の場所（無ければ元の場所）へ戻す。
+    //
+    // ShowWindow で隠さないのは、自分のウィンドウを探す処理
+    // （GetSelfWindow、UniWindowController）が「見えているウィンドウ」を探すため。
+
+    /// <summary>起動直後で、画面の外に出している間 true</summary>
+    private static bool startupHidden;
+
+    /// <summary>画面の外へ出す前の位置</summary>
+    private static RECT startupRect;
+
+#if !UNITY_EDITOR
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
+    private static void HideWindowBeforeSplash() => MoveWindowOffScreen();
+
+    // 上のタイミングでまだウィンドウが見つからなかったときの念のため
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void HideWindowBeforeSceneLoad() => MoveWindowOffScreen();
+#endif
+
+    private static void MoveWindowOffScreen()
+    {
+        if (startupHidden) return;
+
+        IntPtr hwnd = FindOwnWindowByClass("UnityWndClass", GetCurrentProcessId());
+        if (hwnd == IntPtr.Zero) return;
+        if (!GetWindowRect(hwnd, out startupRect)) return;
+
+        // 全モニタを合わせた範囲の、さらに右の外へ置く
+        int x = GetSystemMetrics(SM_XVIRTUALSCREEN) + GetSystemMetrics(SM_CXVIRTUALSCREEN) + 100;
+        int y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+
+        startupHidden = true;
+        Debug.Log("[Overlay] 透過の準備ができるまで、ウィンドウを画面の外に置きます");
+    }
+
+    /// <summary>
+    /// 前回の場所が無いときは、画面の外へ出す前の場所に戻す。
+    /// </summary>
+    private void MoveWindowBackToStartupPosition()
+    {
+        IntPtr hwnd = GetSelfWindow();
+        if (hwnd == IntPtr.Zero) return;
+
+        SetWindowPos(hwnd, IntPtr.Zero, startupRect.Left, startupRect.Top, 0, 0,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 
     // ------------------------------------------------------------
     // 起動
@@ -548,7 +607,24 @@ public class WindowsOverlayController : MonoBehaviour
     {
         if (!isWindowsOverlay) yield break;
 
-        RestoreWindowPosition();
+        if (startupHidden)
+        {
+            // UniWindowController が透過にし終わるまで、画面の外で待つ
+            yield return null;
+            yield return null;
+            yield return new WaitForSecondsRealtime(0.1f);
+
+            if (!RestoreWindowPosition())
+            {
+                MoveWindowBackToStartupPosition();
+            }
+            startupHidden = false;
+            Debug.Log("[Overlay] ウィンドウを画面に戻しました");
+        }
+        else
+        {
+            RestoreWindowPosition();
+        }
 
         yield return null;
 
@@ -572,6 +648,10 @@ public class WindowsOverlayController : MonoBehaviour
     private void Update()
     {
         if (!isWindowsOverlay || quitting) return;
+
+        // 画面の外で透過の準備をしている間は、押し戻しも位置の通知もしない。
+        // 通知すると Flutter が「ライムが来た」と判断して「発信中」を消してしまう
+        if (startupHidden) return;
 
         HandleQuitShortcut();
         HandleClickDetection();
@@ -1451,13 +1531,14 @@ public class WindowsOverlayController : MonoBehaviour
     // ウィンドウ位置の保存・復元
     // ------------------------------------------------------------
 
-    private void RestoreWindowPosition()
+    /// <summary>前回の位置に戻せたら true</summary>
+    private bool RestoreWindowPosition()
     {
-        if (!rememberPosition) return;
-        if (!PlayerPrefs.HasKey(PrefKeyX)) return;
+        if (!rememberPosition) return false;
+        if (!PlayerPrefs.HasKey(PrefKeyX)) return false;
 
         var controller = UniWindowController.current;
-        if (controller == null) return;
+        if (controller == null) return false;
 
         float x = PlayerPrefs.GetFloat(PrefKeyX);
         float y = PlayerPrefs.GetFloat(PrefKeyY);
@@ -1466,16 +1547,19 @@ public class WindowsOverlayController : MonoBehaviour
         if (!IsPositionVisible(pos))
         {
             Debug.LogWarning($"[Overlay] 保存位置 {pos} が画面外のため復元しません");
-            return;
+            return false;
         }
 
         controller.windowPosition = pos;
         Debug.Log($"[Overlay] ウィンドウ位置を復元: {pos}");
+        return true;
     }
 
     private void SaveWindowPosition()
     {
         if (!rememberPosition) return;
+        // 画面の外に置いている間の位置は覚えない
+        if (startupHidden) return;
 
         var controller = UniWindowController.current;
         if (controller == null) return;

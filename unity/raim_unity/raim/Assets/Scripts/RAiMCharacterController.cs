@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -131,6 +132,9 @@ public class RAiMCharacterController : MonoBehaviour
         useWebSocket = false;
         Debug.Log("モバイル版: WebSocket無効、flutter_embed_unity経由で受信");
 
+        // Flutter は Unity の準備ができるまで「発信中」の画面を出している
+        StartCoroutine(NotifyFlutterReady());
+
 #elif UNITY_STANDALONE_WIN
         // Windows版UnityはWebSocket経由
         useWebSocket = true;
@@ -141,6 +145,30 @@ public class RAiMCharacterController : MonoBehaviour
         if (useWebSocket)
         {
             await ConnectWebSocket();
+        }
+    }
+
+    /// <summary>
+    /// 最初の画面を描き終えたら、Flutter に準備ができたことを伝える（Android/iOS）。
+    /// Flutter はそれまでライムに電話をかけているような画面を出していて、
+    /// これを受け取ったら消す。
+    /// </summary>
+    private IEnumerator NotifyFlutterReady()
+    {
+        // 部屋とライムを置いた状態の絵を1枚描き終えてから知らせる
+        yield return null;
+        yield return new WaitForEndOfFrame();
+
+        try
+        {
+            // このクラスにも SendToFlutter という名前のメソッド（Windows用）があるので、
+            // flutter_embed_unity のクラスだと分かるよう global:: を付ける
+            global::SendToFlutter.Send("{\"type\":\"unity.ready\"}");
+            Debug.Log("[Unity] Flutter に準備完了を送りました");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"準備完了の送信に失敗: {e.Message}");
         }
     }
 
@@ -202,6 +230,37 @@ public class RAiMCharacterController : MonoBehaviour
         catch (Exception e)
         {
             Debug.LogError($"複数感情JSONエラー: {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 画面の並びを受信する（スマホのみ）。
+    ///
+    /// Flutter が「新しい会話」のバーのすぐ下の位置を、画面の高さに対する
+    /// 割合で送ってくる。例：{"head_top":0.215}
+    /// ライムの頭のてっぺんがそこに来るよう、部屋の中での大きさを合わせる。
+    /// 割合なので、端末の画面サイズが違っても見え方がそろう。
+    /// </summary>
+    public void ReceiveLayout(string json)
+    {
+        try
+        {
+            var data = JsonUtility.FromJson<LayoutMessage>(json);
+            if (data == null || data.head_top <= 0f) return;
+
+            var room = FindFirstObjectByType<RAiM.NightOffice.Compatible.NightOfficePresentation>();
+            if (room == null)
+            {
+                Debug.LogWarning("[Unity] NightOfficePresentation が見つからないため、大きさを合わせられません");
+                return;
+            }
+
+            room.SetHeadTopFromScreenTop(data.head_top);
+            Debug.Log($"[Unity] 頭の位置を画面の上から {data.head_top:F3} に合わせました");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"レイアウトJSONエラー: {e.Message}");
         }
     }
 
@@ -916,6 +975,13 @@ public class ExhibitionModeMessage
 {
     public string type;
     public bool enabled;
+}
+
+[Serializable]
+public class LayoutMessage
+{
+    /// <summary>頭のてっぺんの位置（画面の上からの割合、0〜1）</summary>
+    public float head_top;
 }
 
 [Serializable]

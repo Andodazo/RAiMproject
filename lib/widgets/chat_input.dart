@@ -15,6 +15,8 @@ import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/voice/delayed_send.dart';
+import 'package:raim_prototype/services/wake_cue.dart';
+import 'package:raim_prototype/services/wake_word_service.dart';
 import 'package:raim_prototype/config/raim_config.dart';
 
 class ChatInput extends StatefulWidget {
@@ -32,6 +34,9 @@ class _ChatInputState extends State<ChatInput> {
   /// 声で聞き取れた一言（「ねえライム」やマイクボタンのあと）
   StreamSubscription<String>? _utteranceSub;
 
+  /// 「ねえライム」に反応したとき（合図の音と振動を出す）
+  StreamSubscription<WakeWordDetection>? _wakeSub;
+
   /// 聞き取った文を少し待ってから送る（設定「少し待ってから送る」）
   final DelayedSend _delayed = DelayedSend();
 
@@ -42,8 +47,15 @@ class _ChatInputState extends State<ChatInput> {
   // 入力欄にフォーカスがあるときのキー入力を監視する
     _inputFocusNode.onKeyEvent = _handleInputKeyEvent;
 
-    _utteranceSub =
-        context.read<VoiceController>().utterances.listen(_onUtterance);
+    final voice = context.read<VoiceController>();
+    _utteranceSub = voice.utterances.listen(_onUtterance);
+    if (Platform.isAndroid || Platform.isIOS) {
+      _wakeSub = voice.wakeEvents.listen((_) {
+        if (!mounted) return;
+        final muted = context.read<VoiceSettingsProvider>().speechMuted;
+        unawaited(WakeCue.play(sound: !muted));
+      });
+    }
   }
 
   /// 聞き取れた一言を入力欄に入れ、設定に合わせて送る。
@@ -117,6 +129,7 @@ class _ChatInputState extends State<ChatInput> {
   @override
   void dispose() {
     _utteranceSub?.cancel();
+    _wakeSub?.cancel();
     _delayed.dispose();
 
     // 使い終わった FocusNode を破棄する
