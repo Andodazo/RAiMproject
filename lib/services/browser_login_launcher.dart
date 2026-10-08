@@ -1,102 +1,19 @@
-import 'dart:io';
-
-import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:raim_prototype/services/raim_log.dart';
 
 /// Cognito認証用ブラウザを起動するサービス。
 ///
-/// Webクライアントは対象外のため、ネイティブ環境向けの実装をこの
-/// ファイルに集約しています。WindowsではChromeをkioskモードで起動し、
-/// AndroidではCustom Tabs、iOSでは外部ブラウザへ認証URLを渡します。
+/// 認証URLは専用のChromeプロファイルやキオスクウィンドウを作らず、
+/// すべてのプラットフォームでOSの通常ブラウザへ渡します。
 class BrowserLoginLauncher {
-  Process? _launchedProcess;
-
-  Future<bool> launch(Uri uri) async {
-    if (!kIsWeb && Platform.isWindows) {
-      final chromePath = _findChromePath();
-      if (chromePath != null) {
-        final userDataDir = _prepareChromeUserDataDir();
-        _launchedProcess = await Process.start(
-          chromePath,
-          [
-            '--kiosk',
-            uri.toString(),
-            '--user-data-dir=$userDataDir',
-            '--lang=ja-JP',
-            '--accept-lang=ja-JP,ja',
-            '--no-first-run',
-            '--disable-translate',
-            '--disable-features=Translate',
-          ],
-          mode: ProcessStartMode.detachedWithStdio,
-        );
-        return true;
-      }
-    }
-
-    if (!kIsWeb && Platform.isIOS) {
-      return launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-
-    if (!kIsWeb && Platform.isAndroid) {
-      // AndroidのCustom Tabsを使用する。認証完了時はraim://callbackで戻る。
-      return launchUrl(uri, mode: LaunchMode.inAppBrowserView);
-    }
-
+  /// OSの通常ブラウザを開きます。
+  ///
+  /// WindowsでChromeが既定のブラウザなら通常のChromeプロファイルが使われ、
+  /// Androidでもアプリ内の認証画面ではなく、ユーザーが選んだ外部ブラウザが
+  /// 開きます。iOS・macOS・Linux・Webも同じ経路です。
+  Future<bool> launch(Uri uri) {
     return launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  Future<void> closeLaunchedBrowser() async {
-    final process = _launchedProcess;
-    _launchedProcess = null;
-    process?.kill();
-  }
-
-  /// 認証用に作った Chrome プロファイルを消す。
-  ///
-  /// このプロファイルには Cognito と Google のセッション Cookie が残る。
-  /// 消さないと、ログアウトしても次のログインで同じアカウントの
-  /// セッションが再利用されうる（共用 PC で問題になる）。
-  /// 失敗してもログアウト自体は続行するため、例外は握りつぶす。
-  Future<void> clearSavedSession() async {
-    if (kIsWeb || !Platform.isWindows) return;
-
-    try {
-      final baseDir =
-          Platform.environment['LOCALAPPDATA'] ?? Directory.systemTemp.path;
-      final profileDir = Directory('$baseDir\\RAiM\\auth_chrome_profile');
-      if (await profileDir.exists()) {
-        await profileDir.delete(recursive: true);
-        RaimLog.d('[BrowserLoginLauncher] 認証用プロファイルを削除しました');
-      }
-    } catch (e) {
-      RaimLog.e('[BrowserLoginLauncher] 認証用プロファイルの削除に失敗', e);
-    }
-  }
-
-  String? _findChromePath() {
-    const candidates = <String>[
-      r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-      r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
-    ];
-
-    for (final candidate in candidates) {
-      if (File(candidate).existsSync()) {
-        return candidate;
-      }
-    }
-
-    return null;
-  }
-
-  String _prepareChromeUserDataDir() {
-    final baseDir =
-        Platform.environment['LOCALAPPDATA'] ?? Directory.systemTemp.path;
-    final profileDir = Directory('$baseDir\\RAiM\\auth_chrome_profile');
-    if (!profileDir.existsSync()) {
-      profileDir.createSync(recursive: true);
-    }
-    return profileDir.path;
-  }
+  /// 認証専用ブラウザを起動しないため、終了対象はありません。
+  Future<void> closeLaunchedBrowser() => Future<void>.value();
 }

@@ -123,18 +123,15 @@ class AuthService {
         // 一般的なUIロケール指定として付けておく。
         'lang': 'ja',
         'ui_locales': 'ja',
-        // WebView内の検証では、Cognitoが既存セッションを見つけた時に
-        // "You're still signed in" 画面で止まりやすいので、毎回ログイン操作を促す。
-        'prompt': 'login',
       },
     );
   }
 
-  /// Cognito Managed Login を外部ブラウザで開きます。
+  /// Cognito Managed Login を通常の外部ブラウザで開きます。
   ///
   /// Google OAuth は埋め込み WebView で完走できないことがあるため、Windows では
   /// `http://localhost:3000/callback` を一時HTTPサーバーで待ち受けてから、
-  /// Chrome を kiosk モードで起動してCognitoを開きます。
+  /// Windowsを含むすべてのプラットフォームで、ユーザーの通常ブラウザを開きます。
   ///
   /// Windows 以外では従来どおり Deep Link が戻ってくるのを待つため、ここでは Token を返しません。
   Future<AuthTokens?> startLogin() {
@@ -332,9 +329,6 @@ class AuthService {
     await _revokeRefreshToken(tokens?.refreshToken);
 
     await _browserLoginLauncher.closeLaunchedBrowser();
-    // Windows の認証用 Chrome プロファイルにセッション Cookie が残るため、
-    // 共用 PC で「ログアウトしたのに次の人が同じアカウントで入れる」状態を防ぐ。
-    await _browserLoginLauncher.clearSavedSession();
 
     await _storage.clearPkceState();
     await _storage.clearTokens();

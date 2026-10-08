@@ -4,13 +4,12 @@ import 'package:raim_prototype/providers/auth_provider.dart';
 
 /// Cognito 認証を開始する画面です。
 ///
-/// Windows と Android の両方で Google OAuth を安定させるため、アプリ内 WebView ではなく
-/// OS の外部ブラウザを使います。
+/// すべてのプラットフォームで、認証専用ブラウザではなくOSの通常の外部ブラウザを使います。
 ///
-/// - Windows: Chrome を kiosk 表示で開き、`http://localhost:3000/callback` を
-///   アプリ内の一時 HTTP サーバーで受け取ります。
-/// - Android/iOS: 通常の外部ブラウザを開き、`raim://callback` の deep link を
-///   `app_links` 経由で受け取ります。
+/// - Windows: 通常の外部ブラウザを開き、`http://localhost:3000/callback` を
+///   アプリ内の一時HTTPサーバーで受け取ります。
+/// - Android/iOS/macOS/Linux: 通常の外部ブラウザを開き、`raim://callback` の
+///   deep linkを `app_links` 経由で受け取ります。
 ///
 /// この画面は「認証を開始した後、callback が戻るまで待つ」役割に絞っています。
 /// Token 交換や保存は `AuthProvider` / `AuthService` 側で行います。
