@@ -151,7 +151,15 @@ class _ChatInputState extends State<ChatInput> {
     final text = _controller.text.trim();
     //CameraProviderの状態を取得
     final cameraProvider = context.read<CameraProvider>();
-    final hasImage = cameraProvider.hasImage;
+    final isExhibitionDemo = context.read<AuthProvider>().isExhibitionDemo;
+
+    // 展示用デモでは画像添付を使わせない。既に選択状態が残っていた
+    // 場合も送信対象にしないよう、ここで破棄する。
+    if (isExhibitionDemo && cameraProvider.hasImage) {
+      cameraProvider.clearImage();
+    }
+
+    final hasImage = !isExhibitionDemo && cameraProvider.hasImage;
     // リスト型のゲッターをそのまま取得
     final imagePaths = cameraProvider.selectedImagePaths;
     final pendingImages = List.of(cameraProvider.selectedImages);
@@ -179,6 +187,8 @@ class _ChatInputState extends State<ChatInput> {
   
   @override
   Widget build(BuildContext context) {
+  final auth = context.watch<AuthProvider>();
+  final isExhibitionDemo = auth.isExhibitionDemo;
   final voice = context.watch<VoiceController>();
   final manualMic = context.watch<VoiceSettingsProvider>().manualMicEnabled;
   final talking = voice.isTranscribing;
@@ -189,12 +199,12 @@ class _ChatInputState extends State<ChatInput> {
       FocusManager.instance.primaryFocus?.unfocus();
     },
 
-    // 追加：画像と入力欄を縦に並べる
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 追加：選択した画像を入力欄の上に表示
-        const _SelectedImagePreview(),
+      // 追加：画像と入力欄を縦に並べる
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 追加：選択した画像を入力欄の上に表示
+          if (!isExhibitionDemo) const _SelectedImagePreview(),
         // 聞き取った文を送るまでの待ち時間（設定「少し待ってから送る」）
         ListenableBuilder(
           listenable: _delayed,
@@ -229,8 +239,10 @@ class _ChatInputState extends State<ChatInput> {
           child: Row(
             children: [
               // 画像を添える（カメラ / ギャラリー）。以前は画面上部の CAPTURE ボタンだった
-              const _AttachImageButton(),
-              const SizedBox(width: 8),
+              if (!isExhibitionDemo) ...[
+                const _AttachImageButton(),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: ValueListenableBuilder<String>(
                   valueListenable: voice.heardText,

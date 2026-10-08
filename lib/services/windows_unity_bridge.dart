@@ -318,9 +318,12 @@ class WindowsUnityBridge implements UnityCommunicator {
     }
 
     try {
+      final launchArgs = _exhibitionMode == true
+          ? const <String>['-raim-exhibition']
+          : const <String>[];
       _unityProcess = await Process.start(
         exePath,
-        [],
+        launchArgs,
         // Flutter 側が Unity の標準出力を握り続けないよう分離する。
         // Unity はログを大量に吐くため。終了は stop() の kill で行う。
         mode: ProcessStartMode.detached,
