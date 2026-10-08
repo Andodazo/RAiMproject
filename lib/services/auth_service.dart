@@ -95,6 +95,9 @@ class AuthService {
     return refreshTokens(tokens);
   }
 
+  /// 展示用ビルドの起動時など、保存済み認証情報を明示的に破棄する。
+  Future<void> clearStoredTokens() => _storage.clearTokens();
+
   /// Cognito Managed Login の URL を作ります。
   ///
   /// PKCE の `code_verifier` と `state` は callback 処理で必要になるため、

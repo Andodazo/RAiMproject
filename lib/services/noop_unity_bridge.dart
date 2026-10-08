@@ -37,6 +37,9 @@ class NoopUnityBridge implements UnityCommunicator {
   Future<void> ensureUnityRunning() async {}
 
   @override
+  void setExhibitionMode(bool enabled) {}
+
+  @override
   void sendEmotion({
     required String text,
     required String emotion,

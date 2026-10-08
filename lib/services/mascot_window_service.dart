@@ -71,6 +71,10 @@ class MascotWindowService {
   bool _visible = false;
   bool get isVisible => _visible;
 
+  /// ユーザーが入力小窓をドラッグして任意位置へ置いたかどうか。
+  /// 手動配置後はUnityの移動通知で元の位置へ戻さない。
+  bool _manualPosition = false;
+
   /// Unity の位置がまだ届いていない間に表示を頼まれたか。
   /// 届いた時点で改めて表示する。
   bool _pendingShow = false;
@@ -130,6 +134,7 @@ class MascotWindowService {
   Future<void> enterMascotMode() async {
     if (!isSupported || _mascotMode) return;
     _mascotMode = true;
+    _manualPosition = false;
     _currentHeight = barHeight;
 
     await windowManager.setAsFrameless();
@@ -268,6 +273,10 @@ class MascotWindowService {
 
     if (!_mascotMode) return;
 
+    // 手動配置中はUnityへの追従を停止する。Unityの最新座標自体は上で更新済み
+    // なので、手動配置を解除した場合にも正しい位置へ戻れる。
+    if (_manualPosition) return;
+
     // 位置が分からずに表示を保留していたなら、ここで開く
     if (_pendingShow) {
       _pendingShow = false;
@@ -354,6 +363,16 @@ class MascotWindowService {
     await windowManager.setPosition(Offset(left, placeTop));
   }
 
+  /// 入力バーのドラッグ開始時に呼ぶ。
+  ///
+  /// ネイティブのウィンドウドラッグを使うことで、DPI倍率や複数モニタの
+  /// 座標計算をFlutter側で再実装せず、Windows自身に移動を任せる。
+  Future<void> beginManualDrag() async {
+    if (!isSupported || !_mascotMode || !_visible) return;
+    _manualPosition = true;
+    await windowManager.startDragging();
+  }
+
   // ------------------------------------------------------------
   // 表示 / 非表示
   // ------------------------------------------------------------
@@ -363,21 +382,28 @@ class MascotWindowService {
   Future<void> showAtCharacter() async {
     if (!isSupported || !_mascotMode) return;
 
-    // Unity の位置がまだ届いていないうちに出すと、前の位置のまま現れる。
-    // Unity は2秒おきに強制送信してくるので、届いてから出す。
-    if (_unityRect == null) {
-      RaimLog.d('[Mascot] ライムの位置がまだ不明。届き次第表示します');
-      _pendingShow = true;
-      return;
+    if (!_manualPosition) {
+      // Unity の位置がまだ届いていないうちに出すと、前の位置のまま現れる。
+      // Unity は2秒おきに強制送信してくるので、届いてから出す。
+      if (_unityRect == null) {
+        RaimLog.d('[Mascot] ライムの位置がまだ不明。届き次第表示します');
+        _pendingShow = true;
+        return;
+      }
+
+      await _placeUnderCharacter();
     }
 
-    await _placeUnderCharacter();
+    // 再表示時にも最前面設定を確実に戻す。
+    await windowManager.setAlwaysOnTop(true);
     await windowManager.show();
     await windowManager.focus();
 
     // 非表示中の setPosition は Windows で効かないことがあるため、
     // 表示してからもう一度合わせる。
-    await _placeUnderCharacter();
+    if (!_manualPosition) {
+      await _placeUnderCharacter();
+    }
 
     _visible = true;
     _pendingShow = false;

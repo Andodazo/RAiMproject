@@ -42,7 +42,7 @@ class WindowsInputWindow extends StatefulWidget {
 enum _PanelMode { none, menu, log, credits, settings }
 
 class _WindowsInputWindowState extends State<WindowsInputWindow>
-    with TrayListener {
+    with TrayListener, WidgetsBindingObserver {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   final _windowFocusNode = FocusNode();
@@ -91,6 +91,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   DateTime? _lastLocalPointer;
   static const Duration _localClickWindow = Duration(milliseconds: 800);
 
+  Timer? _exhibitionInactivityTimer;
+  DateTime? _lastExhibitionActivity;
+  bool _resettingExhibitionSession = false;
+
   // ---- 開発検証用: 接続先切り替え ----
   // chat_input.dart の ChatMenuButton と同じ手順。URL は RaimConfig に集約。
   static const String _awsUrl = RaimConfig.serverUrl;
@@ -102,6 +106,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     trayManager.addListener(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _enterMascotMode());
   }
@@ -116,6 +121,73 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     if (mounted) {
       _listenUnity();
       _listenWakeWord();
+      _armExhibitionInactivityTimer();
+
+      // 展示用デモでは、ライムへのマウスクリックを待たずに入力窓を開く。
+      // Unityの位置がまだ届いていない場合はMascotWindowServiceが保留し、
+      // 最初の unity.moved 通知を受けた時点で正しい位置へ表示する。
+      if (_isExhibitionDemo) {
+        await _mascot.showAtCharacter();
+        if (mounted && _mascot.isVisible) {
+          _focusNode.requestFocus();
+        }
+      }
+    }
+  }
+
+  bool get _isExhibitionDemo => context.read<AuthProvider>().isExhibitionDemo;
+
+  void _armExhibitionInactivityTimer() {
+    _exhibitionInactivityTimer?.cancel();
+    if (!_isExhibitionDemo) return;
+
+    _lastExhibitionActivity ??= DateTime.now();
+    final elapsed = DateTime.now().difference(_lastExhibitionActivity!);
+    final remaining = RaimConfig.exhibitionInactivityTimeout - elapsed;
+    if (remaining <= Duration.zero) {
+      unawaited(_resetExhibitionSession());
+      return;
+    }
+    _exhibitionInactivityTimer = Timer(
+      remaining,
+      () => unawaited(_resetExhibitionSession()),
+    );
+  }
+
+  void _markExhibitionActivity() {
+    if (!_isExhibitionDemo) return;
+    _lastExhibitionActivity = DateTime.now();
+    _armExhibitionInactivityTimer();
+  }
+
+  Future<void> _resetExhibitionSession() async {
+    if (!_isExhibitionDemo || _resettingExhibitionSession) return;
+    _resettingExhibitionSession = true;
+    _exhibitionInactivityTimer?.cancel();
+
+    try {
+      await context.read<ChatProvider>().resetExhibitionSession();
+      _controller.clear();
+      if (mounted) await _closeWindow();
+      RaimLog.i('[WindowsInputWindow] 展示会話を無操作タイムアウトでリセットしました');
+    } finally {
+      _lastExhibitionActivity = DateTime.now();
+      _resettingExhibitionSession = false;
+      if (mounted) _armExhibitionInactivityTimer();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_isExhibitionDemo || state != AppLifecycleState.resumed) return;
+
+    final last = _lastExhibitionActivity;
+    if (last != null &&
+        DateTime.now().difference(last) >=
+            RaimConfig.exhibitionInactivityTimeout) {
+      unawaited(_resetExhibitionSession());
+    } else {
+      _armExhibitionInactivityTimer();
     }
   }
 
@@ -139,6 +211,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   /// 聞き取った内容が消えたりしないようにするため。
   void _onUtterance(String text) {
     if (!mounted) return;
+    _markExhibitionActivity();
 
     final placed = placeUtterance(
       typed: _controller.text,
@@ -286,6 +359,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _exhibitionInactivityTimer?.cancel();
     trayManager.removeListener(this);
     _unitySub?.cancel();
     _wakeSub?.cancel();
@@ -302,6 +377,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   // ------------------------------------------------------------
 
   Future<void> _setMode(_PanelMode mode) async {
+    _markExhibitionActivity();
     // 伸ばしている最中に押された場合も、これから開こうとしている方と比べる
     if ((_pendingMode ?? _mode) == mode) mode = _PanelMode.none;
     final seq = ++_modeSeq;
@@ -363,6 +439,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     final hasImage = camera.hasImage;
 
     if (text.isEmpty && !hasImage) return;
+    _markExhibitionActivity();
 
     // sendUserMessage は async で、最初の await で制御が戻る。
     // その隙に clearImage() が走るため、参照のまま渡すと空になる。
@@ -532,7 +609,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
     return Listener(
       onPointerDown: (_) => _lastLocalPointer = DateTime.now(),
-      onPointerUp: (_) => _lastLocalPointer = DateTime.now(),
+      onPointerUp: (_) {
+        _lastLocalPointer = DateTime.now();
+        _markExhibitionActivity();
+      },
       child: Scaffold(
       backgroundColor: Colors.transparent,
       body: KeyboardListener(
@@ -561,7 +641,13 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                 },
               ),
             if (_showImageStrip) const _SelectedImageStrip(),
-            _buildBar(),
+            // 入力バーをドラッグして、Unityへの自動追従を解除しながら
+            // Flutter小窓を任意の位置へ移動できるようにする。
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onPanStart: (_) => _mascot.beginManualDrag(),
+              child: _buildBar(),
+            ),
           ],
         ),
       ),
@@ -624,8 +710,14 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                   focusNode: _focusNode,
                   enabled: !chat.isOffline,
                   // 送るのを待っている間に触ったり直したりしたら、送らずに止める
-                  onTap: _delayed.cancel,
-                  onChanged: (_) => _delayed.cancel(),
+                  onTap: () {
+                    _markExhibitionActivity();
+                    _delayed.cancel();
+                  },
+                  onChanged: (_) {
+                    _markExhibitionActivity();
+                    _delayed.cancel();
+                  },
                   style: const TextStyle(color: _text, fontSize: 13),
                   cursorColor: _lime,
                   decoration: InputDecoration(
@@ -773,6 +865,20 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   Widget _buildMenu() {
     final chat = context.watch<ChatProvider>();
+
+    if (_isExhibitionDemo) {
+      return ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          _sectionLabel('展示メニュー'),
+          _menuRow(Icons.history, '会話ログ', () => _setMode(_PanelMode.log)),
+          _menuRow(Icons.settings_outlined, '設定',
+              () => _setMode(_PanelMode.settings)),
+          _menuRow(Icons.record_voice_over, 'クレジット表記',
+              () => _setMode(_PanelMode.credits)),
+        ],
+      );
+    }
 
     return ListView(
       padding: EdgeInsets.zero,
@@ -924,6 +1030,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     }
 
     await _mascot.exitMascotMode();
+
+    // Unity側に通常表示を戻す指示を先に出してから認証状態を破棄する。
+    context.read<UnityCommunicator>().setExhibitionMode(false);
 
     await auth.logout();
   }

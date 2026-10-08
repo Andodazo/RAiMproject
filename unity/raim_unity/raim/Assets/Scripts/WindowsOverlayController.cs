@@ -100,6 +100,15 @@ public class WindowsOverlayController : MonoBehaviour
              "動きがカクつくようなら targetFrameRate と同じ値にする")]
     [SerializeField] private int unfocusedFrameRate = 15;
 
+    [Header("展示モード")]
+    [Tooltip("展示モードで使う不透明なカメラ背景色")]
+    [SerializeField] private Color exhibitionBackgroundColor =
+        new Color(0.055f, 0.075f, 0.10f, 1f);
+
+    [Tooltip("展示モードでキャラクターを通常位置から移動する量。Yを正にすると画面上へ移動する")]
+    [SerializeField] private Vector2 exhibitionCharacterOffset =
+        new Vector2(0f, 1.2f);
+
     [Header("デバッグ")]
     [Tooltip("起動時にウィンドウサイズ・座標・キャラの占有範囲をログに出す")]
     [SerializeField] private bool logWindowInfoOnStart = true;
@@ -111,6 +120,37 @@ public class WindowsOverlayController : MonoBehaviour
     // FindObjectOfType を Update から呼ぶとシーン全体を走査するため重い。
     private Camera _cam;
     private SpriteRenderer _sprite;
+
+    private bool exhibitionMode = false;
+    private bool exhibitionStateCaptured = false;
+    private bool originalTransparent;
+    private bool originalTopmost;
+    private bool originalClickThrough;
+    private CameraClearFlags originalCameraClearFlags;
+    private Color originalCameraBackground;
+    private bool originalCameraStateCaptured = false;
+    private Vector3 originalCameraPosition;
+    private Vector3 mascotCameraPosition;
+    private bool originalCameraTransformCaptured = false;
+    private bool originalNativeWindowCaptured = false;
+    private long originalWindowStyle;
+    private long originalWindowExStyle;
+    private RECT originalWindowRect;
+
+    // 展示モードでは、通常マスコット用のカメラ補正や画面比率の違いで
+    // 背景画像の端に黒帯が出ないよう、背景をカメラの表示範囲へ合わせる。
+    private SpriteRenderer _exhibitionBackground;
+    private Transform _originalBackgroundTransform;
+    private Vector3 originalBackgroundPosition;
+    private Vector3 originalBackgroundScale;
+    private int originalBackgroundSortingOrder;
+    private bool originalBackgroundStateCaptured = false;
+    private int lastBackgroundScreenWidth = -1;
+    private int lastBackgroundScreenHeight = -1;
+    private float lastBackgroundAspect = -1f;
+    private Transform _originalCharacterTransform;
+    private Vector3 originalCharacterPosition;
+    private bool originalCharacterStateCaptured = false;
 
     private Camera Cam => _cam != null ? _cam : (_cam = Camera.main);
 
@@ -183,6 +223,12 @@ public class WindowsOverlayController : MonoBehaviour
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int nIndex);
 
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr value);
+
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
 
@@ -245,8 +291,18 @@ public class WindowsOverlayController : MonoBehaviour
     private const int SM_CYVIRTUALSCREEN = 79;
 
     private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_NOACTIVATE = 0x0010;
+    private const uint SWP_FRAMECHANGED = 0x0020;
+    private const uint SWP_SHOWWINDOW = 0x0040;
+    private const int GWL_STYLE = -16;
+    private const int GWL_EXSTYLE = -20;
+    private const long WS_POPUP = 0x80000000L;
+    private const long WS_VISIBLE = 0x10000000L;
+    private const long WS_EX_APPWINDOW = 0x00040000L;
+    private const long WS_EX_TOPMOST = 0x00000008L;
+    private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
     /// <summary>
     /// 自分のウィンドウハンドル。
@@ -385,6 +441,13 @@ public class WindowsOverlayController : MonoBehaviour
     {
         isWindowsOverlay = true;
 
+        var initialCamera = Cam;
+        if (initialCamera != null)
+        {
+            originalCameraPosition = initialCamera.transform.position;
+            originalCameraTransformCaptured = true;
+        }
+
         // 背景など、透過の邪魔になるものを先に消す。
         // カメラの Clear Color(Alpha 0) は「何も描かれなかったピクセル」にしか
         // 効かないため、スプライトが描画されるとそこは不透明のまま残る。
@@ -401,6 +464,12 @@ public class WindowsOverlayController : MonoBehaviour
         Debug.Log($"[Overlay] Windows: {hidden}個のオブジェクトを非表示にしました");
 
         ApplyCameraOffset();
+
+        var mascotCamera = Cam;
+        if (mascotCamera != null)
+        {
+            mascotCameraPosition = mascotCamera.transform.position;
+        }
 
         if (overlayRoot != null)
         {
@@ -483,6 +552,12 @@ public class WindowsOverlayController : MonoBehaviour
 
         yield return null;
 
+        // Flutterから先に展示状態が届いていた場合はここで適用する。
+        if (exhibitionMode)
+        {
+            ApplyExhibitionMode();
+        }
+
         if (logWindowInfoOnStart)
         {
             LogWindowInfo();
@@ -500,8 +575,437 @@ public class WindowsOverlayController : MonoBehaviour
 
         HandleQuitShortcut();
         HandleClickDetection();
-        ClampWindowToScreen();
+        if (!exhibitionMode)
+        {
+            ClampWindowToScreen();
+        }
         HandleMoveNotification();
+    }
+
+    private void LateUpdate()
+    {
+        if (!isWindowsOverlay || quitting || !exhibitionMode) return;
+
+        // UniWindowControllerの初期化・フォーカス変更・シーン側設定で戻されても、
+        // 展示中は毎フレーム、通常ウィンドウへ戻らないよう再適用する。
+        ApplyExhibitionMode();
+    }
+
+    /// <summary>
+    /// Flutterから展示表示／通常マスコット表示を切り替える。
+    ///
+    /// 受信がUnity初期化前でも状態だけ保持し、Start/LateUpdateで適用する。
+    /// </summary>
+    public void SetExhibitionMode(bool enabled)
+    {
+        exhibitionMode = enabled;
+        if (!isWindowsOverlay) return;
+
+        if (enabled)
+        {
+            ApplyExhibitionMode();
+        }
+        else
+        {
+            RestoreMascotMode();
+        }
+    }
+
+    private void CaptureExhibitionState()
+    {
+        if (exhibitionStateCaptured) return;
+
+        CaptureExhibitionBackgroundState();
+        CaptureExhibitionCharacterState();
+
+        var controller = UniWindowController.current;
+        if (controller != null)
+        {
+            originalTransparent = controller.isTransparent;
+            originalTopmost = controller.isTopmost;
+            originalClickThrough = controller.isClickThrough;
+        }
+
+        var cam = Cam;
+        if (cam != null)
+        {
+            originalCameraClearFlags = cam.clearFlags;
+            originalCameraBackground = cam.backgroundColor;
+            originalCameraStateCaptured = true;
+        }
+
+        exhibitionStateCaptured = true;
+    }
+
+    private void ApplyExhibitionMode()
+    {
+        CaptureExhibitionState();
+        SetWindowsBackgroundVisible(true);
+
+        ApplyExhibitionCharacterLayout();
+
+        var controller = UniWindowController.current;
+        if (controller != null)
+        {
+            // UniWindowController.isTransparent=false は内部で
+            // SetBorderless(false) も呼ぶ。毎フレーム呼ぶと、展示用の
+            // WS_POPUP設定と競合してウィンドウがちらつくため、状態が
+            // 崩れている時だけ一度適用する。
+            if (controller.isTransparent) controller.isTransparent = false;
+            if (controller.isClickThrough) controller.isClickThrough = false;
+            if (!controller.isTopmost) controller.isTopmost = true;
+        }
+
+        var cam = Cam;
+        if (cam != null)
+        {
+            // 通常モードでは吹き出し用にカメラを右寄せしているが、
+            // 展示モードではキャラクターを画面中央寄りに見せるため、
+            // オフセット適用前のカメラ位置へ戻す。
+            if (originalCameraTransformCaptured)
+            {
+                cam.transform.position = originalCameraPosition;
+            }
+
+            if (cam.clearFlags != CameraClearFlags.SolidColor)
+            {
+                cam.clearFlags = CameraClearFlags.SolidColor;
+            }
+            if (cam.backgroundColor != exhibitionBackgroundColor)
+            {
+                cam.backgroundColor = exhibitionBackgroundColor;
+            }
+        }
+
+        ApplyExhibitionWindowBounds();
+        FitExhibitionBackground();
+    }
+
+    private void RestoreMascotMode()
+    {
+        if (!exhibitionStateCaptured) return;
+
+        SetWindowsBackgroundVisible(false);
+        RestoreExhibitionBackgroundState();
+        RestoreExhibitionCharacterState();
+
+        var cam = Cam;
+        if (cam != null && originalCameraTransformCaptured)
+        {
+            cam.transform.position = mascotCameraPosition;
+        }
+
+        if (cam != null && originalCameraStateCaptured)
+        {
+            cam.clearFlags = originalCameraClearFlags;
+            cam.backgroundColor = originalCameraBackground;
+        }
+
+        RestoreNativeWindow();
+
+        var controller = UniWindowController.current;
+        if (controller != null)
+        {
+            controller.isTransparent = originalTransparent;
+            controller.isClickThrough = originalClickThrough;
+            controller.isTopmost = originalTopmost;
+        }
+
+        exhibitionStateCaptured = false;
+        originalCameraStateCaptured = false;
+    }
+
+    private void SetWindowsBackgroundVisible(bool visible)
+    {
+        if (hideOnWindows == null) return;
+        foreach (var obj in hideOnWindows)
+        {
+            if (obj != null && obj.activeSelf != visible) obj.SetActive(visible);
+        }
+    }
+
+    private SpriteRenderer ResolveExhibitionBackground()
+    {
+        if (_exhibitionBackground != null) return _exhibitionBackground;
+
+        // 通常はシーンの hideOnWindows に background を設定しているため、
+        // そこから解決する。inactive の GameObject でも参照は取得できる。
+        if (hideOnWindows != null)
+        {
+            foreach (var obj in hideOnWindows)
+            {
+                if (obj == null) continue;
+
+                var renderer = obj.GetComponent<SpriteRenderer>();
+                if (renderer == null) continue;
+
+                if (obj.name.Equals("background", StringComparison.OrdinalIgnoreCase) ||
+                    _exhibitionBackground == null)
+                {
+                    _exhibitionBackground = renderer;
+                    if (obj.name.Equals("background", StringComparison.OrdinalIgnoreCase))
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (_exhibitionBackground == null)
+        {
+            var backgroundObject = GameObject.Find("background");
+            if (backgroundObject != null)
+            {
+                _exhibitionBackground = backgroundObject.GetComponent<SpriteRenderer>();
+            }
+        }
+
+        if (_exhibitionBackground == null)
+        {
+            Debug.LogWarning("[Overlay] 展示用背景 SpriteRenderer が見つかりません");
+        }
+
+        return _exhibitionBackground;
+    }
+
+    private void CaptureExhibitionBackgroundState()
+    {
+        if (originalBackgroundStateCaptured) return;
+
+        var background = ResolveExhibitionBackground();
+        if (background == null) return;
+
+        _originalBackgroundTransform = background.transform;
+        originalBackgroundPosition = background.transform.position;
+        originalBackgroundScale = background.transform.localScale;
+        originalBackgroundSortingOrder = background.sortingOrder;
+        originalBackgroundStateCaptured = true;
+    }
+
+    private Transform ResolveExhibitionCharacter()
+    {
+        if (characterController != null) return characterController.transform;
+
+        var characterObject = GameObject.Find("character");
+        return characterObject != null ? characterObject.transform : null;
+    }
+
+    private void CaptureExhibitionCharacterState()
+    {
+        if (originalCharacterStateCaptured) return;
+
+        var character = ResolveExhibitionCharacter();
+        if (character == null) return;
+
+        _originalCharacterTransform = character;
+        originalCharacterPosition = character.position;
+        originalCharacterStateCaptured = true;
+    }
+
+    private void ApplyExhibitionCharacterLayout()
+    {
+        if (!originalCharacterStateCaptured || _originalCharacterTransform == null) return;
+
+        _originalCharacterTransform.position = originalCharacterPosition +
+            new Vector3(exhibitionCharacterOffset.x, exhibitionCharacterOffset.y, 0f);
+    }
+
+    private void RestoreExhibitionCharacterState()
+    {
+        if (!originalCharacterStateCaptured || _originalCharacterTransform == null) return;
+
+        _originalCharacterTransform.position = originalCharacterPosition;
+        originalCharacterStateCaptured = false;
+        _originalCharacterTransform = null;
+    }
+
+    /// <summary>
+    /// 背景スプライトをカメラの表示範囲に合わせて拡大・中央配置する。
+    /// 画面比率が変わった場合だけ再計算し、毎フレームの Transform 書き換えを避ける。
+    /// </summary>
+    private void FitExhibitionBackground()
+    {
+        var background = ResolveExhibitionBackground();
+        var cam = Cam;
+        if (background == null || background.sprite == null || cam == null) return;
+
+        int screenWidth = Screen.width;
+        int screenHeight = Screen.height;
+        if (screenWidth <= 0 || screenHeight <= 0) return;
+
+        float aspect = (float)screenWidth / screenHeight;
+        if (screenWidth == lastBackgroundScreenWidth &&
+            screenHeight == lastBackgroundScreenHeight &&
+            Mathf.Abs(aspect - lastBackgroundAspect) < 0.0001f)
+        {
+            return;
+        }
+
+        float distance = Mathf.Abs(background.transform.position.z - cam.transform.position.z);
+        if (distance <= 0.01f) return;
+
+        float viewWidth;
+        float viewHeight;
+        if (cam.orthographic)
+        {
+            viewHeight = cam.orthographicSize * 2f;
+            viewWidth = viewHeight * aspect;
+        }
+        else
+        {
+            viewHeight = 2f * distance * Mathf.Tan(cam.fieldOfView * Mathf.Deg2Rad * 0.5f);
+            viewWidth = viewHeight * aspect;
+        }
+
+        Vector2 spriteSize = background.sprite.bounds.size;
+        if (spriteSize.x <= 0f || spriteSize.y <= 0f) return;
+
+        // contain ではなく cover にすることで、画面端に黒帯を作らない。
+        float coverScale = Mathf.Max(
+            viewWidth / spriteSize.x,
+            viewHeight / spriteSize.y);
+        background.transform.localScale = new Vector3(
+            coverScale,
+            coverScale,
+            originalBackgroundScale.z);
+
+        // 背景を拡大してもキャラクターを覆わないよう、背景を確実に背面へ送る。
+        // 現在のシーンでは両方の SpriteRenderer が同じ Sorting Layer / Order
+        // なので、距離だけに任せず展示モード中だけ明示的に分離する。
+        background.sortingOrder = -1000;
+
+        Vector3 center = cam.ViewportToWorldPoint(new Vector3(0.5f, 0.5f, distance));
+        background.transform.position = new Vector3(
+            center.x,
+            center.y,
+            originalBackgroundPosition.z);
+
+        lastBackgroundScreenWidth = screenWidth;
+        lastBackgroundScreenHeight = screenHeight;
+        lastBackgroundAspect = aspect;
+    }
+
+    private void RestoreExhibitionBackgroundState()
+    {
+        if (!originalBackgroundStateCaptured || _originalBackgroundTransform == null) return;
+
+        _originalBackgroundTransform.position = originalBackgroundPosition;
+        _originalBackgroundTransform.localScale = originalBackgroundScale;
+        if (_exhibitionBackground != null)
+        {
+            _exhibitionBackground.sortingOrder = originalBackgroundSortingOrder;
+        }
+        originalBackgroundStateCaptured = false;
+        _originalBackgroundTransform = null;
+        lastBackgroundScreenWidth = -1;
+        lastBackgroundScreenHeight = -1;
+        lastBackgroundAspect = -1f;
+    }
+
+    private void ApplyExhibitionWindowBounds()
+    {
+        IntPtr hwnd = GetSelfWindow();
+        if (hwnd == IntPtr.Zero) return;
+
+        if (!originalNativeWindowCaptured && GetWindowRect(hwnd, out originalWindowRect))
+        {
+            originalWindowStyle = GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64();
+            originalWindowExStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
+            originalNativeWindowCaptured = true;
+        }
+
+        IntPtr monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if (monitor == IntPtr.Zero) return;
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf(typeof(MONITORINFO)) };
+        if (!GetMonitorInfo(monitor, ref info)) return;
+
+        var r = info.rcMonitor;
+        long desiredStyle = WS_POPUP | WS_VISIBLE;
+        // Unityも最前面グループへ置く。ただしZ順は後段でFlutterの入力窓の
+        // 直後へ固定するため、表示順は Flutter > Unity > 他アプリ になる。
+        long desiredExStyle = WS_EX_APPWINDOW | WS_EX_TOPMOST;
+        long currentStyle = GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64();
+        long currentExStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
+        bool styleChanged = currentStyle != desiredStyle ||
+                            currentExStyle != desiredExStyle;
+
+        if (styleChanged)
+        {
+            SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr(desiredStyle));
+            SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(desiredExStyle));
+        }
+
+        bool boundsChanged = !GetWindowRect(hwnd, out RECT currentRect) ||
+                             currentRect.Left != r.Left ||
+                             currentRect.Top != r.Top ||
+                             currentRect.Right != r.Right ||
+                             currentRect.Bottom != r.Bottom;
+
+        if (styleChanged || boundsChanged)
+        {
+            SetWindowPos(hwnd, GetFlutterWindowOrTopmost(),
+                r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top,
+                SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+        }
+
+        // UnityがクリックやフォーカスでFlutterより前へ出ないよう、
+        // サイズ変更がないフレームもZ順だけは再確認する。
+        KeepUnityBehindFlutter(hwnd);
+    }
+
+    private IntPtr GetFlutterWindowOrTopmost()
+    {
+        // Flutter Windows runner の標準クラス名と main.cpp のタイトル。
+        // タイトルが変わってもクラス名だけで検索できるよう、まずクラス名のみで探す。
+        IntPtr flutter = FindWindowEx(
+            IntPtr.Zero,
+            IntPtr.Zero,
+            "FLUTTER_RUNNER_WIN32_WINDOW",
+            "raim_prototype");
+
+        if (flutter == IntPtr.Zero)
+        {
+            flutter = FindWindowEx(
+                IntPtr.Zero,
+                IntPtr.Zero,
+                "FLUTTER_RUNNER_WIN32_WINDOW",
+                null);
+        }
+
+        return flutter != IntPtr.Zero ? flutter : HWND_TOPMOST;
+    }
+
+    private void KeepUnityBehindFlutter(IntPtr unityHwnd)
+    {
+        IntPtr flutter = GetFlutterWindowOrTopmost();
+        if (flutter == IntPtr.Zero || flutter == unityHwnd) return;
+
+        SetWindowPos(
+            unityHwnd,
+            flutter,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    }
+
+    private void RestoreNativeWindow()
+    {
+        if (!originalNativeWindowCaptured) return;
+
+        IntPtr hwnd = GetSelfWindow();
+        if (hwnd == IntPtr.Zero) return;
+
+        SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr(originalWindowStyle));
+        SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(originalWindowExStyle));
+        SetWindowPos(hwnd, IntPtr.Zero,
+            originalWindowRect.Left, originalWindowRect.Top,
+            originalWindowRect.Right - originalWindowRect.Left,
+            originalWindowRect.Bottom - originalWindowRect.Top,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+
+        originalNativeWindowCaptured = false;
     }
 
     // ============================================================
@@ -575,7 +1079,11 @@ public class WindowsOverlayController : MonoBehaviour
     private IEnumerator QuitRoutine()
     {
         quitting = true;
-        SaveWindowPosition();
+        // 展示中の全画面矩形を「通常マスコットの位置」として保存しない。
+        if (!exhibitionMode)
+        {
+            SaveWindowPosition();
+        }
 
         if (quitFlutterToo)
         {
@@ -995,7 +1503,10 @@ public class WindowsOverlayController : MonoBehaviour
     private void OnApplicationQuit()
     {
         if (!isWindowsOverlay) return;
-        SaveWindowPosition();
+        if (!exhibitionMode)
+        {
+            SaveWindowPosition();
+        }
     }
 }
 #endif

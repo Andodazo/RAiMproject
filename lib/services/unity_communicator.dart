@@ -81,6 +81,10 @@ abstract class UnityCommunicator {
   /// 既に繋がっていれば何もしない。
   Future<void> ensureUnityRunning();
 
+  /// Windows展示モードの表示状態を Unity へ通知する。
+  /// モバイル実装では何もしない。
+  void setExhibitionMode(bool enabled);
+
   /// 通信を停止
   Future<void> stop();
 }
