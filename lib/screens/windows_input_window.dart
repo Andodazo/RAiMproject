@@ -507,7 +507,14 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     if (context.read<ChatProvider>().isLoading) return;
     final text = _controller.text.trim();
     final camera = context.read<CameraProvider>();
-    final hasImage = camera.hasImage;
+    final isExhibitionDemo = _isExhibitionDemo;
+
+    // 展示用デモでは画像添付を無効化し、残っている選択状態も送らない。
+    if (isExhibitionDemo && camera.hasImage) {
+      camera.clearImage();
+    }
+
+    final hasImage = !isExhibitionDemo && camera.hasImage;
 
     if (text.isEmpty && !hasImage) return;
     _markExhibitionActivity();
@@ -591,6 +598,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   }
 
   Future<void> _pickImage() async {
+    if (_isExhibitionDemo) return;
     await context.read<CameraProvider>().pickAndStoreImage(ImageSource.gallery);
   }
 
@@ -676,7 +684,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   @override
   Widget build(BuildContext context) {
-    _syncImageStripHeight(context.watch<CameraProvider>().hasImage);
+    final isExhibitionDemo = context.watch<AuthProvider>().isExhibitionDemo;
+    _syncImageStripHeight(
+      !isExhibitionDemo && context.watch<CameraProvider>().hasImage,
+    );
 
     // Unity の起動待ちの間は「発信中」を出す
     return ValueListenableBuilder<bool>(
@@ -856,7 +867,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                 ),
               ),
             ),
-            _iconButton(Icons.attach_file, '画像を送る', _pickImage),
+            if (!_isExhibitionDemo)
+              _iconButton(Icons.attach_file, '画像を送る', _pickImage),
             _buildTalkButton(voice),
             const SizedBox(width: 4),
             SizedBox(

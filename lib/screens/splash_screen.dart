@@ -75,6 +75,10 @@ class _AuthenticatedChatScreenState extends State<_AuthenticatedChatScreen> {
     final authProvider = context.read<AuthProvider>();
     final unityBridge = context.read<UnityCommunicator>();
 
+    // 起動前に表示モードを保持しておく。自動起動するUnityへも展示用引数を
+    // 渡せるため、通信が確立する前からCtrl+Qを無効化できる。
+    unityBridge.setExhibitionMode(authProvider.isExhibitionDemo);
+
     // 認証前にUnityを起動すると、Windowsの透過・最前面ウィンドウが
     // 認証ブラウザのフォーカスや入力と競合するため、認証後に起動する。
     // 起動に失敗してもチャット自体は使えるように続行する。
@@ -86,7 +90,6 @@ class _AuthenticatedChatScreenState extends State<_AuthenticatedChatScreen> {
 
     // WebSocketの接続がUnityの起動より後になっても、ブリッジ側に状態を
     // 保持しておくことで、初回接続・再接続の両方へ同じ表示モードを送る。
-    unityBridge.setExhibitionMode(authProvider.isExhibitionDemo);
 
     // 有効なアクセストークンを取得
     final accessToken = await authProvider.getValidAccessToken();

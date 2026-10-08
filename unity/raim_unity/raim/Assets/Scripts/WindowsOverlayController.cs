@@ -499,6 +499,11 @@ public class WindowsOverlayController : MonoBehaviour
     private void Awake()
     {
         isWindowsOverlay = true;
+        exhibitionMode = HasExhibitionLaunchArgument();
+        if (exhibitionMode)
+        {
+            Debug.Log("[Overlay] 起動引数により展示モードを有効化しました");
+        }
 
         var initialCamera = Cam;
         if (initialCamera != null)
@@ -567,6 +572,19 @@ public class WindowsOverlayController : MonoBehaviour
 
         // 最小化されても Flutter からのメッセージを処理し続ける
         Application.runInBackground = true;
+    }
+
+    private static bool HasExhibitionLaunchArgument()
+    {
+        foreach (var arg in Environment.GetCommandLineArgs())
+        {
+            if (string.Equals(arg, "-raim-exhibition", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -679,6 +697,7 @@ public class WindowsOverlayController : MonoBehaviour
     public void SetExhibitionMode(bool enabled)
     {
         exhibitionMode = enabled;
+        Debug.Log($"[Overlay] 展示モードを{(enabled ? "有効" : "無効")}に切り替えました");
         if (!isWindowsOverlay) return;
 
         if (enabled)
@@ -1123,7 +1142,8 @@ public class WindowsOverlayController : MonoBehaviour
 
     private void HandleQuitShortcut()
     {
-        if (!enableQuitShortcut) return;
+        // 展示モードでは展示端末からの強制終了を防ぐため無効化する。
+        if (!enableQuitShortcut || exhibitionMode) return;
 
         // GetAsyncKeyState はフォーカスと無関係にキー状態を返す。
         // つまり素通しだと事実上のグローバルホットキーになり、
