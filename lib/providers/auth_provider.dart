@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:raim_prototype/models/auth_tokens.dart';
 import 'package:raim_prototype/services/app_window_service.dart';
 import 'package:raim_prototype/services/auth_service.dart';
+import 'package:raim_prototype/config/raim_config.dart';
+import 'package:raim_prototype/services/demo_account_policy.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
 enum AuthStatus {
@@ -19,6 +21,7 @@ class AuthProvider extends ChangeNotifier {
   AuthStatus _status = AuthStatus.checking;
   AuthTokens? _tokens;
   String? _errorMessage;
+  static const _demoAccountPolicy = DemoAccountPolicy();
 
   AuthProvider(this._authService);
 
@@ -26,6 +29,9 @@ class AuthProvider extends ChangeNotifier {
   AuthTokens? get tokens => _tokens;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _status == AuthStatus.authenticated;
+  bool get isExhibitionDemo =>
+      RaimConfig.exhibitionEnabled &&
+      _demoAccountPolicy.isDemoAccount(_tokens);
 
   Future<void> initialize() async {
     _setStatus(AuthStatus.checking);
@@ -34,6 +40,12 @@ class AuthProvider extends ChangeNotifier {
     // 再試行もログイン画面への遷移もできなくなる。
     // 起動できないより、未認証としてログイン画面へ進めるほうがまし。
     try {
+      if (RaimConfig.exhibitionEnabled) {
+        // 展示端末を次の来場者へ引き渡す際に、前の利用者のセッションを
+        // 自動復元しない。通常ビルドには影響しない。
+        await _authService.clearStoredTokens();
+      }
+
       await _authService.startListening(onCallback: handleCallback);
 
       final tokens = await _authService.loadValidTokens();

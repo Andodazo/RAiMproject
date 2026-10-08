@@ -94,6 +94,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // _toolStatus は検索中などの表示文。
   // _connectionState はRAiMサーバーとの接続状態。
   String? _toolStatus;
+  int _conversationGeneration = 0;
   RaimConnectionState _connectionState = RaimConnectionState.connected;
   StreamSubscription<RaimConnectionState>? _stateSubscription;
   //ここは使わない
@@ -503,6 +504,8 @@ _toolStatus = null;
     if (service is! RaimServerService) return;
     if (threadId.isEmpty || threadId == _currentThreadId) return;
 
+    final generation = ++_conversationGeneration;
+
     _audioAssembler.reset();
     await _audioQueue.reset();
 
@@ -511,6 +514,8 @@ _toolStatus = null;
 
     try {
       final history = await service.fetchThreadHistory(threadId);
+
+      if (generation != _conversationGeneration) return;
 
       _currentThreadId = threadId;
       _messages.clear();
@@ -529,10 +534,14 @@ _toolStatus = null;
       }
     } catch (e) {
       RaimLog.d('[ChatProvider] スレッド切替に失敗: $e');
-      _threadError = '会話を開けませんでした';
+      if (generation == _conversationGeneration) {
+        _threadError = '会話を開けませんでした';
+      }
     } finally {
-      _isLoadingThreads = false;
-      notifyListeners();
+      if (generation == _conversationGeneration) {
+        _isLoadingThreads = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -665,6 +674,7 @@ _toolStatus = null;
   /// クライアント側で識別子を採番して送る。サーバーは未知の threadId を
   /// 受け取るとその ID でスレッドを新規作成するため、専用の API は要らない。
   void startNewThread() {
+    _conversationGeneration++;
     _audioAssembler.reset();
     unawaited(_audioQueue.reset());
     _currentThreadId = _generateThreadId();
@@ -679,6 +689,31 @@ _toolStatus = null;
 
     RaimLog.d('[ChatProvider] 新しい会話: $_currentThreadId');
     notifyListeners();
+  }
+
+  /// 展示アカウントの無操作タイムアウト時に、現在の会話を破棄して
+  /// 次の来場者用の新しい会話へ切り替える。
+  ///
+  /// サーバー削除が失敗しても端末側の会話状態は必ず新しくする。ネットワーク
+  /// 障害で次の来場者へ前の入力が見える方が展示用途では危険なため。
+  Future<void> resetExhibitionSession() async {
+    final oldThreadId = _currentThreadId;
+    final service = _llmService;
+
+    if (service is RaimServerService && oldThreadId != null) {
+      try {
+        await service.deleteThread(oldThreadId);
+      } catch (e) {
+        RaimLog.d('[ChatProvider] 展示会話のサーバー削除に失敗: $e');
+      }
+    }
+
+    if (oldThreadId != null) {
+      _threads = _threads.where((t) => t.threadId != oldThreadId).toList();
+    }
+    _isLoadingThreads = false;
+    _threadError = null;
+    startNewThread();
   }
 
   /// スレッド識別子を作る
@@ -754,6 +789,9 @@ _toolStatus = null;
       RaimLog.d('[ChatProvider] 応答生成中のため送信を無視しました');
       return;
     }
+
+    final generation = _conversationGeneration;
+    final requestThreadId = _currentThreadId;
 
     // 新しい送信を始める前に、途中メッセージと検索中表示をリセットする。
     //
@@ -844,9 +882,9 @@ _toolStatus = null;
         history: recentHistory,
         images: targetImages,
         requestId: requestId,
-        threadId: _currentThreadId,
+        threadId: requestThreadId,
       )) {
-
+        if (generation != _conversationGeneration) continue;
         _handleResponse(response);
         // チャット返答が来たか記録する
         if (response.isChat || response.isTextChunk || response.isChatEnd) {
@@ -854,7 +892,7 @@ _toolStatus = null;
         }
       }
       //もしfalseだったら
-      if (!chatReceived) {
+      if (generation == _conversationGeneration && !chatReceived) {
         _messages.add(Message(
           text: 'えっと……ごめん、上手く言葉が出なかったみたい。もう一度話しかけて？',
           role: MessageRole.assistant,
@@ -864,18 +902,22 @@ _toolStatus = null;
         ));
       }
     } catch (e) {
-      _messages.add(Message(
-        text: "エラーが発生しました: $e",
-        role: MessageRole.assistant,
-        timestamp: DateTime.now(),
-        emotion: 'sad',
-        intensity: 0.5,
-      ));
+      if (generation == _conversationGeneration) {
+        _messages.add(Message(
+          text: "エラーが発生しました: $e",
+          role: MessageRole.assistant,
+          timestamp: DateTime.now(),
+          emotion: 'sad',
+          intensity: 0.5,
+        ));
+      }
       //成功・失敗に関わらず必ず実行される後処理
     } finally {
       await _imageService.cleanupPendingImages(imagesToUpload);
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _conversationGeneration) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 

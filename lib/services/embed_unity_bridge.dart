@@ -122,6 +122,11 @@ void sendToolState({
   }
 
   @override
+  void setExhibitionMode(bool enabled) {
+    // モバイル版には Windows の外部ウィンドウ表示がない。
+  }
+
+  @override
   Future<void> stop() async {
     // flutter_embed_unity は自動管理なので明示的な停止は不要です。
   }

@@ -598,6 +598,28 @@ public class RAiMCharacterController : MonoBehaviour
                 return;
             }
 
+            // Flutterの展示用ログイン状態に合わせて、Unity自身の表示方式を切り替える。
+            if (typeData != null && typeData.type == "exhibition_mode")
+            {
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+                var displayMode = JsonUtility.FromJson<ExhibitionModeMessage>(json);
+                var overlay = GetComponent<WindowsOverlayController>();
+                if (overlay == null)
+                {
+#if UNITY_2023_1_OR_NEWER
+                    overlay = FindFirstObjectByType<WindowsOverlayController>();
+#else
+                    overlay = FindObjectOfType<WindowsOverlayController>();
+#endif
+                }
+                if (displayMode != null && overlay != null)
+                {
+                    overlay.SetExhibitionMode(displayMode.enabled);
+                }
+#endif
+                return;
+            }
+
             // Flutter 側のメニューから終了された
             if (typeData != null && typeData.type == "app.quit")
             {
@@ -946,6 +968,13 @@ public class ToolStateMessage
     public string type;
     public bool is_using_tool;
     public string description;
+}
+
+[Serializable]
+public class ExhibitionModeMessage
+{
+    public string type;
+    public bool enabled;
 }
 
 [Serializable]

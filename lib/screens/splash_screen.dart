@@ -84,6 +84,10 @@ class _AuthenticatedChatScreenState extends State<_AuthenticatedChatScreen> {
       RaimLog.e('Unity ブリッジを起動できませんでした（マスコット無しで続行）', e);
     }
 
+    // WebSocketの接続がUnityの起動より後になっても、ブリッジ側に状態を
+    // 保持しておくことで、初回接続・再接続の両方へ同じ表示モードを送る。
+    unityBridge.setExhibitionMode(authProvider.isExhibitionDemo);
+
     // 有効なアクセストークンを取得
     final accessToken = await authProvider.getValidAccessToken();
 

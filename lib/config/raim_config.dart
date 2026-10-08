@@ -83,6 +83,24 @@ class RaimConfig {
     defaultValue: true,
   );
 
+  /// 展示用ビルドかどうか。
+  ///
+  /// 展示版では保存済みの認証情報を起動時に使わず、毎回ログインを要求する。
+  /// 通常ビルドの既定値は false なので、既存の自動ログイン動作は変わらない。
+  static const bool exhibitionEnabled = bool.fromEnvironment(
+    'RAIM_EXHIBITION_ENABLED',
+    defaultValue: false,
+  );
+
+  /// 展示モードを許可する Cognito グループ名。
+  static const String exhibitionGroup = String.fromEnvironment(
+    'RAIM_EXHIBITION_GROUP',
+    defaultValue: 'raim-demo',
+  );
+
+  /// 展示用アカウントの無操作セッションを破棄するまでの時間。
+  static const Duration exhibitionInactivityTimeout = Duration(minutes: 5);
+
   /// 接続先が AWS かどうか（Authorization ヘッダの付与判定に使う）。
   static bool isAwsUrl(String url) => url.contains('cloudfront.net');
 }

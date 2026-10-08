@@ -54,6 +54,8 @@ class WindowsUnityBridge implements UnityCommunicator {
   final List<String> _pending = [];
   static const int _maxPending = 16;
 
+  bool? _exhibitionMode;
+
   /// 受信ログを全部出すか。
   ///
   /// unity.moved は追従のため毎フレーム近く飛んでくるので、
@@ -126,6 +128,10 @@ class WindowsUnityBridge implements UnityCommunicator {
 
           // 溜まっていた分を流して、接続直後から正しい状態にする
           _flushPending(webSocket);
+          final exhibitionMode = _exhibitionMode;
+          if (exhibitionMode != null) {
+            _sendToClient(webSocket, _exhibitionMessage(exhibitionMode));
+          }
           return;
         }
 
@@ -385,6 +391,29 @@ class WindowsUnityBridge implements UnityCommunicator {
       }
     }
     _pending.clear();
+  }
+
+  void _sendToClient(WebSocketChannel client, String message) {
+    try {
+      client.sink.add(message);
+    } catch (e) {
+      RaimLog.e('Unityへの個別送信エラー: $e');
+    }
+  }
+
+  String _exhibitionMessage(bool enabled) => jsonEncode({
+        'type': 'exhibition_mode',
+        'enabled': enabled,
+      });
+
+  @override
+  void setExhibitionMode(bool enabled) {
+    _exhibitionMode = enabled;
+    // 未接続時は保留キューへ積まず、認証直後に現在値を1回だけ送る。
+    // 途中で false→true のように変わっても、最新状態だけが必要。
+    if (_clients.isNotEmpty) {
+      _broadcast(_exhibitionMessage(enabled));
+    }
   }
 
   @override
