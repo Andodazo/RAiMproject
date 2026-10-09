@@ -601,7 +601,7 @@ public class RAiMCharacterController : MonoBehaviour
             // Flutterの展示用ログイン状態に合わせて、Unity自身の表示方式を切り替える。
             if (typeData != null && typeData.type == "exhibition_mode")
             {
-#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+#if UNITY_STANDALONE_WIN
                 var displayMode = JsonUtility.FromJson<ExhibitionModeMessage>(json);
                 var overlay = GetComponent<WindowsOverlayController>();
                 if (overlay == null)
