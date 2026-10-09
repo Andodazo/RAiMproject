@@ -13,6 +13,7 @@ import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
 import 'package:raim_prototype/widgets/client_action_listener.dart';
 import 'package:raim_prototype/widgets/raim_calling_overlay.dart';
+import 'package:raim_prototype/widgets/sleeping_zzz.dart';
 import 'package:raim_prototype/widgets/thread_selector_menu.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/providers/station_alarm_controller.dart';
@@ -20,6 +21,7 @@ import 'package:raim_prototype/screens/station_alarm_screen.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/unity_ready_signal.dart';
+import 'package:raim_prototype/services/mobile_layout.dart';
 
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
@@ -186,6 +188,9 @@ class ChatScreen extends StatelessWidget {
         // ====================================================
         _buildCharacterLayer(context),
 
+        // つながらない間、寝ているライムの頭の横に「Zzz」（スマホのみ）
+        if (_isMobile) const SleepingZzz(),
+
         // Layer 2.5: Unity の準備ができるまでの「発信中」の画面（スマホのみ）
         _buildCallingOverlay(),
 
@@ -323,6 +328,7 @@ class ChatScreen extends StatelessWidget {
         _buildBackground(),
         _buildBackgroundOverlay(),
         _buildCharacterLayer(context),
+        if (_isMobile) const SleepingZzz(),
         _buildCallingOverlay(),
 
         // 左上タイトル
@@ -525,6 +531,7 @@ class _HeadLayoutReporterState extends State<_HeadLayoutReporter> {
       return;
     }
     _lastSent = headTop;
+    MobileLayout.headTop.value = headTop;
     context.read<UnityCommunicator>().sendLayout(headTop: headTop);
   }
 

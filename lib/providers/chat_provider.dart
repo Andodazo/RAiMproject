@@ -182,6 +182,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
       _stateSubscription = service.stateStream.listen((newState) {
         final wasConnected = _connectionState == RaimConnectionState.connected;
         _connectionState = newState;
+        // つながらない間は、ライムを寝ている立ち絵にする
+        _unityBridge.sendSleeping(newState == RaimConnectionState.offline);
         if (newState != RaimConnectionState.connected) {
           _audioAssembler.reset();
           unawaited(_audioQueue.reset());

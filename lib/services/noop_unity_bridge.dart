@@ -68,6 +68,9 @@ class NoopUnityBridge implements UnityCommunicator {
   void sendLayout({required double headTop}) {}
 
   @override
+  void sendSleeping(bool sleeping) {}
+
+  @override
   void sendBubbleBreak() {}
 
   @override

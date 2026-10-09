@@ -386,6 +386,14 @@ class WindowsUnityBridge implements UnityCommunicator {
   }
 
   void _flushPending(WebSocketChannel client) {
+    // Unity が落ちて起動し直したときなど、寝ている状態を知らないので伝え直す
+    if (_sleeping && !_pending.contains(_sleepMessage)) {
+      try {
+        client.sink.add(_sleepMessage);
+      } catch (e) {
+        RaimLog.e('保留分の送信エラー: $e');
+      }
+    }
     for (final message in _pending) {
       try {
         client.sink.add(message);
@@ -482,6 +490,19 @@ class WindowsUnityBridge implements UnityCommunicator {
   /// Windows はデスクトップマスコットなので、画面の並びに合わせる必要が無い。
   @override
   void sendLayout({required double headTop}) {}
+
+  /// 最後に伝えた「寝ているか」。Unity がつなぎ直したときに送り直すため覚えておく
+  bool _sleeping = false;
+
+  String get _sleepMessage =>
+      jsonEncode({'type': 'sleep', 'sleeping': _sleeping});
+
+  @override
+  void sendSleeping(bool sleeping) {
+    if (_sleeping == sleeping) return;
+    _sleeping = sleeping;
+    _broadcast(_sleepMessage);
+  }
 
   @override
   void sendBubbleBreak() {

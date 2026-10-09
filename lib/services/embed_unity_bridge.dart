@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter_embed_unity/flutter_embed_unity.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/unity_ready_signal.dart';
 
 /// iOS/Android 版での Unity 通信実装です。
 ///
@@ -23,6 +24,17 @@ class EmbedUnityBridge implements UnityCommunicator {
   static const String emotionsMethodName = "ReceiveEmotions";
   static const String toolStateMethodName = "ReceiveToolState";
   static const String layoutMethodName = "ReceiveLayout";
+  static const String sleepMethodName = "ReceiveSleep";
+
+  EmbedUnityBridge() {
+    // Unity の起動より先に寝ていたら、起動したところで寝ている立ち絵にする
+    UnityReadySignal.ready.addListener(() {
+      if (UnityReadySignal.ready.value && _sleeping) _sendSleep();
+    });
+  }
+
+  /// 最後に伝えた「寝ているか」。Unity の起動後に送り直すため覚えておく
+  bool _sleeping = false;
   @override
   Future<void> start() async {
     // flutter_embed_unity は Unity ウィジェット描画時に初期化されるため、ここでは何もしません。
@@ -82,6 +94,19 @@ void sendToolState({
     final json = jsonEncode({'head_top': headTop});
     sendToUnity(gameObjectName, layoutMethodName, json);
     RaimLog.d('[EmbedUnityBridge] 送信 $layoutMethodName($json)');
+  }
+
+  @override
+  void sendSleeping(bool sleeping) {
+    if (_sleeping == sleeping) return;
+    _sleeping = sleeping;
+    _sendSleep();
+  }
+
+  void _sendSleep() {
+    final value = _sleeping ? 'true' : 'false';
+    sendToUnity(gameObjectName, sleepMethodName, value);
+    RaimLog.d('[EmbedUnityBridge] 送信 $sleepMethodName($value)');
   }
 
   @override
