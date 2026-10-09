@@ -27,14 +27,42 @@ class EmbedUnityBridge implements UnityCommunicator {
   static const String sleepMethodName = "ReceiveSleep";
 
   EmbedUnityBridge() {
-    // Unity の起動より先に寝ていたら、起動したところで寝ている立ち絵にする
-    UnityReadySignal.ready.addListener(() {
-      if (UnityReadySignal.ready.value && _sleeping) _sendSleep();
+    UnityReadySignal.ready.addListener(_flushPending);
+  }
+
+  /// 最後に伝えた「寝ているか」。同じ値を何度も送らないために覚えておく
+  bool _sleeping = false;
+
+  /// Unity の準備ができる前に送ろうとしたもの。送り先のメソッドごとに最新の1件だけ持つ。
+  final Map<String, String> _pending = {};
+
+  /// Unity へ送る。準備ができる前ならためておき、できたところでまとめて送る。
+  ///
+  /// 以前は準備前でもそのまま送っていて、Unity が読み込まれる前の分は
+  /// 「Native libraries not loaded」と捨てられていた。
+  /// （起動前に寝ていた・感情が届いていた、などが反映されなかった）
+  void _send(String method, String message) {
+    if (!UnityReadySignal.ready.value) {
+      // 古いものを消してから入れ直し、送る順番を「最後に来た順」にそろえる
+      _pending.remove(method);
+      _pending[method] = message;
+      return;
+    }
+    // ためていた古いものが後から送られて、これを上書きしないようにする
+    _pending.remove(method);
+    sendToUnity(gameObjectName, method, message);
+  }
+
+  void _flushPending() {
+    if (!UnityReadySignal.ready.value || _pending.isEmpty) return;
+    final pending = Map<String, String>.of(_pending);
+    _pending.clear();
+    RaimLog.d('[EmbedUnityBridge] 準備前にためていた ${pending.length} 件を送ります');
+    pending.forEach((method, message) {
+      sendToUnity(gameObjectName, method, message);
     });
   }
 
-  /// 最後に伝えた「寝ているか」。Unity の起動後に送り直すため覚えておく
-  bool _sleeping = false;
   @override
   Future<void> start() async {
     // flutter_embed_unity は Unity ウィジェット描画時に初期化されるため、ここでは何もしません。
@@ -48,7 +76,7 @@ class EmbedUnityBridge implements UnityCommunicator {
     required double intensity,
   }) {
     // emotion 文字列だけを Unity に送る（シンプルに）。
-    sendToUnity(gameObjectName, emotionMethodName, emotion);
+    _send(emotionMethodName, emotion);
 
     RaimLog.d('[EmbedUnityBridge] 送信 $emotionMethodName');
   }
@@ -64,11 +92,7 @@ void sendToolState({
     'description': description,
   });
 
-  sendToUnity(
-    gameObjectName,
-    toolStateMethodName,
-    json,
-  );
+  _send(toolStateMethodName, json);
 
   RaimLog.d(
     'Unity送信: $gameObjectName.$toolStateMethodName($json)',
@@ -92,7 +116,7 @@ void sendToolState({
   @override
   void sendLayout({required double headTop}) {
     final json = jsonEncode({'head_top': headTop});
-    sendToUnity(gameObjectName, layoutMethodName, json);
+    _send(layoutMethodName, json);
     RaimLog.d('[EmbedUnityBridge] 送信 $layoutMethodName($json)');
   }
 
@@ -100,12 +124,8 @@ void sendToolState({
   void sendSleeping(bool sleeping) {
     if (_sleeping == sleeping) return;
     _sleeping = sleeping;
-    _sendSleep();
-  }
-
-  void _sendSleep() {
-    final value = _sleeping ? 'true' : 'false';
-    sendToUnity(gameObjectName, sleepMethodName, value);
+    final value = sleeping ? 'true' : 'false';
+    _send(sleepMethodName, value);
     RaimLog.d('[EmbedUnityBridge] 送信 $sleepMethodName($value)');
   }
 
@@ -176,10 +196,6 @@ void sendToolState({
       'overall_intensity': overallIntensity,
     });
     // Unity 側の ReceiveEmotions を呼び出し、複数感情を反映する
-    sendToUnity(
-      gameObjectName,
-      emotionsMethodName,
-      json,
-    );
+    _send(emotionsMethodName, json);
   }
 }

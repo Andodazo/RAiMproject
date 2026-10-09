@@ -43,6 +43,8 @@ class _RaimCallingOverlayState extends State<RaimCallingOverlay> {
       return;
     }
     UnityReadySignal.ready.addListener(_onReadyChanged);
+    // この画面は Unity と一緒に出る。合図が来ないままにならないよう保険を始める
+    UnityReadySignal.startWaiting();
     _timeoutTimer =
         Timer(RaimCallingOverlay.timeout, () => _finish(connected: false));
   }
