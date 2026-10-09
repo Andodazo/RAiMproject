@@ -39,10 +39,10 @@ import 'dart:io' show Platform;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding;
 import 'package:geolocator/geolocator.dart';
 
+import 'package:raim_prototype/services/haptics.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/station/ride_foreground_service.dart';
 import 'package:raim_prototype/services/station/station_alarm.dart';
@@ -447,7 +447,7 @@ class StationAlarmController extends ChangeNotifier {
     final dest = _destination?.name ?? '';
     switch (event.stage) {
       case StationAlarmStage.approaching:
-        unawaited(HapticFeedback.mediumImpact());
+        unawaited(Haptics.nudge(alarm: true));
         unawaited(_notifyUser(
           title: 'もうすぐ $dest',
           text: _isDowner
@@ -512,12 +512,7 @@ class StationAlarmController extends ChangeNotifier {
   static const Duration voiceMute = Duration(seconds: 5);
 
   /// 着いたときは何度か震わせる（1回だと寝ていて気づかない）。
-  Future<void> _buzz() async {
-    for (var i = 0; i < 3; i++) {
-      await HapticFeedback.vibrate();
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-    }
-  }
+  Future<void> _buzz() => Haptics.alarm();
 
   void _fail(String message) {
     _error = message;
