@@ -176,6 +176,11 @@ void sendToolState({
   }
 
   @override
+  void setMascotScale(double scale) {
+    // スマホのライムは画面に合わせて出すので、大きさの設定は無い
+  }
+
+  @override
   Future<void> stop() async {
     // flutter_embed_unity は自動管理なので明示的な停止は不要です。
   }

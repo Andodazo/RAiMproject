@@ -40,6 +40,9 @@ class NoopUnityBridge implements UnityCommunicator {
   void setExhibitionMode(bool enabled) {}
 
   @override
+  void setMascotScale(double scale) {}
+
+  @override
   void sendEmotion({
     required String text,
     required String emotion,

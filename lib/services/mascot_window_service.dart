@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:raim_prototype/services/lime_size.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
 /// Windows でデスクトップマスコット用の入力小窓を制御する。
@@ -60,7 +61,13 @@ class MascotWindowService {
   /// Unity が送ってくる足元Yはスプライトの矩形の下端なので、
   /// 絵の下に透明な余白があるとそのぶん下にズレる。
   /// マイナス値で詰められる。ホットリロードで効くので実機を見ながら調整する。
+  ///
+  /// ライムが 100% の大きさのときの値。透明な余白もライムと一緒に縮むので、
+  /// 実際には選ばれた大きさ（タスクトレイ「ライムの大きさ」）の割合を掛けて使う。
   static double gapBelowCharacter = -24;
+
+  double get _gapBelowCharacter =>
+      gapBelowCharacter * LimeSizeSetting.current.value.scale;
 
   /// 配置の計算をログに出す。マルチモニタで位置がおかしいときに使う。
   static bool debugPosition = false;
@@ -344,7 +351,7 @@ class MascotWindowService {
 
     // 入力バーの下端がライムの足元の少し下に来るようにする。
     // パネルを開いて上に伸びてもバーの位置は変わらない。
-    final top = footY + gapBelowCharacter + _collapsedHeight - _currentHeight;
+    final top = footY + _gapBelowCharacter + _collapsedHeight - _currentHeight;
 
     var left = centerX - windowWidth / 2;
     var placeTop = top;
@@ -539,7 +546,7 @@ class MascotWindowService {
       // 入力バーと同じく、ライムの足元の少し下に出す。
       // 縦に長いので、画面の下にはみ出すぶんは上へずらす（_applyPosition と同じ考え方）
       var left = x - windowWidth / 2;
-      var top = y + gapBelowCharacter;
+      var top = y + _gapBelowCharacter;
 
       final maxLeft = area.right - windowWidth;
       if (maxLeft > area.left) left = left.clamp(area.left, maxLeft);

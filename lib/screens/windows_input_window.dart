@@ -12,6 +12,7 @@ import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
+import 'package:raim_prototype/services/lime_size.dart';
 import 'package:raim_prototype/services/mascot_window_service.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/wake_word_service.dart';
@@ -351,7 +352,18 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
       case TrayService.keyQuit:
         _quit();
         break;
+
+      default:
+        final size = TrayService.limeSizeOf(menuItem.key);
+        if (size != null) unawaited(_setLimeSize(size));
     }
+  }
+
+  /// タスクトレイの「ライムの大きさ」で選ばれた
+  Future<void> _setLimeSize(LimeSize size) async {
+    RaimLog.d('[Tray] ライムの大きさ: ${size.label}');
+    context.read<UnityCommunicator>().setMascotScale(size.scale);
+    await LimeSizeSetting.set(size);
   }
 
   void _listenUnity() {
