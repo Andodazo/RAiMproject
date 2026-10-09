@@ -23,7 +23,14 @@ class SleepingZzz extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final offline = context.select<ChatProvider, bool>((c) => c.isOffline);
-    if (!offline) return const SizedBox.shrink();
+
+    // つながっているときも Positioned で返す。
+    //
+    // 以前は SizedBox.shrink() をそのまま返していた。Stack は「位置指定の無い子」の
+    // 大きさに合わせて自分の大きさを決めるので、ほかの子が全部 Positioned の
+    // スマホ縦の画面では Stack が 0×0 になり、背景も入力欄も Unity も描かれなかった
+    // （Android は真っ暗、iPhone は Unity が大きさ0の画面を作ろうとして落ちた）。
+    if (!offline) return const Positioned.fill(child: SizedBox.shrink());
 
     return Positioned.fill(
       child: IgnorePointer(

@@ -96,15 +96,16 @@ class ChatScreen extends StatelessWidget {
         child: const EmbedUnity(onMessageFromUnity: _handleUnityMessage),
       );
     }
-    // Windows: Unity 側が描画するので何も置かない
-    return const SizedBox.shrink();
+    // Windows: Unity 側が描画するので何も置かない。
+    // Stack の大きさを 0 にしないよう、何も無くても Positioned で返す（SleepingZzz と同じ理由）
+    return const Positioned.fill(child: SizedBox.shrink());
   }
 
   /// Layer 2.5: Unity の準備ができるまで、ライムに電話をかけているような画面を重ねる
   ///
   /// Windows は Unity が別ウィンドウなので出さない。
   Widget _buildCallingOverlay() {
-    if (!_isMobile) return const SizedBox.shrink();
+    if (!_isMobile) return const Positioned.fill(child: SizedBox.shrink());
     return const Positioned.fill(child: RaimCallingOverlay());
   }
 
