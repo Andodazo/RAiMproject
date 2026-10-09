@@ -264,13 +264,10 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
 
       // 裏にいる間に切れていたら（寝ている・再接続待ち）すぐ試す。
       // つながっているつもりでも、長く裏にいたなら切られている見込みが高いので張り直す
-      final service = widget.raimService;
-      final notConnected = service.state != RaimConnectionState.connected;
+      // （返事を待っている途中なら、返事が来なかったときに張り直す）
       final longAway =
           DateTime.now().difference(since) >= _reconnectAfterBackground;
-      if (notConnected || longAway) {
-        unawaited(service.reconnectNow());
-      }
+      unawaited(widget.raimService.handleAppResumed(longAway: longAway));
     }
   }
 

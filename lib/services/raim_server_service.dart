@@ -294,6 +294,8 @@ class RaimServerService implements LLMService {
 
       // 接続成功 → リトライカウンタリセット、状態更新
       _reconnectAttempts = 0;
+      // 新しくつながったので、古い接続が生きているかの確認はもういらない
+      _stopAliveCheck();
       _setState(RaimConnectionState.connected);
     } catch (e) {
       // 張り直しや切断で捨てられた接続の失敗は、再接続の予約に使わない
@@ -331,6 +333,7 @@ class RaimServerService implements LLMService {
   Future<void> disconnect() async {
     _intentionalClose = true;  // 自動再接続を抑止
     _connectGen++;  // 接続を待っている途中なら、その結果を捨てる
+    _stopAliveCheck();
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
 
@@ -395,6 +398,11 @@ class RaimServerService implements LLMService {
   /// 3.それ以外の metadata / text_chunk / audio_chunk / tool_call / chat_end は
   /// 4._broadcaster に流して ChatProvider 側で処理する。
   void _onMessage(dynamic rawMessage) {
+    // 何か届いた = 接続は生きている。アプリへ戻ったときの確認中なら、張り直さずに済む
+    if (_checkingAlive) {
+      RaimLog.d('[RaimServerService] サーバーから届いたので、接続はそのまま使います');
+      _stopAliveCheck();
+    }
     try {
       // 本文・履歴・音声 Base64 が乗るため、中身は出さず大きさだけ記録する
       RaimLog.d('[RaimServerService] 受信 ${RaimLog.size(rawMessage)}');
@@ -509,6 +517,8 @@ class RaimServerService implements LLMService {
     if (_state == RaimConnectionState.connecting) return;
 
     RaimLog.d('[RaimServerService] 接続を張り直します（state=$_state）');
+    // ここで張り直すので、生きているかの確認はもういらない
+    _stopAliveCheck();
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     // 裏で接続を待っている途中なら、その結果を捨てる（二重につながらないように）
@@ -540,6 +550,55 @@ class RaimServerService implements LLMService {
     // 寝ているときは試行回数を戻さない。戻すと失敗したときに一度起きてしまう
     // （回数が少ないうちは「再接続中」として扱うため）。つながれば connect が0に戻す
     await connect(silent: wasOffline);
+  }
+
+  /// 返事を待っている sendMessage の数
+  int _repliesInFlight = 0;
+
+  /// 返事を待っている間にアプリが前に戻ってきて、接続が生きているか確かめている間 true。
+  bool _checkingAlive = false;
+  Timer? _aliveTimer;
+
+  /// 確かめるときに待つ時間。この間にサーバーから何も届かなければ張り直す。
+  ///
+  /// 返事の途中なら文や声が続けて届くし、裏にいる間に届いていた分も戻ってすぐ受け取れる。
+  static const Duration aliveCheckWait = Duration(seconds: 15);
+
+  /// アプリが前に戻ったときに呼ぶ（スマホのみ）。
+  ///
+  /// [longAway] は、裏にいた時間が長く、知らないうちに切られていそうなとき true。
+  ///
+  /// 以前は返事を待っている途中でも張り直していた。張り直すと古い接続あての返事は
+  /// 受け取れないので、接続が生きていても返事が消え、60秒待ってエラーになっていた。
+  /// 返事を待っている間は、少し待ってサーバーから何か届けばそのまま使い、
+  /// 何も届かなければ張り直す。
+  Future<void> handleAppResumed({required bool longAway}) async {
+    if (_state != RaimConnectionState.connected) {
+      // 寝ている・再接続待ちなら、待たずにすぐ試す
+      await reconnectNow();
+      return;
+    }
+    if (!longAway) return;
+    if (_repliesInFlight == 0) {
+      await reconnectNow();
+      return;
+    }
+
+    RaimLog.d('[RaimServerService] 返事を待っているので、接続が生きているか少し待って確かめます');
+    _stopAliveCheck();
+    _checkingAlive = true;
+    _aliveTimer = Timer(aliveCheckWait, () {
+      if (!_checkingAlive) return;
+      RaimLog.d('[RaimServerService] サーバーから何も届かないので張り直します');
+      _stopAliveCheck();
+      unawaited(reconnectNow());
+    });
+  }
+
+  void _stopAliveCheck() {
+    _checkingAlive = false;
+    _aliveTimer?.cancel();
+    _aliveTimer = null;
   }
 
   /// 「寝てるライムを起こす」処理
@@ -640,6 +699,7 @@ class RaimServerService implements LLMService {
     }
     // 送信後に返ってくる複数メッセージを順番に受け取るためのIterator
     final iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
+    _repliesInFlight++;
 
     try {
       // 先に受信待ちを開始してから送信する
@@ -683,6 +743,7 @@ class RaimServerService implements LLMService {
         );
       }
     } finally {
+      _repliesInFlight--;
       // このsendMessage専用の受信待ちを終了する
       await iterator.cancel();
     }
