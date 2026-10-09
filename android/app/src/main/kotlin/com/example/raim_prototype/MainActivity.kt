@@ -36,6 +36,9 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // 【確認用・後で消す】駅アラームの録音を「ダウンロード」へ写す
+        StationRecordingExport.register(this, flutterEngine.dartExecutor.binaryMessenger)
+
         // 振動（lib/services/haptics.dart）。
         // Flutter の HapticFeedback は「タップ時の振動」の設定に従うので、
         // OFF の端末では「ねえライム」の合図も駅アラームも震えなかった。

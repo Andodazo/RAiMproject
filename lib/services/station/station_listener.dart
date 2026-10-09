@@ -20,6 +20,7 @@ import 'package:vosk_flutter/vosk_flutter.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/station/station_alarm.dart';
+import 'package:raim_prototype/services/station/station_recorder.dart';
 import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 import 'package:raim_prototype/services/wake_word_service.dart';
 
@@ -98,6 +99,8 @@ class StationListener {
     }
 
     _speaking?.addListener(_onSpeakingChanged);
+    // 【確認用・後で消す】設定が ON なら、聞いている音を wav に残す
+    await StationRecorder.startIfEnabled(destination: plan.destination.name);
     RaimLog.i(
       '[Station] 聞き取り開始 ${plan.destination.name} '
       '(文法 ${plan.grammar.length}語)',
@@ -106,6 +109,7 @@ class StationListener {
 
   Future<void> stop() async {
     _speaking?.removeListener(_onSpeakingChanged);
+    await StationRecorder.stop(); // 【確認用・後で消す】
 
     final sub = _micSub;
     _micSub = null;
@@ -136,6 +140,7 @@ class StationListener {
 
   void _onSpeakingChanged() {
     final speaking = _speaking?.value ?? false;
+    StationRecorder.note(speaking ? 'ライムが喋り始めた（聞かない）' : 'ライムが喋り終えた'); // 【確認用・後で消す】
     if (speaking) {
       _mutedUntil = null;
       _pending.clear();
@@ -147,6 +152,7 @@ class StationListener {
 
   /// しばらく聞かない。ライムの声（知らせのセリフ）を鳴らすときに使う。
   void muteFor(Duration duration) {
+    StationRecorder.note('ライムの声を鳴らすので ${duration.inSeconds}秒 聞かない'); // 【確認用・後で消す】
     final until = DateTime.now().add(duration);
     final current = _mutedUntil;
     if (current == null || until.isAfter(current)) _mutedUntil = until;
@@ -161,6 +167,7 @@ class StationListener {
   }
 
   void _onChunk(Uint8List chunk) {
+    StationRecorder.add(chunk); // 【確認用・後で消す】聞かない間の音も残す
     if (_muted) return;
     _pending.add(chunk);
     if (_pending.length < _feedBytes) return;
@@ -188,11 +195,15 @@ class StationListener {
       RaimLog.d('[Station] 聞こえた: $text');
       if (!_heard.isClosed) _heard.add(text);
 
+      final allowRepeated = _allowRepeated?.call() ?? false;
+      // 【確認用・後で消す】
+      StationRecorder.note('聞こえた: $text${allowRepeated ? '（GPSで駅の近く）' : ''}');
       final event = _detector.onResult(
         text,
-        allowRepeated: _allowRepeated?.call() ?? false,
+        allowRepeated: allowRepeated,
       );
       if (event != null) {
+        StationRecorder.note('検知: $event'); // 【確認用・後で消す】
         RaimLog.i('[Station] $event');
         if (!_events.isClosed) _events.add(event);
       }

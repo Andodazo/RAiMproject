@@ -14,6 +14,7 @@ import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/station_alarm_controller.dart';
 import 'package:raim_prototype/services/station/station_alarm.dart';
 import 'package:raim_prototype/services/station/station_database.dart';
+import 'package:raim_prototype/widgets/station_recording_toggle.dart';
 
 const _bg = Color(0xFF111418);
 const _card = Color(0xFF1B1F26);
@@ -118,14 +119,27 @@ class _StationAlarmScreenState extends State<StationAlarmScreen> {
         backgroundColor: _bg,
         foregroundColor: _text,
         title: const Text('駅アラーム'),
+        actions: [
+          // 【確認用・後で消す】車内の音を録音する／しない
+          if (StationAlarmController.isSupported) const StationRecordingToggle(),
+        ],
       ),
       body: SafeArea(
         child: !StationAlarmController.isSupported
             ? _message('この端末ではまだ駅アラームを使えません。\n'
                 '（iOS は音声認識のライブラリを入れてビルドする必要があります）')
-            : alarm.isActive
-                ? _Riding(alarm: alarm)
-                : _buildPicker(alarm),
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 【確認用・後で消す】録音が ON のとき保存先を出す
+                  const StationRecordingNote(),
+                  Expanded(
+                    child: alarm.isActive
+                        ? _Riding(alarm: alarm)
+                        : _buildPicker(alarm),
+                  ),
+                ],
+              ),
       ),
     );
   }

@@ -64,6 +64,11 @@
 	<string>ライムに写真を見せるために、カメラを使用します。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>ライムに写真を見せるために、写真ライブラリにアクセスします。</string>
+	<!-- 【確認用・後で消す】駅アラームの録音（station_rec）を「ファイル」アプリから取り出すため -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<!-- 駅アラーム: 画面を消しても車内アナウンスを聞き続ける -->
