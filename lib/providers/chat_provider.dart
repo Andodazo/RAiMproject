@@ -694,19 +694,10 @@ _toolStatus = null;
   /// 展示アカウントの無操作タイムアウト時に、現在の会話を破棄して
   /// 次の来場者用の新しい会話へ切り替える。
   ///
-  /// サーバー削除が失敗しても端末側の会話状態は必ず新しくする。ネットワーク
-  /// 障害で次の来場者へ前の入力が見える方が展示用途では危険なため。
-  Future<void> resetExhibitionSession() async {
+  /// スレッドの期限切れ・削除はAWS側で管理するため、ここではサーバーへ
+  /// 削除要求を送らず、端末側の表示状態だけを新しくする。
+  Future<void> resetExhibitionSession() {
     final oldThreadId = _currentThreadId;
-    final service = _llmService;
-
-    if (service is RaimServerService && oldThreadId != null) {
-      try {
-        await service.deleteThread(oldThreadId);
-      } catch (e) {
-        RaimLog.d('[ChatProvider] 展示会話のサーバー削除に失敗: $e');
-      }
-    }
 
     if (oldThreadId != null) {
       _threads = _threads.where((t) => t.threadId != oldThreadId).toList();
@@ -714,6 +705,7 @@ _toolStatus = null;
     _isLoadingThreads = false;
     _threadError = null;
     startNewThread();
+    return Future<void>.value();
   }
 
   /// スレッド識別子を作る
