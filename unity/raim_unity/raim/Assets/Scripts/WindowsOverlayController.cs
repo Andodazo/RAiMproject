@@ -109,6 +109,10 @@ public class WindowsOverlayController : MonoBehaviour
     [SerializeField] private Vector2 exhibitionCharacterOffset =
         new Vector2(0f, 1.2f);
 
+    [Header("ライムの大きさ")]
+    [Tooltip("大きさ 100% のときのウィンドウの大きさ(px)。Player Settings の既定の解像度と合わせる")]
+    [SerializeField] private Vector2Int baseWindowSize = new Vector2Int(800, 700);
+
     [Header("デバッグ")]
     [Tooltip("起動時にウィンドウサイズ・座標・キャラの占有範囲をログに出す")]
     [SerializeField] private bool logWindowInfoOnStart = true;
@@ -433,6 +437,15 @@ public class WindowsOverlayController : MonoBehaviour
     private const string PrefKeyX = "raim_window_x";
     private const string PrefKeyY = "raim_window_y";
 
+    // 大きさ保存用のキー
+    private const string PrefKeyScale = "raim_window_scale";
+
+    /// <summary>
+    /// 大きさを一度も選んでいないときの倍率。Flutter の既定（中）と合わせる。
+    /// 合わせておかないと、初めての起動で一度ちがう大きさで出てから縮む。
+    /// </summary>
+    private const float DefaultScale = 0.8f;
+
     // ------------------------------------------------------------
     // 起動直後はウィンドウを画面の外に置く
     // ------------------------------------------------------------
@@ -488,7 +501,13 @@ public class WindowsOverlayController : MonoBehaviour
         IntPtr hwnd = GetSelfWindow();
         if (hwnd == IntPtr.Zero) return;
 
-        SetWindowPos(hwnd, IntPtr.Zero, startupRect.Left, startupRect.Top, 0, 0,
+        // 大きさを変えていても下端は元の場所にそろえる（ライムの足元が上にずれないように）
+        int top = startupRect.Top;
+        if (GetWindowRect(hwnd, out RECT now))
+        {
+            top = startupRect.Bottom - (now.Bottom - now.Top);
+        }
+        SetWindowPos(hwnd, IntPtr.Zero, startupRect.Left, top, 0, 0,
             SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
@@ -500,6 +519,7 @@ public class WindowsOverlayController : MonoBehaviour
     {
         isWindowsOverlay = true;
         exhibitionMode = HasExhibitionLaunchArgument();
+        MascotScale.FullScreen = exhibitionMode;
         if (exhibitionMode)
         {
             Debug.Log("[Overlay] 起動引数により展示モードを有効化しました");
@@ -572,6 +592,12 @@ public class WindowsOverlayController : MonoBehaviour
 
         // 最小化されても Flutter からのメッセージを処理し続ける
         Application.runInBackground = true;
+
+#if !UNITY_EDITOR
+        // 前回選ばれた大きさ。窓に当てるのは、画面の外にいる間（Start）。
+        // Editor では窓の大きさを変えないので、吹き出しなども元の大きさのままにする
+        MascotScale.Set(PlayerPrefs.GetFloat(PrefKeyScale, DefaultScale));
+#endif
     }
 
     private static bool HasExhibitionLaunchArgument()
@@ -632,6 +658,9 @@ public class WindowsOverlayController : MonoBehaviour
             yield return null;
             yield return new WaitForSecondsRealtime(0.1f);
 
+            // 画面に出す前に大きさを合わせる（見えてから縮むと、ちらつく）
+            ApplyWindowSize(keepFeet: false);
+
             if (!RestoreWindowPosition())
             {
                 MoveWindowBackToStartupPosition();
@@ -641,6 +670,7 @@ public class WindowsOverlayController : MonoBehaviour
         }
         else
         {
+            ApplyWindowSize(keepFeet: false);
             RestoreWindowPosition();
         }
 
@@ -673,6 +703,10 @@ public class WindowsOverlayController : MonoBehaviour
 
         HandleQuitShortcut();
         HandleClickDetection();
+
+        // 大きさを変えた直後は、Unity が描き直すまで押し戻しも位置の通知も待つ
+        if (resizing) return;
+
         if (!exhibitionMode)
         {
             ClampWindowToScreen();
@@ -697,6 +731,7 @@ public class WindowsOverlayController : MonoBehaviour
     public void SetExhibitionMode(bool enabled)
     {
         exhibitionMode = enabled;
+        MascotScale.FullScreen = enabled;
         Debug.Log($"[Overlay] 展示モードを{(enabled ? "有効" : "無効")}に切り替えました");
         if (!isWindowsOverlay) return;
 
@@ -812,6 +847,123 @@ public class WindowsOverlayController : MonoBehaviour
 
         exhibitionStateCaptured = false;
         originalCameraStateCaptured = false;
+
+        // 展示中に大きさが変わっていたら、ここで合わせる
+        ApplyWindowSize(keepFeet: false);
+    }
+
+    // ============================================================
+    // ライムの大きさ
+    // ============================================================
+    //
+    // ウィンドウごと縮める。カメラは縦の画角が決まっているので、
+    // 窓の高さを変えるとライムも同じ割合で大きさが変わる。
+    // 縦横を同じ割合で変えるので、窓の中でのライムの位置の割合も変わらない。
+
+    /// <summary>
+    /// Flutter のタスクトレイ「ライムの大きさ」で選ばれた倍率を当てる。
+    /// </summary>
+    public void SetCharacterScale(float scale)
+    {
+#if UNITY_EDITOR
+        // Editor では窓の大きさを変えないので、吹き出しなどだけ縮まないよう何もしない
+        Debug.Log($"[Overlay] ライムの大きさ {scale:P0} を受け取りました（Editor では変えません）");
+#else
+        MascotScale.Set(scale);
+        PlayerPrefs.SetFloat(PrefKeyScale, MascotScale.Window);
+        PlayerPrefs.Save();
+        Debug.Log($"[Overlay] ライムの大きさ: {MascotScale.Window:P0}");
+
+        // 画面の外で準備中なら Start で、展示中なら通常に戻したときに当てる
+        if (!isWindowsOverlay || startupHidden || exhibitionMode) return;
+        ApplyWindowSize(keepFeet: true);
+#endif
+    }
+
+    /// <summary>
+    /// 窓の大きさを変えてから、Unity が新しい大きさで描き直すまでの間 true。
+    ///
+    /// その間は Screen.height やカメラの計算がまだ古い大きさのままなので、
+    /// 画面外への押し戻しと位置の通知を止める。止めないと、足元を実際とちがう場所と
+    /// 計算して窓を押し戻したり、ずれた位置を Flutter へ送ったりする。
+    /// </summary>
+    private bool resizing = false;
+
+    /// <summary>
+    /// ウィンドウを MascotScale.Window の大きさにする。
+    ///
+    /// [keepFeet] が true なら、ライムの足元が画面上で動かないように窓の位置もずらす
+    /// （その場で縮む）。false なら窓の左下をそのままにする。
+    /// </summary>
+    private void ApplyWindowSize(bool keepFeet)
+    {
+#if UNITY_EDITOR
+        // Editor では Game ビューではなく Editor 全体の窓を動かしてしまうので何もしない
+        return;
+#else
+        IntPtr hwnd = GetSelfWindow();
+        if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out RECT r)) return;
+
+        int oldW = r.Right - r.Left;
+        int oldH = r.Bottom - r.Top;
+        if (oldW <= 0 || oldH <= 0) return;
+
+        int newW = Mathf.Max(1, Mathf.RoundToInt(baseWindowSize.x * MascotScale.Window));
+        int newH = Mathf.Max(1, Mathf.RoundToInt(baseWindowSize.y * MascotScale.Window));
+        if (Mathf.Abs(newW - oldW) <= 1 && Mathf.Abs(newH - oldH) <= 1) return;
+
+        // 窓の左下を動かさない（足元は窓の下の方にあるので、大きくずれない）
+        int left = r.Left;
+        int top = r.Bottom - newH;
+
+        if (keepFeet && TryGetFootInWindow(out Vector2 foot))
+        {
+            // 窓の中での足元の位置は、窓の大きさと同じ割合で動く
+            float rx = (float)newW / oldW;
+            float ry = (float)newH / oldH;
+            left = Mathf.RoundToInt(r.Left + foot.x * (1f - rx));
+            top = Mathf.RoundToInt(r.Top + foot.y * (1f - ry));
+        }
+
+        resizing = true;
+        SetWindowPos(hwnd, IntPtr.Zero, left, top, newW, newH,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+        Debug.Log($"[Overlay] ウィンドウの大きさを変えました: {oldW}x{oldH} → {newW}x{newH}");
+
+        StartCoroutine(AfterResize());
+#endif
+    }
+
+    /// <summary>
+    /// ライムの足元の、窓の中での位置（左上原点・px）。
+    /// </summary>
+    private bool TryGetFootInWindow(out Vector2 foot)
+    {
+        foot = default;
+        var cam = Cam;
+        var sr = Sprite;
+        if (cam == null || sr == null || Screen.height <= 0) return false;
+
+        Vector3 bMin = cam.WorldToScreenPoint(sr.bounds.min);
+        Vector3 bMax = cam.WorldToScreenPoint(sr.bounds.max);
+        foot = new Vector2((bMin.x + bMax.x) * 0.5f, Screen.height - bMin.y);
+        return true;
+    }
+
+    /// <summary>
+    /// 大きさを変えたあと、Unity が新しい大きさで描き直してから
+    /// Flutter へ位置を伝え、場所を覚え直す。
+    /// （すぐ送ると、古い大きさで計算した足元の位置を送ってしまう）
+    /// </summary>
+    private IEnumerator AfterResize()
+    {
+        yield return null;
+        yield return null;
+        resizing = false;
+        // 起動直後（画面の外で準備中）や展示中は、ここで位置を送ったり覚えたりしない
+        if (quitting || startupHidden || exhibitionMode) yield break;
+        NotifyMove(force: true);
+        SaveWindowPosition();
     }
 
     private void SetWindowsBackgroundVisible(bool visible)
