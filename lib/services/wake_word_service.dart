@@ -34,7 +34,7 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show Directory, File, Platform;
 import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
@@ -159,8 +159,7 @@ class WakeWordService {
   Future<void>? _loading;
 
   Future<void> _load() async {
-    final support = await getApplicationSupportDirectory();
-    final storage = '${support.path}${Platform.pathSeparator}vosk';
+    final storage = await _modelStorageDir();
 
     final loader = ModelLoader(modelStorage: storage);
     final started = DateTime.now();
@@ -171,6 +170,52 @@ class WakeWordService {
 
     final ms = DateTime.now().difference(started).inMilliseconds;
     RaimLog.i('[WakeWord] モデルを読み込みました (${ms}ms)');
+  }
+
+  /// モデルの展開先。
+  ///
+  /// Windows の Vosk（libvosk）は、日本語などの英数字以外の文字を含むパスの
+  /// ファイルを開けない。ユーザー名が日本語だとアプリ専用領域
+  /// （C:\Users\<ユーザー名>\AppData\...）に置いたモデルを読めず、
+  /// 「model files が無い」と言われて「ねえライム」が起動しなかった。
+  /// その場合は、英数字だけのパス（C:\ProgramData など）に置く。
+  Future<String> _modelStorageDir() async {
+    final sep = Platform.pathSeparator;
+    final support = await getApplicationSupportDirectory();
+    final preferred = '${support.path}${sep}vosk';
+    if (!Platform.isWindows || _isAscii(preferred)) return preferred;
+
+    final candidates = [
+      Platform.environment['ProgramData'],
+      Platform.environment['PUBLIC'],
+    ];
+    for (final base in candidates) {
+      if (base == null || base.isEmpty) continue;
+      final dir = '$base${sep}RAiM${sep}vosk';
+      if (!_isAscii(dir)) continue;
+      if (await _isWritable(dir)) {
+        // ユーザー名が入ったパスはログに出さない
+        RaimLog.i('[WakeWord] ユーザー名に英数字以外が含まれるため、モデルを $dir に置きます');
+        return dir;
+      }
+    }
+    RaimLog.w('[WakeWord] 英数字だけの置き場所が見つからないため、アプリ専用領域を使います（読めない可能性があります）');
+    return preferred;
+  }
+
+  static bool _isAscii(String path) => path.codeUnits.every((c) => c < 0x80);
+
+  /// フォルダを作って書き込めるか。
+  static Future<bool> _isWritable(String dir) async {
+    try {
+      await Directory(dir).create(recursive: true);
+      final probe = File('$dir${Platform.pathSeparator}.write_test');
+      await probe.writeAsString('ok', flush: true);
+      await probe.delete();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// 読み込んだモデル。駅アラームなど、別の文法で認識したい機能と共有する。
