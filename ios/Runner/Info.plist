@@ -75,6 +75,13 @@
 		<string>audio</string>
 		<!-- 駅アラーム: 画面を消しても降りる駅への近さを GPS で見る -->
 		<string>location</string>
+		<!-- 駅アラーム: flutter_foreground_task が裏で定期的に起きるため（下の BGTaskSchedulerPermittedIdentifiers とセット） -->
+		<string>fetch</string>
+	</array>
+	<!-- flutter_foreground_task の裏での定期実行。無いと起動時に登録を断られる -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.pravera.flutter_foreground_task.refresh</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>駅アラームで降りる駅に近づいたことを知らせるためと、場所を言わずに天気を聞いたときに今いるあたりの天気を調べるために位置情報を使用します。</string>
