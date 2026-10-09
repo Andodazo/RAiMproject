@@ -4,6 +4,9 @@
     <!-- 音声入力（STT）用。録音以外の用途では使わない -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
+    <!-- 「ねえライム」に反応した合図と、駅アラームの振動（MainActivity の raim_haptics） -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- 駅アラーム: 画面を消しても車内アナウンスを聞き続けるため。
          マイク用のフォアグラウンドサービス（Android 14 以降は種類の宣言が必須）。
          FOREGROUND_SERVICE / WAKE_LOCK / POST_NOTIFICATIONS は

@@ -144,7 +144,13 @@ class MicStreamService {
         audioInterruption: AudioInterruptionMode.none,
         // iOS: 録音中もライムの声をスピーカーから鳴らし、音楽アプリの再生も
         // 止めない（電車で音楽を聴きながら駅アラームを使えるように）
+        //
+        // allowHapticsAndSystemSoundsDuringRecording: iOS は録音中の振動を
+        // 既定で止める。ウェイクワードのためにマイクはほぼずっと開いているので、
+        // これが無いと「ねえライム」の合図も駅アラームの振動も震えない
+        // （record が録音を始めるたびにこの値で上書きするので、ここで指定する）。
         iosConfig: const IosRecordConfig(
+          allowHapticsAndSystemSoundsDuringRecording: true,
           categoryOptions: [
             IosAudioCategoryOption.defaultToSpeaker,
             IosAudioCategoryOption.allowBluetooth,
