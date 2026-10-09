@@ -32,8 +32,16 @@ namespace RAiM.NightOffice.Compatible {
             var table = new List<LightmapData>(LightmapSettings.lightmaps);
             if (table.Count == 0 && leases.Count == 0) {
                 previousMode = LightmapSettings.lightmapsMode;
-                changedMode = previousMode != mode;
-                LightmapSettings.lightmapsMode = mode;
+                changedMode = false;
+                if (previousMode != mode) {
+                    // iOS など、書き出し先によってはこの方式が使えず例外になる。
+                    // 以前はここで止まり、部屋の光の焼き込みが一切当たっていなかった。
+                    // 方式は変えずに、焼き込み自体は続けて当てる。
+                    try { LightmapSettings.lightmapsMode = mode; changedMode = true; }
+                    catch (ArgumentException e) {
+                        Debug.LogWarning($"[RoomBakedLighting] lightmapsMode={mode} は使えないため {previousMode} のまま当てます: {e.Message}");
+                    }
+                }
             }
             var indices = new int[maps.Length];
             for (int i = 0; i < maps.Length; i++) {
