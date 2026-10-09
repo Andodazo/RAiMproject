@@ -5,261 +5,281 @@
     {
       "spriteName": "amused",
       "visibleRect": {
-        "x": 0.16069057104913678,
-        "y": 0.16802297750119674,
-        "width": 0.6719787516600265,
-        "height": 0.8157012924844423
+        "x": 0.3603515625,
+        "y": 0.017578125,
+        "width": 0.3408203125,
+        "height": 0.974609375
       },
-      "pixelsPerUnit": 261.0,
+      "pixelsPerUnit": 196.0,
       "imageSize": [
-        753,
-        2089
+        1024,
+        1536
       ],
       "alphaBoxPixelsTopLeft": [
-        121,
-        34,
-        627,
-        1738
+        369,
+        12,
+        718,
+        1509
       ]
     },
     {
-      "spriteName": "angry-removebg-preview",
+      "spriteName": "angry",
       "visibleRect": {
-        "x": 0.05185185185185185,
-        "y": 0.0914419695193435,
-        "width": 0.8814814814814815,
-        "height": 0.9062133645955451
+        "x": 0.3623046875,
+        "y": 0.028645833333333332,
+        "width": 0.2841796875,
+        "height": 0.9602864583333334
       },
-      "pixelsPerUnit": 100.0,
+      "pixelsPerUnit": 196.0,
       "imageSize": [
-        270,
-        853
+        1024,
+        1536
       ],
       "alphaBoxPixelsTopLeft": [
-        14,
-        2,
-        252,
-        775
+        371,
+        17,
+        662,
+        1492
       ]
     },
     {
       "spriteName": "caring",
       "visibleRect": {
-        "x": 0.16600265604249667,
-        "y": 0.15222594542843465,
-        "width": 0.6799468791500664,
-        "height": 0.8353279080899952
+        "x": 0.2841796875,
+        "y": 0.029947916666666668,
+        "width": 0.376953125,
+        "height": 0.958984375
       },
-      "pixelsPerUnit": 261.0,
+      "pixelsPerUnit": 196.0,
       "imageSize": [
-        753,
-        2089
+        1024,
+        1536
       ],
       "alphaBoxPixelsTopLeft": [
-        125,
-        26,
-        637,
-        1771
+        291,
+        17,
+        677,
+        1490
       ]
     },
     {
       "spriteName": "curious",
       "visibleRect": {
-        "x": 0.16069057104913678,
-        "y": 0.10483484921014839,
-        "width": 0.6958831341301461,
-        "height": 0.8755385351842987
+        "x": 0.3203125,
+        "y": 0.029947916666666668,
+        "width": 0.3935546875,
+        "height": 0.9583333333333334
       },
-      "pixelsPerUnit": 261.0,
+      "pixelsPerUnit": 196.0,
       "imageSize": [
-        753,
-        2089
+        1024,
+        1536
       ],
       "alphaBoxPixelsTopLeft": [
-        121,
-        41,
-        645,
-        1870
+        328,
+        18,
+        731,
+        1490
       ]
     },
     {
-      "spriteName": "default-removebg-preview",
+      "spriteName": "default",
       "visibleRect": {
-        "x": 0.10897435897435898,
-        "y": 0.09136420525657071,
-        "width": 0.7147435897435898,
-        "height": 0.9061326658322904
+        "x": 0.2880859375,
+        "y": 0.031901041666666664,
+        "width": 0.423828125,
+        "height": 0.95703125
       },
-      "pixelsPerUnit": 100.0,
+      "pixelsPerUnit": 196.0,
       "imageSize": [
-        312,
-        799
+        1024,
+        1536
       ],
       "alphaBoxPixelsTopLeft": [
-        34,
-        2,
-        257,
-        726
+        295,
+        17,
+        729,
+        1487
       ]
     },
     {
       "spriteName": "embarrassed",
       "visibleRect": {
-        "x": 0.16733067729083664,
-        "y": 0.14743896601244616,
-        "width": 0.6626826029216467,
-        "height": 0.8338918142651986
+        "x": 0.3583984375,
+        "y": 0.010416666666666666,
+        "width": 0.32421875,
+        "height": 0.9817708333333334
       },
-      "pixelsPerUnit": 261.0,
+      "pixelsPerUnit": 196.0,
       "imageSize": [
-        753,
-        2089
+        1024,
+        1536
       ],
       "alphaBoxPixelsTopLeft": [
-        126,
-        39,
-        625,
-        1781
+        367,
+        12,
+        699,
+        1520
       ]
     },
     {
       "spriteName": "excited",
       "visibleRect": {
-        "x": 0.14475431606905712,
-        "y": 0.14073719483006222,
-        "width": 0.7158034528552457,
-        "height": 0.8516036381043561
+        "x": 0.31307550644567217,
+        "y": 0.015193370165745856,
+        "width": 0.39594843462246776,
+        "height": 0.9737569060773481
       },
-      "pixelsPerUnit": 261.0,
+      "pixelsPerUnit": 196.0,
       "imageSize": [
-        753,
-        2089
+        1086,
+        1448
       ],
       "alphaBoxPixelsTopLeft": [
-        109,
+        340,
         16,
-        648,
-        1795
+        770,
+        1426
       ]
     },
     {
-      "spriteName": "happy-removebg-preview",
+      "spriteName": "happy",
       "visibleRect": {
-        "x": 0.07526881720430108,
-        "y": 0.0914419695193435,
-        "width": 0.8530465949820788,
-        "height": 0.9062133645955451
+        "x": 0.3583984375,
+        "y": 0.0078125,
+        "width": 0.35546875,
+        "height": 0.9830729166666666
       },
-      "pixelsPerUnit": 100.0,
+      "pixelsPerUnit": 196.0,
       "imageSize": [
-        279,
-        853
+        1024,
+        1536
       ],
       "alphaBoxPixelsTopLeft": [
-        21,
-        2,
-        259,
-        775
+        367,
+        14,
+        731,
+        1524
       ]
     },
     {
       "spriteName": "investigate",
       "visibleRect": {
-        "x": 0.3368756641870351,
-        "y": 0.09988038277511961,
-        "width": 0.3517534537725824,
-        "height": 0.8833732057416268
+        "x": 0.337890625,
+        "y": 0.037109375,
+        "width": 0.3447265625,
+        "height": 0.9518229166666666
       },
-      "pixelsPerUnit": 210.0,
+      "pixelsPerUnit": 196.0,
       "imageSize": [
-        941,
-        1672
+        1024,
+        1536
       ],
       "alphaBoxPixelsTopLeft": [
-        317,
-        28,
-        648,
-        1505
+        346,
+        17,
+        699,
+        1479
       ]
     },
     {
       "spriteName": "playful",
       "visibleRect": {
-        "x": 0.13811420982735723,
-        "y": 0.14552417424605074,
-        "width": 0.6985391766268261,
-        "height": 0.8319770224988032
+        "x": 0.34765625,
+        "y": 0.028645833333333332,
+        "width": 0.375,
+        "height": 0.9602864583333334
       },
-      "pixelsPerUnit": 261.0,
+      "pixelsPerUnit": 196.0,
       "imageSize": [
-        753,
-        2089
+        1024,
+        1536
       ],
       "alphaBoxPixelsTopLeft": [
-        104,
-        47,
-        630,
-        1785
+        356,
+        17,
+        740,
+        1492
       ]
     },
     {
-      "spriteName": "sad-removebg-preview",
+      "spriteName": "sad",
       "visibleRect": {
-        "x": 0.052830188679245285,
-        "y": 0.08995327102803738,
-        "width": 0.8981132075471698,
-        "height": 0.9042056074766355
+        "x": 0.369140625,
+        "y": 0.01171875,
+        "width": 0.2890625,
+        "height": 0.9798177083333334
       },
-      "pixelsPerUnit": 100.0,
+      "pixelsPerUnit": 196.0,
       "imageSize": [
-        265,
-        856
+        1024,
+        1536
       ],
       "alphaBoxPixelsTopLeft": [
-        14,
-        5,
-        252,
-        779
-      ]
-    },
-    {
-      "spriteName": "surprise-removebg-preview",
-      "visibleRect": {
-        "x": 0.04814814814814815,
-        "y": 0.0914419695193435,
-        "width": 0.8777777777777778,
-        "height": 0.9062133645955451
-      },
-      "pixelsPerUnit": 100.0,
-      "imageSize": [
-        270,
-        853
-      ],
-      "alphaBoxPixelsTopLeft": [
+        378,
         13,
-        2,
-        250,
-        775
+        674,
+        1518
+      ]
+    },
+    {
+      "spriteName": "sleeping",
+      "visibleRect": {
+        "x": 0.2861328125,
+        "y": 0.032552083333333336,
+        "width": 0.427734375,
+        "height": 0.95703125
+      },
+      "pixelsPerUnit": 196.0,
+      "imageSize": [
+        1024,
+        1536
+      ],
+      "alphaBoxPixelsTopLeft": [
+        293,
+        16,
+        731,
+        1486
+      ]
+    },
+    {
+      "spriteName": "surprise",
+      "visibleRect": {
+        "x": 0.3408203125,
+        "y": 0.0078125,
+        "width": 0.3818359375,
+        "height": 0.9830729166666666
+      },
+      "pixelsPerUnit": 196.0,
+      "imageSize": [
+        1024,
+        1536
+      ],
+      "alphaBoxPixelsTopLeft": [
+        349,
+        14,
+        740,
+        1524
       ]
     },
     {
       "spriteName": "thoughtful",
       "visibleRect": {
-        "x": 0.24435590969455512,
-        "y": 0.11153662039253232,
-        "width": 0.5577689243027888,
-        "height": 0.8798468166586884
+        "x": 0.3671875,
+        "y": 0.008463541666666666,
+        "width": 0.3134765625,
+        "height": 0.9850260416666666
       },
-      "pixelsPerUnit": 261.0,
+      "pixelsPerUnit": 196.0,
       "imageSize": [
-        753,
-        2089
+        1024,
+        1536
       ],
       "alphaBoxPixelsTopLeft": [
-        184,
-        18,
-        604,
-        1856
+        376,
+        10,
+        697,
+        1523
       ]
     }
   ]
