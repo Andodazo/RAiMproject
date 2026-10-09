@@ -505,6 +505,11 @@ class WindowsUnityBridge implements UnityCommunicator {
   }
 
   @override
+  void sendThinking() {
+    _broadcast(jsonEncode({'type': 'thinking'}));
+  }
+
+  @override
   void sendBubbleBreak() {
     _broadcast(jsonEncode({'type': 'bubble_break'}));
   }

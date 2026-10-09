@@ -44,6 +44,11 @@ abstract class UnityCommunicator {
     bool isFiller = false,
   });
 
+  /// 考え中を伝える。返事の本文が届くまで、吹き出しの中で点を動かす。
+  ///
+  /// Windows だけ使う。スマホは Flutter のチャット欄に考え中の吹き出しを出す。
+  void sendThinking();
+
   /// bubble_break を Unity へ転送する
   void sendBubbleBreak();
 

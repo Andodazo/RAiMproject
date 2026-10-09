@@ -165,24 +165,11 @@ class _MessageListState extends State<MessageList> {
                 ),
               );
             }
-            // ローディング中なら最後にローディング表示
+            // 考え中は、ライムの吹き出しの中で点が動く形にする。
+            // 以前は吹き出しの外に「考え中…」と文字で出していたが、
+            // 返事が届くと同じ場所に吹き出しが現れるので、吹き出しの形で待つ方が自然。
             if (showThinking && index == thinkingIndex) {
-              return const Padding(
-                padding: EdgeInsets.all(8),
-                child: Row(
-                  children: [
-                    ThinkingIndicator(),
-                    SizedBox(width: 8),
-                    Text(
-                      '考え中…',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              );
+              return const ThinkingBubble();
             }
 
             final message = messages[index];
@@ -242,9 +229,37 @@ class _MessageListState extends State<MessageList> {
   }
 }
 
+    /// 考え中の吹き出し。ライムの吹き出し（MessageBubble）と同じ形で、中の点が順に光る。
+    class ThinkingBubble extends StatelessWidget {
+      const ThinkingBubble({super.key});
+
+      @override
+      Widget build(BuildContext context) {
+        return Semantics(
+          label: '考え中',
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              // MessageBubble のライム側と同じ余白・色・角丸
+              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ThinkingIndicator(color: Colors.grey[700]!),
+            ),
+          ),
+        );
+      }
+    }
+
     // 「考え中」の3つの点を表示するウィジェット
     class ThinkingIndicator extends StatefulWidget {
-      const ThinkingIndicator({super.key});
+      const ThinkingIndicator({super.key, this.color = Colors.white});
+
+      /// 点の色
+      final Color color;
 
       @override
       State<ThinkingIndicator> createState() => _ThinkingIndicatorState();
@@ -295,9 +310,9 @@ class _MessageListState extends State<MessageList> {
                     height: 7,
                     margin: const EdgeInsets.symmetric(horizontal: 3),
 
-                    // 丸い白い点を作る
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
+                    // 丸い点を作る
+                    decoration: BoxDecoration(
+                      color: widget.color,
                       shape: BoxShape.circle,
                     ),
                   ),

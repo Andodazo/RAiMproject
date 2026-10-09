@@ -88,6 +88,12 @@ public class SpeechBubbleController : MonoBehaviour
     /// 右に出しているか（false なら左に反転中）
     private bool showingOnRight = true;
 
+    /// 考え中の点を動かしているか
+    private bool thinking = false;
+
+    /// 考え中の点を動かすコルーチン
+    private Coroutine thinkingRoutine;
+
     private void Awake()
     {
         canvasGroup = GetComponent<CanvasGroup>();
@@ -170,6 +176,9 @@ public class SpeechBubbleController : MonoBehaviour
     {
         if (string.IsNullOrEmpty(text)) return;
 
+        // 考え中の点は、最初の本文で置き換える
+        StopThinking();
+
         if (startNewBubble)
         {
             currentText = text;
@@ -202,6 +211,14 @@ public class SpeechBubbleController : MonoBehaviour
     /// </summary>
     public void EndSpeech(string fullText = null)
     {
+        // 本文が届かないまま終わったときも、点を残さない
+        StopThinking();
+        if (string.IsNullOrEmpty(fullText) && string.IsNullOrEmpty(currentText))
+        {
+            // 何も言わずに終わった（エラーや取り消し）。空の吹き出しを残さず消す
+            HideImmediately();
+            return;
+        }
         if (!string.IsNullOrEmpty(fullText) && string.IsNullOrEmpty(currentText))
         {
             // text_chunk を取りこぼしていた場合の保険。
@@ -223,6 +240,8 @@ public class SpeechBubbleController : MonoBehaviour
     {
         if (string.IsNullOrEmpty(message)) return;
 
+        StopThinking();
+
         currentText = message;
         startNewBubble = true;
 
@@ -236,6 +255,7 @@ public class SpeechBubbleController : MonoBehaviour
     /// </summary>
     public void HideImmediately()
     {
+        StopThinking();
         CancelHideTimer();
         if (fadeRoutine != null) StopCoroutine(fadeRoutine);
 
@@ -243,6 +263,50 @@ public class SpeechBubbleController : MonoBehaviour
         canvasGroup.blocksRaycasts = false;
         currentText = "";
         startNewBubble = true;
+    }
+
+    /// <summary>
+    /// 考え中。返事の本文が届くまで、吹き出しの中で点を動かす。
+    ///
+    /// 以前は入力小窓の欄に「考えているよ…」と出るだけで、
+    /// 小窓を閉じているとライムが考えているのか分からなかった。
+    /// </summary>
+    public void ShowThinking()
+    {
+        CancelHideTimer();
+        StopThinking();
+
+        thinking = true;
+        // 最初の text_chunk で点を置き換えて、新しい吹き出しとして始める
+        startNewBubble = true;
+        thinkingRoutine = StartCoroutine(AnimateThinking());
+        Show();
+    }
+
+    private IEnumerator AnimateThinking()
+    {
+        var wait = new WaitForSecondsRealtime(0.4f);
+        int count = 0;
+        while (true)
+        {
+            // 「・」「・・」「・・・」を繰り返す
+            count = count % 3 + 1;
+            currentText = new string('・', count);
+            ApplyText();
+            yield return wait;
+        }
+    }
+
+    private void StopThinking()
+    {
+        if (thinkingRoutine != null)
+        {
+            StopCoroutine(thinkingRoutine);
+            thinkingRoutine = null;
+        }
+        if (!thinking) return;
+        thinking = false;
+        currentText = "";
     }
 
     // ============================================================

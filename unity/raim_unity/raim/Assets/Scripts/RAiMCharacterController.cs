@@ -606,6 +606,12 @@ public class RAiMCharacterController : MonoBehaviour
             }
 
             // 吹き出し系（Windows版のみ）
+            if (typeData != null && typeData.type == "thinking")
+            {
+                if (BubbleAvailable) speechBubble.ShowThinking();
+                return;
+            }
+
             if (typeData != null && typeData.type == "text_chunk")
             {
                 ReceiveTextChunk(json);

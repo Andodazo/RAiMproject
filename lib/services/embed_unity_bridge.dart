@@ -109,6 +109,10 @@ void sendToolState({
     RaimLog.d('[EmbedUnityBridge] 送信 $sleepMethodName($value)');
   }
 
+  /// スマホは Flutter のチャット欄に考え中の吹き出しを出すので、Unity には送らない
+  @override
+  void sendThinking() {}
+
   @override
   void sendBubbleBreak() {
     // 何もしない
