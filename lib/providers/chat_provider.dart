@@ -84,6 +84,17 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   bool _isUsingTool = false;
   // 追加: metadata受信中かどうかを管理する
   bool _isThinking = false;
+
+  /// Unity の吹き出しに考え中の点を出したまま、本文も終わりもまだ送っていないか（Windows）。
+  /// エラーや取り消しで返事が終わったとき、点を消すのに使う。
+  bool _unityThinking = false;
+
+  /// Unity の吹き出しに考え中の点を出していたら消す（本文が無いまま終わったとき）
+  void _endUnityThinking() {
+    if (!_unityThinking) return;
+    _unityThinking = false;
+    _unityBridge.sendChatEnd();
+  }
   // 追加: 画面側で「考え中」状態を取得するためのGetter
   bool get isThinking => _isThinking;
   /// 接続状態（RaimServerService 使用時のみ意味を持つ）
@@ -182,6 +193,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
       _stateSubscription = service.stateStream.listen((newState) {
         final wasConnected = _connectionState == RaimConnectionState.connected;
         _connectionState = newState;
+        // つながらない間は、ライムを寝ている立ち絵にする
+        _unityBridge.sendSleeping(newState == RaimConnectionState.offline);
         if (newState != RaimConnectionState.connected) {
           _audioAssembler.reset();
           unawaited(_audioQueue.reset());
@@ -242,6 +255,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     );
 
     // 追加: 吹き出しの消去タイマーを開始させる（Windows版のみ効く）
+    _unityThinking = false;
     _unityBridge.sendChatEnd(fullText: response.fullText);
 
     // ストリーミング中メッセージを終了扱いにする
@@ -408,6 +422,7 @@ _toolStatus = null;
       ),
     );
   }
+  _unityThinking = false;
   _unityBridge.sendText(text: response.text);
   notifyListeners();
 }
@@ -449,6 +464,9 @@ _toolStatus = null;
       emotions: response.emotions,
       overallIntensity: response.overallIntensity,
     );
+    // Windows ではライムの吹き出しに考え中の点を出す
+    _unityThinking = true;
+    _unityBridge.sendThinking();
 
     // 前回の検索中表示が残らないように消す
     _toolStatus = null;
@@ -504,6 +522,8 @@ _toolStatus = null;
     if (service is! RaimServerService) return;
     if (threadId.isEmpty || threadId == _currentThreadId) return;
 
+    // 返事の途中で別の会話に切り替えたとき、古い返事の考え中の点を残さない
+    _endUnityThinking();
     final generation = ++_conversationGeneration;
 
     _audioAssembler.reset();
@@ -674,6 +694,8 @@ _toolStatus = null;
   /// クライアント側で識別子を採番して送る。サーバーは未知の threadId を
   /// 受け取るとその ID でスレッドを新規作成するため、専用の API は要らない。
   void startNewThread() {
+    // 返事の途中で新しい会話にしたとき、古い返事の考え中の点を残さない
+    _endUnityThinking();
     _conversationGeneration++;
     _audioAssembler.reset();
     unawaited(_audioQueue.reset());
@@ -905,6 +927,9 @@ _toolStatus = null;
       }
       //成功・失敗に関わらず必ず実行される後処理
     } finally {
+      // エラー・時間切れ・旧形式の返事など、chat_end が来ないまま終わったときに
+      // Windows の吹き出しの考え中の点を残さない
+      if (generation == _conversationGeneration) _endUnityThinking();
       await _imageService.cleanupPendingImages(imagesToUpload);
       if (generation == _conversationGeneration) {
         _isLoading = false;

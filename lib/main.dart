@@ -171,6 +171,17 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
   // Unity から届くイベント（Windows のみ流れる）
   StreamSubscription<Map<String, dynamic>>? _unitySub;
 
+  /// アプリが裏に回った時刻（スマホのみ）。戻ったときの再接続の判断に使う。
+  DateTime? _backgroundSince;
+
+  /// これより長く裏にいたら、戻ったときに接続を張り直す。
+  ///
+  /// iOS は裏に回って数秒でアプリを止めるので、その間に切られた接続は
+  /// 戻っても気づけない。短い切り替え（通知を見ただけ等）では張り直さない。
+  static const Duration _reconnectAfterBackground = Duration(seconds: 30);
+
+  bool get _isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
   //RaimApp が起動したタイミングで、アプリのライフサイクル変化を受け取れるように登録している
   @override
   void initState() {
@@ -234,10 +245,32 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // バックグラウンド遷移時は接続維持（モバイルでは即切れる可能性あり）
-    // 戻ってきた時に必要なら再接続が走る（RaimServerService 内部で）
     if (state == AppLifecycleState.detached) {
       //アプリ終了時に通信を残さないように
       unawaited(widget.raimService.disconnect());
+      return;
+    }
+    if (!_isMobile) return;
+
+    if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) {
+      _backgroundSince ??= DateTime.now();
+      return;
+    }
+
+    if (state == AppLifecycleState.resumed) {
+      final since = _backgroundSince;
+      _backgroundSince = null;
+      if (since == null) return;
+
+      // 裏にいる間に切れていたら（寝ている・再接続待ち）すぐ試す。
+      // つながっているつもりでも、長く裏にいたなら切られている見込みが高いので張り直す
+      final service = widget.raimService;
+      final notConnected = service.state != RaimConnectionState.connected;
+      final longAway =
+          DateTime.now().difference(since) >= _reconnectAfterBackground;
+      if (notConnected || longAway) {
+        unawaited(service.reconnectNow());
+      }
     }
   }
 

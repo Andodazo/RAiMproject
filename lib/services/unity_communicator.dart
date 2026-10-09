@@ -44,6 +44,11 @@ abstract class UnityCommunicator {
     bool isFiller = false,
   });
 
+  /// 考え中を伝える。返事の本文が届くまで、吹き出しの中で点を動かす。
+  ///
+  /// Windows だけ使う。スマホは Flutter のチャット欄に考え中の吹き出しを出す。
+  void sendThinking();
+
   /// bubble_break を Unity へ転送する
   void sendBubbleBreak();
 
@@ -66,6 +71,12 @@ abstract class UnityCommunicator {
   /// 「新しい会話」のバーのすぐ下に来るよう、ChatScreen が計算して送る。
   /// 割合で渡すので、端末の画面サイズが違ってもライムの見え方がそろう。
   void sendLayout({required double headTop});
+
+  /// ライムを寝ている立ち絵にする / 起こす。
+  ///
+  /// サーバーにつながらない（offline）間は寝ている立ち絵にする。
+  /// Unity がまだ起動していなかった場合も、起動したら反映されるよう覚えておく。
+  void sendSleeping(bool sleeping);
 
   // ============================================================
   // Unity → Flutter

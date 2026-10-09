@@ -44,12 +44,21 @@ public class RAiMCharacterController : MonoBehaviour
     [SerializeField] private Sprite thoughtfulSprite;
     [SerializeField] private Sprite investigateSprite;
 
+    [Tooltip("サーバーにつながらないとき（寝ている）の立ち絵")]
+    [SerializeField] private Sprite sleepingSprite;
+
     // ============================================================
     // 内部状態
     // ============================================================
 
     // Tool使用中かどうか
     private bool isUsingTool = false;
+
+    // サーバーにつながらず寝ているか。寝ている間は表情を変えない
+    private bool isSleeping = false;
+
+    // 寝ている間に頭の右上に浮かべる「Z」（Windows のみ。使うときに作る）
+    private SleepZzzEffect sleepZzz;
 
     // 現在の感情
     private string currentEmotion = "neutral";
@@ -114,8 +123,10 @@ public class RAiMCharacterController : MonoBehaviour
             { "thoughtful", thoughtfulSprite },
         };
 
-        // 初期表情
-        spriteRenderer.sprite = defaultSprite;
+        // 初期表情（起動より先に「寝ている」が届いていたら寝ている絵）
+        spriteRenderer.sprite = isSleeping && sleepingSprite != null
+            ? sleepingSprite
+            : defaultSprite;
         currentEmotion = "neutral";
 
         // ========================================================
@@ -262,6 +273,16 @@ public class RAiMCharacterController : MonoBehaviour
         {
             Debug.LogError($"レイアウトJSONエラー: {e.Message}");
         }
+    }
+
+    /// <summary>
+    /// 寝ているかを受信する（Android/iOS）。"true" / "false"
+    ///
+    /// サーバーにつながらないとき、Flutter が寝ている立ち絵に切り替えさせる。
+    /// </summary>
+    public void ReceiveSleep(string value)
+    {
+        SetSleeping(value == "true");
     }
 
     /// <summary>
@@ -571,6 +592,14 @@ public class RAiMCharacterController : MonoBehaviour
                 return;
             }
 
+            // 寝ている（サーバーにつながらない）
+            if (typeData != null && typeData.type == "sleep")
+            {
+                var sleepData = JsonUtility.FromJson<SleepMessage>(json);
+                SetSleeping(sleepData != null && sleepData.sleeping);
+                return;
+            }
+
             // 複数感情
             if (typeData != null &&
                 typeData.type == "emotions")
@@ -580,6 +609,12 @@ public class RAiMCharacterController : MonoBehaviour
             }
 
             // 吹き出し系（Windows版のみ）
+            if (typeData != null && typeData.type == "thinking")
+            {
+                if (BubbleAvailable) speechBubble.ShowThinking();
+                return;
+            }
+
             if (typeData != null && typeData.type == "text_chunk")
             {
                 ReceiveTextChunk(json);
@@ -655,6 +690,9 @@ public class RAiMCharacterController : MonoBehaviour
             return;
         }
 
+        // 寝ている間は調べもの中の立ち絵にしない
+        if (isSleeping) return;
+
         if (value)
         {
             // すでにTool使用中なら処理しない
@@ -699,6 +737,59 @@ public class RAiMCharacterController : MonoBehaviour
     }
 
     // ============================================================
+    // 寝ている立ち絵
+    // ============================================================
+
+    private void SetSleeping(bool value)
+    {
+        if (isSleeping == value) return;
+        isSleeping = value;
+
+        // Windows（デスクトップマスコット）では、頭の右上に「Z」を浮かべる。
+        // スマホは Flutter 側で出すので、ここでは出さない
+        if (useWebSocket) ShowZzz(value);
+
+        if (spriteRenderer == null)
+        {
+            Debug.LogWarning("SpriteRendererが初期化されていません。");
+            return;
+        }
+
+        if (value)
+        {
+            // 調べもの中のまま切れたときも、寝ている立ち絵にする
+            isUsingTool = false;
+            if (sleepingSprite != null)
+            {
+                spriteRenderer.sprite = sleepingSprite;
+                Debug.Log("[Unity] 寝ている立ち絵にしました");
+            }
+            else
+            {
+                Debug.LogWarning("sleepingSpriteが設定されていません。");
+            }
+            return;
+        }
+
+        // 起きたら、ふだんの表情に戻す
+        Debug.Log("[Unity] 起きました");
+        ChangeEmotion("neutral");
+    }
+
+    private void ShowZzz(bool visible)
+    {
+        if (sleepZzz == null)
+        {
+            if (!visible) return;
+            var renderer = spriteRenderer != null ? spriteRenderer : GetComponent<SpriteRenderer>();
+            if (renderer == null) return;
+            sleepZzz = gameObject.AddComponent<SleepZzzEffect>();
+            sleepZzz.Init(renderer);
+        }
+        sleepZzz.SetVisible(visible);
+    }
+
+    // ============================================================
     // 感情によるSprite変更
     // ============================================================
 
@@ -728,6 +819,13 @@ public class RAiMCharacterController : MonoBehaviour
         if (string.IsNullOrEmpty(emotion))
         {
             Debug.LogWarning("感情名が空です。");
+            return;
+        }
+
+        // 寝ている間は立ち絵を変えない（起きたときにふだんの表情へ戻す）
+        if (isSleeping)
+        {
+            currentEmotion = emotion;
             return;
         }
 
@@ -944,6 +1042,13 @@ public class EmotionMessage
 public class MessageType
 {
     public string type;
+}
+
+[Serializable]
+public class SleepMessage
+{
+    public string type;
+    public bool sleeping;
 }
 
 [Serializable]

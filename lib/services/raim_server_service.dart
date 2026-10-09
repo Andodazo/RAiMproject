@@ -245,6 +245,11 @@ class RaimServerService implements LLMService {
       _setState(RaimConnectionState.connecting);
     }
 
+    // この接続の番号。待っている間に張り直し（reconnectNow）や切断が始まったら、
+    // 古い方は結果を反映しない。反映すると、新しい接続がつながった直後に
+    // 古い方の失敗で「切れた」扱いにされてしまう。
+    final gen = ++_connectGen;
+
     try {
       //仕様書に基づいたヘッダーの構築
       final headers = <String, String>{
@@ -263,16 +268,24 @@ class RaimServerService implements LLMService {
       // ヘッダーを付与してWebSocket 接続を確立
       //開発検証用
       //_channel = IOWebSocketChannel.connect(Uri.parse(serverUrl),headers: headers);
-      _channel = IOWebSocketChannel.connect(Uri.parse(_serverUrl), headers: headers);
+      final channel =
+          IOWebSocketChannel.connect(Uri.parse(_serverUrl), headers: headers);
+      _channel = channel;
 
       // 接続完了を待つ（web_socket_channel v3 から ready が使える）
-      await _channel!.ready;
+      await channel.ready;
+
+      if (gen != _connectGen) {
+        // 待っている間に張り直しが始まっていた。この接続は使わずに閉じる
+        unawaited(_closeQuietly(channel));
+        return;
+      }
 
       // ブロードキャスト用 StreamController を準備 messageを入れる部分の初期定義
       _broadcaster ??= StreamController<LLMResponse>.broadcast();
 
       // 受信開始F
-      _subscription = _channel!.stream.listen(
+      _subscription = channel.stream.listen(
         _onMessage,
         onError: _onError,
         onDone: _onDone,
@@ -283,9 +296,22 @@ class RaimServerService implements LLMService {
       _reconnectAttempts = 0;
       _setState(RaimConnectionState.connected);
     } catch (e) {
+      // 張り直しや切断で捨てられた接続の失敗は、再接続の予約に使わない
+      if (gen != _connectGen) return;
       RaimLog.e('[RaimServerService] connect failed: $e');
       await _scheduleReconnect();
     }
+  }
+
+  /// 接続の番号。connect のたびに増やし、張り直しや切断でも増やして古い接続を無効にする
+  int _connectGen = 0;
+
+  Future<void> _closeQuietly(WebSocketChannel channel) async {
+    try {
+      await channel.sink
+          .close(ws_status.normalClosure)
+          .timeout(const Duration(milliseconds: 500));
+    } catch (_) {}
   }
 
   /// 再接続の待ち時間を決める。
@@ -304,6 +330,7 @@ class RaimServerService implements LLMService {
   /// StreamController はここでは閉じず、dispose() でだけ閉じる。
   Future<void> disconnect() async {
     _intentionalClose = true;  // 自動再接続を抑止
+    _connectGen++;  // 接続を待っている途中なら、その結果を捨てる
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
 
@@ -466,6 +493,53 @@ class RaimServerService implements LLMService {
       _channel = null;
       await connect(silent: givenUp);
     });
+  }
+
+  /// 今の接続を捨てて、すぐに張り直す。
+  ///
+  /// スマホでアプリを裏に回すと、OS がアプリを止めている間に接続が切れる
+  /// （API Gateway は10分話さないと切る。止まっている間は切られたことを受け取れない）。
+  /// 画面に戻っても接続済みのつもりのままなので、送った文が届かず、
+  /// 60秒待ってからエラーになっていた。戻ったときにこれを呼ぶ。
+  ///
+  /// 再接続の待ち（寝てる間の最大60秒）もやめて、すぐに試す。
+  /// ログアウトなどで意図して切っているときは何もしない。
+  Future<void> reconnectNow() async {
+    if (_disposed || _intentionalClose || _isSwitching) return;
+    if (_state == RaimConnectionState.connecting) return;
+
+    RaimLog.d('[RaimServerService] 接続を張り直します（state=$_state）');
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    // 裏で接続を待っている途中なら、その結果を捨てる（二重につながらないように）
+    _connectGen++;
+
+    // 先に購読をやめておく。やめずに閉じると _onDone が走り、再接続が二重に予約される
+    final channel = _channel;
+    final subscription = _subscription;
+    _channel = null;
+    _subscription = null;
+    try {
+      await subscription?.cancel();
+    } catch (_) {}
+    try {
+      await channel?.sink.close(ws_status.normalClosure).timeout(
+            const Duration(milliseconds: 500),
+            onTimeout: () {},
+          );
+    } catch (_) {}
+    _sessionId = null;
+    if (_disposed || _intentionalClose) return;
+
+    // 寝ている（offline）ときは、つながるまで寝たままにする（表示がちらつかないように）
+    final wasOffline = _state == RaimConnectionState.offline;
+    if (!wasOffline) {
+      _setState(RaimConnectionState.disconnected);
+      _reconnectAttempts = 0;
+    }
+    // 寝ているときは試行回数を戻さない。戻すと失敗したときに一度起きてしまう
+    // （回数が少ないうちは「再接続中」として扱うため）。つながれば connect が0に戻す
+    await connect(silent: wasOffline);
   }
 
   /// 「寝てるライムを起こす」処理
