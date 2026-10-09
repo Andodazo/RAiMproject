@@ -57,6 +57,9 @@ public class RAiMCharacterController : MonoBehaviour
     // サーバーにつながらず寝ているか。寝ている間は表情を変えない
     private bool isSleeping = false;
 
+    // 寝ている間に頭の右上に浮かべる「Z」（Windows のみ。使うときに作る）
+    private SleepZzzEffect sleepZzz;
+
     // 現在の感情
     private string currentEmotion = "neutral";
 
@@ -742,6 +745,10 @@ public class RAiMCharacterController : MonoBehaviour
         if (isSleeping == value) return;
         isSleeping = value;
 
+        // Windows（デスクトップマスコット）では、頭の右上に「Z」を浮かべる。
+        // スマホは Flutter 側で出すので、ここでは出さない
+        if (useWebSocket) ShowZzz(value);
+
         if (spriteRenderer == null)
         {
             Debug.LogWarning("SpriteRendererが初期化されていません。");
@@ -767,6 +774,19 @@ public class RAiMCharacterController : MonoBehaviour
         // 起きたら、ふだんの表情に戻す
         Debug.Log("[Unity] 起きました");
         ChangeEmotion("neutral");
+    }
+
+    private void ShowZzz(bool visible)
+    {
+        if (sleepZzz == null)
+        {
+            if (!visible) return;
+            var renderer = spriteRenderer != null ? spriteRenderer : GetComponent<SpriteRenderer>();
+            if (renderer == null) return;
+            sleepZzz = gameObject.AddComponent<SleepZzzEffect>();
+            sleepZzz.Init(renderer);
+        }
+        sleepZzz.SetVisible(visible);
     }
 
     // ============================================================
