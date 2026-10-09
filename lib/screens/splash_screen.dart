@@ -75,6 +75,10 @@ class _AuthenticatedChatScreenState extends State<_AuthenticatedChatScreen> {
     final authProvider = context.read<AuthProvider>();
     final unityBridge = context.read<UnityCommunicator>();
 
+    // Unity起動前に表示モードを保持しておく。通常ビルドでは
+    // -raim-normal、展示ビルドでは引数なしで起動できるようにする。
+    unityBridge.setExhibitionMode(authProvider.isExhibitionDemo);
+
     // 認証前にUnityを起動すると、Windowsの透過・最前面ウィンドウが
     // 認証ブラウザのフォーカスや入力と競合するため、認証後に起動する。
     // 起動に失敗してもチャット自体は使えるように続行する。
@@ -83,10 +87,6 @@ class _AuthenticatedChatScreenState extends State<_AuthenticatedChatScreen> {
     } catch (e) {
       RaimLog.e('Unity ブリッジを起動できませんでした（マスコット無しで続行）', e);
     }
-
-    // WebSocketの接続がUnityの起動より後になっても、ブリッジ側に状態を
-    // 保持しておくことで、初回接続・再接続の両方へ同じ表示モードを送る。
-    unityBridge.setExhibitionMode(authProvider.isExhibitionDemo);
 
     // 有効なアクセストークンを取得
     final accessToken = await authProvider.getValidAccessToken();

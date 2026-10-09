@@ -89,7 +89,7 @@ class RaimConfig {
   /// 通常ビルドの既定値は false なので、既存の自動ログイン動作は変わらない。
   static const bool exhibitionEnabled = bool.fromEnvironment(
     'RAIM_EXHIBITION_ENABLED',
-    defaultValue: false,
+    defaultValue: true,
   );
 
   /// 展示モードを許可する Cognito グループ名。

@@ -92,7 +92,11 @@ if ($Publish) {
 }
 
 # 配布ビルドでは接続先切り替えメニューを隠す（常に AWS につなぐ）
-$defines = @('--dart-define=RAIM_ENABLE_SERVER_SWITCH=false')
+$defines = @(
+  '--dart-define=RAIM_ENABLE_SERVER_SWITCH=false'
+  '--dart-define=RAIM_EXHIBITION_ENABLED=true'
+  '--dart-define=RAIM_EXHIBITION_GROUP=raim-demo'
+)
 
 $dist = Join-Path $repoRoot 'dist'
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
@@ -145,8 +149,11 @@ if (-not $SkipWindows) {
   $stage = Join-Path $dist 'RAiM'
   New-Item -ItemType Directory $stage | Out-Null
 
-  # Flutter 本体（exe・data\・プラグインの dll。libvosk.dll もここに入る）
-  Copy-Item "$release\*" $stage -Recurse
+  # Flutter 本体（exe・data\・プラグインの dll。libvosk.dll もここに入る）。
+  # Release 内に手動配置された unity\ は、下でUnityビルド一式を改めて配置するため除外する。
+  Get-ChildItem $release |
+    Where-Object { $_.Name -ne 'unity' } |
+    ForEach-Object { Copy-Item $_.FullName $stage -Recurse }
 
   # exe 名だけ配布用に変える。開発中の exe 名（raim_prototype.exe）は変えない。
   # 保存先フォルダ（AppData）は exe 名ではなく Runner.rc の会社名・製品名で決まるので、
@@ -162,7 +169,7 @@ if (-not $SkipWindows) {
 
   # Unity（マスコット本体）。windows_unity_bridge.dart は exe の隣の unity\raim.exe を探す
   $unityStage = Join-Path $stage 'unity'
-  New-Item -ItemType Directory $unityStage | Out-Null
+  New-Item -ItemType Directory -Path $unityStage -Force | Out-Null
   Get-ChildItem $unityBuild |
     # 配らなくていいもの: Burst のデバッグ情報（*_DoNotShip）と IL2CPP のバックアップ（*_ButDontShipItWithYourGame、1GB 超）
     Where-Object { $_.Name -notlike '*_DoNotShip' -and $_.Name -notlike '*_ButDontShipItWithYourGame' } |

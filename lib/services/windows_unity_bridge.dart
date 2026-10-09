@@ -318,9 +318,14 @@ class WindowsUnityBridge implements UnityCommunicator {
     }
 
     try {
+      // 展示用Unityは引数なしで起動できるようにする。
+      // 通常ビルドだけ明示的に通常モードを指定する。
+      final launchArgs = _exhibitionMode == false
+          ? const <String>['-raim-normal']
+          : const <String>[];
       _unityProcess = await Process.start(
         exePath,
-        [],
+        launchArgs,
         // Flutter 側が Unity の標準出力を握り続けないよう分離する。
         // Unity はログを大量に吐くため。終了は stop() の kill で行う。
         mode: ProcessStartMode.detached,
