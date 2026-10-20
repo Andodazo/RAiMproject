@@ -34,6 +34,25 @@ enum VoiceSendMode {
   manual,
 }
 
+/// 聞き取り（Transcribe）のとき、周りの小さい声を消す強さ（NoiseGate）。
+enum NoiseGateMode {
+  /// 消さない。
+  off,
+
+  /// 呼んだ人の声より 9dB 以上小さい音を消す。
+  weak,
+
+  /// 呼んだ人の声より 6dB 以上小さい音を消す。本人の小さい声も少し切れる。
+  strong;
+
+  /// 呼んだ人の声からどれだけ小さい音まで通すか（dB）。off なら null。
+  double? get marginDb => switch (this) {
+        NoiseGateMode.off => null,
+        NoiseGateMode.weak => 9,
+        NoiseGateMode.strong => 6,
+      };
+}
+
 class VoiceSettingsProvider extends ChangeNotifier {
   static const _kWakeWordEnabled = 'voice.wakeWordEnabled';
   static const _kSendMode = 'voice.sendMode';
@@ -43,6 +62,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
   static const _kSttEnabled = 'voice.sttEnabled';
   static const _kWeatherUsesLocation = 'weather.usesLocation';
   static const _kSpeechMuted = 'voice.speechMuted';
+  static const _kNoiseGate = 'voice.noiseGate';
 
   SharedPreferences? _prefs;
 
@@ -54,6 +74,10 @@ class VoiceSettingsProvider extends ChangeNotifier {
   VoiceSendMode _sendMode = VoiceSendMode.delayed;
   bool _weatherUsesLocation = false;
   bool _speechMuted = false;
+  NoiseGateMode _noiseGate = NoiseGateMode.weak;
+
+  /// 聞き取りのとき、周りの小さい声を消す強さ。既定は「弱」。
+  NoiseGateMode get noiseGate => _noiseGate;
 
   /// ライムの声（読み上げ）を消しているか。画面右上の音量ボタンで切り替える。
   ///
@@ -125,6 +149,12 @@ class VoiceSettingsProvider extends ChangeNotifier {
       orElse: () => VoiceSendMode.delayed,
     );
 
+    final gateName = prefs.getString(_kNoiseGate);
+    _noiseGate = NoiseGateMode.values.firstWhere(
+      (m) => m.name == gateName,
+      orElse: () => NoiseGateMode.weak,
+    );
+
     final modeName = prefs.getString(_kWakePhraseMode);
     _wakePhraseMode = WakePhraseMode.values.firstWhere(
       (m) => m.name == modeName,
@@ -135,6 +165,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
       '[VoiceSettings] 読み込み wake=$_wakeWordEnabled '
       'manual=$_manualMicEnabled mode=${_wakePhraseMode.name} '
       'stt=$_sttEnabled send=${_sendMode.name} mute=$_speechMuted '
+      'gate=${_noiseGate.name} '
       'mic=${_micDeviceId == null ? "既定" : "指定"}',
     );
     notifyListeners();
@@ -192,6 +223,14 @@ class VoiceSettingsProvider extends ChangeNotifier {
     notifyListeners();
     await _prefs?.setString(_kSendMode, mode.name);
     RaimLog.i('[VoiceSettings] 聞き取った文の送り方: ${mode.name}');
+  }
+
+  Future<void> setNoiseGate(NoiseGateMode mode) async {
+    if (_noiseGate == mode) return;
+    _noiseGate = mode;
+    notifyListeners();
+    await _prefs?.setString(_kNoiseGate, mode.name);
+    RaimLog.i('[VoiceSettings] 周りの声を消す: ${mode.name}');
   }
 
   Future<void> setMicDeviceId(String? id) async {

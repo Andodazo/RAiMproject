@@ -35,6 +35,7 @@ import 'package:raim_prototype/services/aws/transcribe_events.dart';
 import 'package:raim_prototype/services/aws/transcribe_presigner.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/voice/noise_gate.dart';
 
 /// 聞き取りが終わった理由。
 enum SttEndReason {
@@ -253,12 +254,14 @@ class TranscribeSttService {
   /// [initialAudio] は、マイクより先に送る音声。「ねえライム、今日の天気は」と
   /// 続けて話されたとき、既に話し終えた部分を渡す。
   /// [stripWakePhrase] なら、結果の先頭の「ねえライム」を取り除く。
+  /// [gate] を渡すと、マイクの音を通してから送る（周りの小さい声を消す）。
   SttSession listen({
     void Function(String text)? onPartial,
     Uint8List? initialAudio,
     bool stripWakePhrase = false,
+    NoiseGate? gate,
   }) {
-    final session = SttSession._(this, onPartial, stripWakePhrase);
+    final session = SttSession._(this, onPartial, stripWakePhrase, gate);
     if (initialAudio != null && initialAudio.isNotEmpty) {
       session._audio.add(initialAudio);
     }
@@ -284,11 +287,12 @@ class TranscribeSttService {
 
 /// 1回ぶんの聞き取り。
 class SttSession {
-  SttSession._(this._service, this._onPartial, this._strip);
+  SttSession._(this._service, this._onPartial, this._strip, this._gate);
 
   final TranscribeSttService _service;
   final void Function(String text)? _onPartial;
   final bool _strip;
+  final NoiseGate? _gate;
 
   final Completer<SttOutcome> _outcome = Completer<SttOutcome>();
   final TranscriptAccumulator _transcript = TranscriptAccumulator();
@@ -413,7 +417,8 @@ class SttSession {
 
   void _onMic(Uint8List chunk) {
     if (_ending) return;
-    _audio.add(chunk);
+    final gate = _gate;
+    _audio.add(gate == null ? chunk : gate.process(chunk));
     if (_connected && _audio.length >= TranscribeSttService.chunkBytes) {
       _flush();
     }
@@ -543,9 +548,11 @@ class SttSession {
     final outcome = SttOutcome(text: heard, reason: reason, error: error);
     final seconds =
         _service._clock().difference(_startedAt).inMilliseconds / 1000;
+    final gate = _gate;
     RaimLog.i(
       '[STT] 終了 ${reason.name} ${heard.length}文字 '
-      '(${seconds.toStringAsFixed(1)}秒)',
+      '(${seconds.toStringAsFixed(1)}秒)'
+      '${gate == null ? '' : ' 周りの声を消した割合 ${(gate.mutedRatio * 100).round()}%'}',
     );
     if (!_outcome.isCompleted) _outcome.complete(outcome);
   }

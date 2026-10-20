@@ -42,6 +42,7 @@ import 'package:vosk_flutter/vosk_flutter.dart';
 
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/voice/noise_gate.dart';
 import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 
 /// 文法に入れるが、検知扱いにはしない語。
@@ -393,7 +394,10 @@ class WakeWordService {
 
       // reset を待つ間にマイクから届いた分（_pending）も含めたいので、
       // 捨てる直前に取り出す
-      final utterance = continued ? _utteranceAudio() : null;
+      final round = _utteranceAudio();
+      final utterance = continued ? round : null;
+      // 呼んだ声の大きさ。聞き取りで周りの小さい声を消す基準にする（NoiseGate）
+      final level = NoiseGate.speechLevelDb(round);
       _pending.clear();
       _pendingBytes = 0;
       _clearCarry();
@@ -412,6 +416,7 @@ class WakeWordService {
             preroll: MicStreamService.instance.takePreroll(),
             at: DateTime.now(),
             utterance: utterance,
+            levelDb: level,
           ),
         );
       }
@@ -551,7 +556,11 @@ class WakeWordDetection {
     required this.preroll,
     required this.at,
     this.utterance,
+    this.levelDb,
   });
+
+  /// 呼んだ声の大きさ（dBFS）。測れなければ null。
+  final double? levelDb;
 
   /// 一致したウェイクワード。
   final String phrase;

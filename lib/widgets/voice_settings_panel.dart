@@ -263,6 +263,33 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
             onTap: () => settings.setSendMode(VoiceSendMode.manual),
           ),
 
+          // ─── 周りの声を消す（NoiseGate） ───
+          _divider(),
+          _label('周りの声を消す'),
+          _note('「ねえライム」と呼んだ声の大きさを覚えて、それより小さい声'
+              '（離れた人の話し声）を消してから聞き取ります。'
+              'すぐ隣で話している人の声は消せません。'),
+          _choiceRow(
+            title: '弱（おすすめ）',
+            subtitle: 'あなたの声はほぼ切れません',
+            selected: settings.noiseGate == NoiseGateMode.weak,
+            enabled: voice.hasStt,
+            onTap: () => settings.setNoiseGate(NoiseGateMode.weak),
+          ),
+          _choiceRow(
+            title: '強',
+            subtitle: '周りの声をよく消しますが、小声だと言葉の端が切れることがあります',
+            selected: settings.noiseGate == NoiseGateMode.strong,
+            enabled: voice.hasStt,
+            onTap: () => settings.setNoiseGate(NoiseGateMode.strong),
+          ),
+          _choiceRow(
+            title: '消さない',
+            selected: settings.noiseGate == NoiseGateMode.off,
+            enabled: voice.hasStt,
+            onTap: () => settings.setNoiseGate(NoiseGateMode.off),
+          ),
+
           // ─── マイク ───
           if (supported) ...[
             _divider(),

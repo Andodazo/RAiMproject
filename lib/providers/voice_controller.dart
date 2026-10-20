@@ -43,6 +43,7 @@ import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/transcribe_stt_service.dart';
+import 'package:raim_prototype/services/voice/noise_gate.dart';
 import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 import 'package:raim_prototype/services/wake_word_service.dart';
 
@@ -419,7 +420,22 @@ class VoiceController extends ChangeNotifier {
       _awakeTimer = Timer(awakeDuration, _endAwake);
       return;
     }
-    unawaited(_listen(stt));
+    unawaited(_listen(stt, gate: _gateFor(detection)));
+  }
+
+  /// 呼んだ声の大きさを基準に、周りの小さい声を消すゲートを作る。
+  ///
+  /// マイクボタンで始めたときは基準が無いので使わない。
+  NoiseGate? _gateFor(WakeWordDetection detection) {
+    final margin = _settings.noiseGate.marginDb;
+    final level = detection.levelDb;
+    if (margin == null || level == null) return null;
+    final gate = NoiseGate(referenceDb: level, marginDb: margin);
+    RaimLog.i(
+      '[Voice] 呼んだ声 ${level.toStringAsFixed(0)}dB。'
+      '${gate.thresholdDb.toStringAsFixed(0)}dB より小さい音は消して聞き取ります',
+    );
+    return gate;
   }
 
   // ─── マイクボタン ───
@@ -466,6 +482,7 @@ class VoiceController extends ChangeNotifier {
   Future<void> _listen(
     TranscribeSttService stt, {
     Uint8List? initialAudio,
+    NoiseGate? gate,
   }) async {
     _cancelSession();
 
@@ -481,6 +498,7 @@ class VoiceController extends ChangeNotifier {
       },
       initialAudio: initialAudio,
       stripWakePhrase: initialAudio != null,
+      gate: gate,
     );
     _session = session;
     _heard.value = '';
