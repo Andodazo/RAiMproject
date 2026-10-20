@@ -120,16 +120,12 @@ class VoiceSettingsProvider extends ChangeNotifier {
 
   /// Vosk の文法に入れるウェイクワード。
   ///
-  /// 表記違いの「らいむ」も辞書にあるため、どちらで返っても
-  /// 拾えるように両方入れる。
+  /// 表記違いの「らいむ」は入れない。読みが同じ語が2つあると、Vosk は
+  /// どちらとも決められず確からしさ（conf）が半分（0.5）になり、
+  /// 確からしさで誤発火を弾けなくなるため。「ライム」だけでも同じ音を拾える。
   List<String> get wakeWords => switch (_wakePhraseMode) {
-        WakePhraseMode.polite => const ['ねえ ライム', 'ねえ らいむ'],
-        WakePhraseMode.both => const [
-            'ねえ ライム',
-            'ねえ らいむ',
-            'ライム',
-            'らいむ',
-          ],
+        WakePhraseMode.polite => const ['ねえ ライム'],
+        WakePhraseMode.both => const ['ねえ ライム', 'ライム'],
       };
 
   Future<void> load() async {

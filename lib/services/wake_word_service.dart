@@ -49,6 +49,10 @@ import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 ///
 /// いずれも「ライム」を含むか、それに近い音の語で、
 /// vosk-model-small-ja-0.22 の辞書に存在することを確認済み。
+///
+/// 後半の「ライン」「来年」などは、会話の「ねえ、来年さ」「ねえ、ライン見た？」が
+/// 「ねえ ライム」に寄せられやすいため（合成音声の会話で確かめた）。
+/// 文法に無い音は近い語に無理やり当てはめられるので、似た音の受け皿を用意しておく。
 const List<String> kWakeDecoys = [
   'スライム',
   'メタルスライム',
@@ -61,7 +65,25 @@ const List<String> kWakeDecoys = [
   'ライムライト',
   'ライムグリーン',
   'ライムスター',
+  'ライン',
+  '来年',
+  '来週',
+  '来月',
+  'ライト',
+  'ライブ',
+  'ライオン',
+  'ライス',
+  'ライター',
+  'ライバル',
+  'ラーメン',
+  'ない',
 ];
+
+/// 「ねえ」「ライム」それぞれの確からしさ（Vosk の conf）がこれより低ければ、
+/// 呼ばれていないとみなす。会話の中の似た音は、文法に当てはめられても
+/// 確からしさが下がることがある。
+/// 実際の声で値を見て調整する（検知のたびにログに出している）。
+const double kWakeMinConfidence = 0.85;
 
 /// アセットに置いたモデルの zip。
 ///
@@ -248,11 +270,14 @@ class WakeWordService {
       '[unk]',
     ];
 
-    _recognizer = await VoskEngine.createRecognizer(
+    final recognizer = await VoskEngine.createRecognizer(
       model: _model!,
       sampleRate: MicStreamService.sampleRate,
       grammar: grammar,
     );
+    // 単語ごとの確からしさ（conf）を結果に含める
+    await recognizer.setWords(words: true);
+    _recognizer = recognizer;
 
     final stream = await MicStreamService.instance.start();
     _micSub = stream.listen(
@@ -385,6 +410,19 @@ class WakeWordService {
         return;
       }
 
+      // 確からしさが低ければ、似た音を当てはめただけとみなす
+      final confidence = wakeConfidence(result, matched);
+      final confText = confidence == null ? '-' : confidence.toStringAsFixed(2);
+      if (confidence != null && confidence < kWakeMinConfidence) {
+        await recognizer.reset();
+        _pending.clear();
+        _pendingBytes = 0;
+        _clearCarry();
+        _clearRing();
+        RaimLog.i('[WakeWord] 確からしさが低いので無視しました: $text (conf $confText)');
+        return;
+      }
+
       // ウェイクワードの後ろに続きがあれば、この発話の音をまるごと渡す
       final continued = hasSpeechAfterWakeWord(text, matched);
 
@@ -405,8 +443,8 @@ class WakeWordService {
 
       RaimLog.i(
         utterance == null
-            ? '[WakeWord] 検知しました'
-            : '[WakeWord] 検知しました（続けて話された '
+            ? '[WakeWord] 検知しました: $text (conf $confText)'
+            : '[WakeWord] 検知しました: $text (conf $confText)（続けて話された '
                 '${(utterance.length / (MicStreamService.sampleRate * MicStreamService.bytesPerSample)).toStringAsFixed(1)}秒）',
       );
       if (!_detections.isClosed) {
@@ -499,6 +537,47 @@ class WakeWordService {
 
   String? _matchedWakeWord(List<String> tokens) =>
       matchWakeWord(tokens, _wakeWords);
+}
+
+/// 認識結果（setWords を有効にした Vosk の JSON）から、一致したウェイクワードの
+/// 各語の確からしさのうち一番低いものを返す。
+///
+/// 結果の中で最後に現れたウェイクワードを見る（[unk] は飛ばす）。
+/// 直前の結果とつないで一致したときは、今回の結果にある語だけで見る。
+/// 単語の情報が無い（setWords が効いていない）ときは null。
+///
+/// Vosk に依存しない純粋な関数にしてあるのはテストするため。
+double? wakeConfidence(String resultJson, String wakeWord) {
+  Object? words;
+  try {
+    words = (jsonDecode(resultJson) as Map<String, dynamic>)['result'];
+  } catch (_) {
+    return null;
+  }
+  if (words is! List || words.isEmpty) return null;
+
+  final entries = <(String, double)>[];
+  for (final w in words) {
+    if (w is! Map) continue;
+    final word = w['word'];
+    final conf = w['conf'];
+    if (word is! String || conf is! num || word == '[unk]') continue;
+    entries.add((word, conf.toDouble()));
+  }
+
+  final want = wakeTokensOf(wakeWord);
+  if (want.isEmpty || entries.isEmpty) return null;
+
+  // 最後の語から後ろ向きに、ウェイクワードの語をたどる
+  final last = entries.lastIndexWhere((e) => e.$1 == want.last);
+  if (last < 0) return null;
+  var lowest = entries[last].$2;
+  var i = last - 1;
+  for (var k = want.length - 2; k >= 0 && i >= 0; k--, i--) {
+    if (entries[i].$1 != want[k]) break;
+    if (entries[i].$2 < lowest) lowest = entries[i].$2;
+  }
+  return lowest;
 }
 
 /// 認識結果を単語列にする。[unk] は判定の邪魔になるので除く。

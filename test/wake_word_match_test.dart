@@ -82,4 +82,49 @@ void main() {
     expect(match('', both), isNull);
     expect(match('[unk]', both), isNull);
   });
+
+  group('wakeConfidence', () {
+    // setWords を有効にした Vosk の結果（start/end は省略）
+    String result(List<(String, double)> words) {
+      final items = words
+          .map((w) => '{"word": "${w.$1}", "conf": ${w.$2}}')
+          .join(', ');
+      return '{"result": [$items], "text": "${words.map((w) => w.$1).join(' ')}"}';
+    }
+
+    test('ウェイクワードの語のうち一番低い値を返す', () {
+      final json = result([('ねえ', 0.86), ('ライム', 1.0)]);
+      expect(wakeConfidence(json, 'ねえ ライム'), closeTo(0.86, 1e-9));
+    });
+
+    test('[unk] は飛ばして、前後の語は見ない', () {
+      final json = result([
+        ('[unk]', 0.3),
+        ('ねえ', 0.97),
+        ('ライム', 0.92),
+        ('[unk]', 0.1),
+      ]);
+      expect(wakeConfidence(json, 'ねえ ライム'), closeTo(0.92, 1e-9));
+    });
+
+    test('何度か出てきたら最後のものを見る', () {
+      final json = result([
+        ('ねえ', 0.4),
+        ('ライム', 0.4),
+        ('ねえ', 0.95),
+        ('ライム', 0.99),
+      ]);
+      expect(wakeConfidence(json, 'ねえ ライム'), closeTo(0.95, 1e-9));
+    });
+
+    test('前の結果とつないで一致したときは、今回ある語だけで見る', () {
+      final json = result([('ライム', 0.7)]);
+      expect(wakeConfidence(json, 'ねえ ライム'), closeTo(0.7, 1e-9));
+    });
+
+    test('単語の情報が無ければ null', () {
+      expect(wakeConfidence('{"text": "ねえ ライム"}', 'ねえ ライム'), isNull);
+      expect(wakeConfidence('壊れた JSON', 'ねえ ライム'), isNull);
+    });
+  });
 }
