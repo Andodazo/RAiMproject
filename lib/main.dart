@@ -40,6 +40,7 @@ import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/noop_unity_bridge.dart';
 import 'package:raim_prototype/services/windows_unity_bridge.dart';
 import 'package:raim_prototype/services/embed_unity_bridge.dart';
+import 'package:raim_prototype/services/lime_size.dart';
 import 'package:raim_prototype/services/mascot_window_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
@@ -88,6 +89,12 @@ void main() async {
 
   // Unity Bridge
   final UnityCommunicator unityBridge = _createUnityBridge();
+
+  // Windows: 前回選ばれたライムの大きさ。Unity がつながったら送られる
+  if (!kIsWeb && Platform.isWindows) {
+    final limeSize = await LimeSizeSetting.load();
+    unityBridge.setMascotScale(limeSize.scale);
+  }
 
   // RAiM サーバー接続用のサービスを作成する。
   // 未認証状態で WebSocket 接続しないよう、connect() は SplashScreen で認証済みを確認してから呼ぶ。

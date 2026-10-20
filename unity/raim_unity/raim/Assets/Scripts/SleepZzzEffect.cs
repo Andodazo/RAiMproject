@@ -33,6 +33,7 @@ public class SleepZzzEffect : MonoBehaviour
 
     private SpriteRenderer target;
     private GameObject canvasObject;
+    private Canvas canvas;
     private RectTransform root;
     private readonly TextMeshProUGUI[] letters = new TextMeshProUGUI[3];
     private float startTime;
@@ -47,7 +48,7 @@ public class SleepZzzEffect : MonoBehaviour
 
         // 吹き出しと同じく、画面に重ねて描く Canvas を作る
         canvasObject = new GameObject("SleepZzzCanvas");
-        var canvas = canvasObject.AddComponent<Canvas>();
+        canvas = canvasObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 50;
 
@@ -105,6 +106,11 @@ public class SleepZzzEffect : MonoBehaviour
         var cam = Camera.main;
         if (cam == null || target == null) return;
 
+        // ライムの大きさに合わせて Z も縮める（Windows のトレイ「ライムの大きさ」）。
+        // fontSize・rise は Canvas の単位なので、画面の画素で比べるときは倍率を掛ける
+        float s = MascotScale.Ui;
+        if (!Mathf.Approximately(canvas.scaleFactor, s)) canvas.scaleFactor = s;
+
         // 立ち絵の矩形から、頭の右上あたりを画面座標にする。
         // 立ち絵は左右に透明な余白があり、ライムは横の中央に立っている。
         Bounds b = target.bounds;
@@ -116,20 +122,21 @@ public class SleepZzzEffect : MonoBehaviour
 
         // ウィンドウの右端からはみ出すときは、頭の左上に出して左へ浮かべる
         float direction = 1f;
-        if (p.x + rise.x + fontSize * 1.5f > Screen.width)
+        if (p.x + (rise.x + fontSize * 1.5f) * s > Screen.width)
         {
             var headLeft = new Vector3(
                 b.center.x - b.size.x * rightOfCenter,
                 headRight.y,
                 headRight.z);
             p = cam.WorldToScreenPoint(headLeft);
-            p.x -= fontSize;
+            p.x -= fontSize * s;
             direction = -1f;
         }
         // 上にはみ出す分は下げる
-        p.y = Mathf.Min(p.y, Screen.height - rise.y - fontSize * 1.5f);
+        p.y = Mathf.Min(p.y, Screen.height - (rise.y + fontSize * 1.5f) * s);
 
-        root.anchoredPosition = new Vector2(p.x, p.y);
+        // anchoredPosition は Canvas の単位なので、画素を倍率で割る
+        root.anchoredPosition = new Vector2(p.x / s, p.y / s);
 
         float now = (Time.unscaledTime - startTime) / period;
         for (int i = 0; i < letters.Length; i++)

@@ -655,6 +655,28 @@ public class RAiMCharacterController : MonoBehaviour
                 return;
             }
 
+            // Flutter のタスクトレイ「ライムの大きさ」で選ばれた
+            if (typeData != null && typeData.type == "mascot_scale")
+            {
+#if UNITY_STANDALONE_WIN
+                var scaleMessage = JsonUtility.FromJson<MascotScaleMessage>(json);
+                var overlay = GetComponent<WindowsOverlayController>();
+                if (overlay == null)
+                {
+#if UNITY_2023_1_OR_NEWER
+                    overlay = FindFirstObjectByType<WindowsOverlayController>();
+#else
+                    overlay = FindObjectOfType<WindowsOverlayController>();
+#endif
+                }
+                if (scaleMessage != null && scaleMessage.scale > 0f && overlay != null)
+                {
+                    overlay.SetCharacterScale(scaleMessage.scale);
+                }
+#endif
+                return;
+            }
+
             // Flutter 側のメニューから終了された
             if (typeData != null && typeData.type == "app.quit")
             {
@@ -1080,6 +1102,14 @@ public class ExhibitionModeMessage
 {
     public string type;
     public bool enabled;
+}
+
+[Serializable]
+public class MascotScaleMessage
+{
+    public string type;
+    /// <summary>窓の大きさの倍率。1 で元の大きさ</summary>
+    public float scale;
 }
 
 [Serializable]

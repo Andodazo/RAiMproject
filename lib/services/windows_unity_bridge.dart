@@ -56,6 +56,9 @@ class WindowsUnityBridge implements UnityCommunicator {
 
   bool? _exhibitionMode;
 
+  /// ライムの大きさ（窓の倍率）。null ならまだ決まっていない
+  double? _mascotScale;
+
   /// 受信ログを全部出すか。
   ///
   /// unity.moved は追従のため毎フレーム近く飛んでくるので、
@@ -131,6 +134,10 @@ class WindowsUnityBridge implements UnityCommunicator {
           final exhibitionMode = _exhibitionMode;
           if (exhibitionMode != null) {
             _sendToClient(webSocket, _exhibitionMessage(exhibitionMode));
+          }
+          final mascotScale = _mascotScale;
+          if (mascotScale != null) {
+            _sendToClient(webSocket, _mascotScaleMessage(mascotScale));
           }
           return;
         }
@@ -416,6 +423,20 @@ class WindowsUnityBridge implements UnityCommunicator {
         'type': 'exhibition_mode',
         'enabled': enabled,
       });
+
+  String _mascotScaleMessage(double scale) => jsonEncode({
+        'type': 'mascot_scale',
+        'scale': scale,
+      });
+
+  @override
+  void setMascotScale(double scale) {
+    _mascotScale = scale;
+    // 展示モードと同じく、未接続なら保留に積まず、つながった直後に今の値を1回だけ送る
+    if (_clients.isNotEmpty) {
+      _broadcast(_mascotScaleMessage(scale));
+    }
+  }
 
   @override
   void setExhibitionMode(bool enabled) {

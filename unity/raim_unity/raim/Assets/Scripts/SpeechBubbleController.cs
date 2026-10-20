@@ -70,6 +70,10 @@ public class SpeechBubbleController : MonoBehaviour
 
     private CanvasGroup canvasGroup;
     private RectTransform rectTransform;
+
+    /// 吹き出しを描く Canvas と、その大きさを決める CanvasScaler（ライムの大きさに合わせるため）
+    private Canvas rootCanvas;
+    private CanvasScaler canvasScaler;
     private ContentSizeFitter fitter;
     private LayoutElement layoutElement;
 
@@ -98,6 +102,13 @@ public class SpeechBubbleController : MonoBehaviour
     {
         canvasGroup = GetComponent<CanvasGroup>();
         rectTransform = GetComponent<RectTransform>();
+
+        var canvas = GetComponentInParent<Canvas>();
+        if (canvas != null)
+        {
+            rootCanvas = canvas.rootCanvas;
+            canvasScaler = rootCanvas.GetComponent<CanvasScaler>();
+        }
 
         if (label == null)
         {
@@ -392,6 +403,12 @@ public class SpeechBubbleController : MonoBehaviour
     {
         if (anchorTarget == null) return;
 
+        // ライムの大きさに合わせて吹き出しも縮める。
+        // bubbleWidth・rect の大きさは Canvas の単位なので、画面の画素で比べるときは倍率 s を掛ける。
+        // ライムからの離れ具合（offset）は、ライムの見た目の倍率 c で縮める
+        float s = ApplyUiScale();
+        float c = MascotScale.Character;
+
         Camera cam = Camera.main;
 
         Vector3 screenPos = cam != null
@@ -399,7 +416,7 @@ public class SpeechBubbleController : MonoBehaviour
             : new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f);
 
         // 右に出したときに吹き出しの右端がウィンドウからはみ出すなら左へ反転
-        float rightEdge = screenPos.x + offset.x + bubbleWidth * 0.5f;
+        float rightEdge = screenPos.x + offset.x * c + bubbleWidth * 0.5f * s;
         bool shouldShowOnRight = rightEdge <= Screen.width;
 
         if (shouldShowOnRight != showingOnRight)
@@ -408,25 +425,44 @@ public class SpeechBubbleController : MonoBehaviour
             FlipTail();
         }
 
-        float dx = showingOnRight ? offset.x : -offset.x;
+        float dx = (showingOnRight ? offset.x : -offset.x) * c;
         rectTransform.position = new Vector3(
             screenPos.x + dx,
-            screenPos.y + offset.y,
+            screenPos.y + offset.y * c,
             0f
         );
 
-        ClampToScreen();
+        ClampToScreen(s);
+    }
+
+    /// <summary>
+    /// Canvas の倍率を MascotScale.Ui に合わせ、その倍率を返す。
+    /// </summary>
+    private float ApplyUiScale()
+    {
+        float s = MascotScale.Ui;
+        if (canvasScaler != null)
+        {
+            // CanvasScaler があると Canvas の倍率は毎回これで上書きされる。
+            // シーンでは Constant Pixel Size にしてあり、そのとき scaleFactor が倍率になる
+            if (!Mathf.Approximately(canvasScaler.scaleFactor, s)) canvasScaler.scaleFactor = s;
+        }
+        else if (rootCanvas != null && !Mathf.Approximately(rootCanvas.scaleFactor, s))
+        {
+            rootCanvas.scaleFactor = s;
+        }
+        return s;
     }
 
     /// <summary>
     /// ウィンドウの外に出ないよう押し戻す。
     /// 吹き出しはウィンドウの内側にしか描けないため。
     /// </summary>
-    private void ClampToScreen()
+    private void ClampToScreen(float scale)
     {
         Vector3 pos = rectTransform.position;
-        float halfW = rectTransform.rect.width * 0.5f;
-        float halfH = rectTransform.rect.height * 0.5f;
+        float halfW = rectTransform.rect.width * 0.5f * scale;
+        float halfH = rectTransform.rect.height * 0.5f * scale;
 
         pos.x = Mathf.Clamp(pos.x, halfW, Screen.width - halfW);
         pos.y = Mathf.Clamp(pos.y, halfH, Screen.height - halfH);

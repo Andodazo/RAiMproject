@@ -103,6 +103,12 @@ abstract class UnityCommunicator {
   /// モバイル実装では何もしない。
   void setExhibitionMode(bool enabled);
 
+  /// Windows のデスクトップのライムの大きさ（窓の倍率、1 で元の大きさ）を Unity へ伝える。
+  ///
+  /// Unity がまだつながっていなくても覚えておき、つながったら送る。
+  /// モバイル実装では何もしない。
+  void setMascotScale(double scale);
+
   /// 通信を停止
   Future<void> stop();
 }
