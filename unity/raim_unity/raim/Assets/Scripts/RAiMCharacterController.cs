@@ -218,7 +218,7 @@ public class RAiMCharacterController : MonoBehaviour
     /// </summary>
     public void ReceiveEmotions(string json)
     {
-        Debug.Log($"[Unity] 複数感情受信: {json}");
+        Debug.Log($"[Unity] 複数感情受信: {DescribeMessage(json)}");
 
         try
         {
@@ -290,7 +290,7 @@ public class RAiMCharacterController : MonoBehaviour
     /// </summary>
     public void ReceiveToolState(string json)
     {
-        Debug.Log($"[Unity] Tool状態受信: {json}");
+        Debug.Log($"[Unity] Tool状態受信: {DescribeMessage(json)}");
 
         try
         {
@@ -320,7 +320,7 @@ public class RAiMCharacterController : MonoBehaviour
     /// </summary>
     public void ReceiveMessage(string json)
     {
-        Debug.Log($"[Unity] JSON受信: {json}");
+        Debug.Log($"[Unity] JSON受信: {DescribeMessage(json)}");
 
         try
         {
@@ -537,7 +537,7 @@ public class RAiMCharacterController : MonoBehaviour
             string message =
                 System.Text.Encoding.UTF8.GetString(bytes);
 
-            Debug.Log($"WebSocket受信: {message}");
+            Debug.Log($"WebSocket受信: {DescribeMessage(message)}");
 
             HandleWebSocketMessage(message);
         };
@@ -551,6 +551,31 @@ public class RAiMCharacterController : MonoBehaviour
             isConnecting = false;
             Debug.LogError($"WebSocket接続失敗: {e.Message}");
         }
+    }
+
+    /// <summary>
+    /// ログ用に、受け取ったメッセージの種類と長さだけを返す。
+    ///
+    /// 以前は受け取った JSON をそのままログに出していた。
+    /// 会話の本文（text_chunk など）や、Flutter との接続の合言葉（auth.ok の token）が
+    /// Unity のログファイル（Player.log）に残っていた。
+    /// </summary>
+    private static string DescribeMessage(string json)
+    {
+        if (string.IsNullOrEmpty(json)) return "（空）";
+
+        string type = "?";
+        try
+        {
+            var typeData = JsonUtility.FromJson<MessageType>(json);
+            if (typeData != null && !string.IsNullOrEmpty(typeData.type)) type = typeData.type;
+        }
+        catch (Exception)
+        {
+            // JSON でなければ種類は分からないままにする
+        }
+
+        return $"type={type} 長さ={json.Length}文字";
     }
 
     /// <summary>
