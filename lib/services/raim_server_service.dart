@@ -261,6 +261,9 @@ class RaimServerService implements LLMService {
       final headers = <String, String>{
         'User-Agent': 'RAiM-Flutter/1.0',
       };
+      // 前の接続の期限を持ち越さない。Tailscale に切り替えたときや
+      // トークンが取れなかったときに、古い期限で毎回つなぎ直してしまうため
+      _tokenExpiresAt = null;
       // AWS（cloudfront.net）接続時のみアクセストークンを付与する
       final isAws = RaimConfig.isAwsUrl(_serverUrl);
       if (isAws) {
@@ -268,6 +271,8 @@ class RaimServerService implements LLMService {
         final token = accessToken ?? await accessTokenGetter?.call();
         if (token != null && token.isNotEmpty) {
           headers['Authorization'] = 'Bearer $token';
+          // このトークンの期限。切れる前につなぎ直すのに使う（C-01）
+          _tokenExpiresAt = _jwtExpiry(token);
           // Tailscale の場合は isAws が false になるため、Authorization ヘッダーは付与されない
         }
       }
@@ -403,6 +408,63 @@ class RaimServerService implements LLMService {
   /// 2. session_start なら sessionID を保持（broadcaster には流さない）
   /// 3.それ以外の metadata / text_chunk / audio_chunk / tool_call / chat_end は
   /// 4._broadcaster に流して ChatProvider 側で処理する。
+  // ─────────────────────────────────────────────
+  // アクセストークンの期限（C-01）
+  // ─────────────────────────────────────────────
+  //
+  // サーバーは、接続したときのトークンの期限が切れた接続からの要求を断り、
+  // 接続を切る（TOKEN_EXPIRED）。断られると送った文が届かないので、
+  // 切れる少し前に、送る前につなぎ直しておく。
+
+  /// 今の接続に使ったトークンの期限。分からなければ null
+  DateTime? _tokenExpiresAt;
+
+  /// これより期限が近ければ、送る前につなぎ直す
+  static const Duration tokenRefreshMargin = Duration(minutes: 1);
+
+  /// JWT の exp を読む。読めなければ null
+  static DateTime? _jwtExpiry(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      final payload = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      );
+      final exp = payload is Map ? payload['exp'] : null;
+      if (exp is! num) return null;
+      return DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000, isUtc: true);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 期限が近いためにつなぎ直している途中なら、その完了。
+  /// 同時に送ろうとしたほかの要求も、つながるのを待ってから送る。
+  Future<void>? _tokenReconnect;
+
+  /// トークンの期限が近ければ、送る前につなぎ直す
+  Future<void> _reconnectIfTokenExpiring() async {
+    final pending = _tokenReconnect;
+    if (pending != null) {
+      await pending;
+      return;
+    }
+    final expiresAt = _tokenExpiresAt;
+    if (expiresAt == null || _state != RaimConnectionState.connected) return;
+    if (DateTime.now().toUtc().add(tokenRefreshMargin).isBefore(expiresAt)) return;
+    // 返事を受け取っている途中なら張り直さない。張り直すとその返事が届かなくなる。
+    // 期限が本当に切れていれば、サーバーが TOKEN_EXPIRED を返し、そこでつなぎ直す。
+    if (_repliesInFlight > 0) return;
+    RaimLog.d('[RaimServerService] トークンの期限が近いので、つなぎ直してから送ります');
+    final future = reconnectNow();
+    _tokenReconnect = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_tokenReconnect, future)) _tokenReconnect = null;
+    }
+  }
+
   void _onMessage(dynamic rawMessage) {
     // 何か届いた = 接続は生きている。アプリへ戻ったときの確認中なら、張り直さずに済む
     if (_checkingAlive) {
@@ -414,6 +476,12 @@ class RaimServerService implements LLMService {
       RaimLog.d('[RaimServerService] 受信 ${RaimLog.size(rawMessage)}');
        // JSON文字列をDartのMapに変換する
       final data = jsonDecode(rawMessage as String) as Map<String, dynamic>;
+      // トークンの期限切れで断られた。つなぎ直し、画面には分かる文を出す
+      if (data['type'] == 'error' && data['code'] == 'TOKEN_EXPIRED') {
+        RaimLog.w('[RaimServerService] トークンの期限切れで断られたので、つなぎ直します');
+        data['text'] = '接続を新しくしました。もう一度送ってね';
+        unawaited(reconnectNow());
+      }
       // MapからLLMResponseモデルを作る
       final response = LLMResponse.fromJson(data);
       RaimLog.d('[RaimServerService] response type: ${response.type}');
@@ -657,6 +725,8 @@ class RaimServerService implements LLMService {
       RaimLog.d('[RaimServerService] Waking up RAiM...');
       await _wakeUp();
     }
+    // トークンの期限が近ければ、断られる前につなぎ直す
+    await _reconnectIfTokenExpiring();
     // 再接続しても接続できていなければ送信できない
     if (_state != RaimConnectionState.connected) {
       throw Exception('RAiMに接続できていません: state=$_state');
@@ -840,6 +910,7 @@ class RaimServerService implements LLMService {
         _state == RaimConnectionState.disconnected) {
       await _wakeUp();
     }
+    await _reconnectIfTokenExpiring();
     if (_state != RaimConnectionState.connected) {
       throw Exception('RAiMに接続できていません: state=$_state');
     }
