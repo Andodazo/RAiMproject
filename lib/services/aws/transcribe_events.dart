@@ -107,6 +107,30 @@ class TranscriptEvent extends TranscribeEvent {
   }
 }
 
+/// 結果の中の1語（または句読点1つ）。
+class TranscriptItem {
+  const TranscriptItem({
+    required this.content,
+    required this.startTime,
+    required this.endTime,
+    this.speaker,
+    this.isPunctuation = false,
+  });
+
+  final String content;
+
+  /// 接続してからの秒数。
+  final double startTime;
+  final double endTime;
+
+  /// 話者のラベル（"0", "1", ...）。話者分けをしていないか、
+  /// まだ付いていなければ null。
+  final String? speaker;
+
+  /// 句読点か（句読点には話者が付かない）。
+  final bool isPunctuation;
+}
+
 class TranscriptResult {
   const TranscriptResult({
     required this.resultId,
@@ -114,6 +138,7 @@ class TranscriptResult {
     required this.isPartial,
     required this.startTime,
     required this.endTime,
+    this.items = const [],
   });
 
   final String resultId;
@@ -128,15 +153,35 @@ class TranscriptResult {
   final double startTime;
   final double endTime;
 
+  /// 1語ずつの中身。話者分けのときは語ごとに話者が付く。
+  final List<TranscriptItem> items;
+
   factory TranscriptResult._fromJson(Map<dynamic, dynamic> json) {
+    double seconds(Object? v) => v is num ? v.toDouble() : 0.0;
+
     final alternatives = json['Alternatives'];
     var text = '';
+    final items = <TranscriptItem>[];
     if (alternatives is List && alternatives.isNotEmpty) {
       final first = alternatives.first;
-      if (first is Map) text = first['Transcript']?.toString() ?? '';
+      if (first is Map) {
+        text = first['Transcript']?.toString() ?? '';
+        final raw = first['Items'];
+        if (raw is List) {
+          for (final i in raw) {
+            if (i is! Map) continue;
+            final speaker = i['Speaker']?.toString();
+            items.add(TranscriptItem(
+              content: i['Content']?.toString() ?? '',
+              startTime: seconds(i['StartTime']),
+              endTime: seconds(i['EndTime']),
+              speaker: (speaker == null || speaker.isEmpty) ? null : speaker,
+              isPunctuation: i['Type'] == 'punctuation',
+            ));
+          }
+        }
+      }
     }
-
-    double seconds(Object? v) => v is num ? v.toDouble() : 0.0;
 
     return TranscriptResult(
       resultId: json['ResultId']?.toString() ?? '',
@@ -144,6 +189,7 @@ class TranscriptResult {
       isPartial: json['IsPartial'] == true,
       startTime: seconds(json['StartTime']),
       endTime: seconds(json['EndTime']),
+      items: List.unmodifiable(items),
     );
   }
 

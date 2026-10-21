@@ -420,7 +420,15 @@ class VoiceController extends ChangeNotifier {
       _awakeTimer = Timer(awakeDuration, _endAwake);
       return;
     }
-    unawaited(_listen(stt, gate: _gateFor(detection)));
+    // 呼んだ人の言葉だけ残すときは、「ねえライム」の音を先頭に付けて送り、
+    // その音を話した人を Transcribe の話者分けで見分ける
+    final callAudio = _settings.callerOnly ? detection.callAudio : null;
+    unawaited(_listen(
+      stt,
+      gate: _gateFor(detection),
+      initialAudio: callAudio,
+      callerOnly: callAudio != null,
+    ));
   }
 
   /// 呼んだ声の大きさを基準に、周りの小さい声を消すゲートを作る。
@@ -483,6 +491,7 @@ class VoiceController extends ChangeNotifier {
     TranscribeSttService stt, {
     Uint8List? initialAudio,
     NoiseGate? gate,
+    bool callerOnly = false,
   }) async {
     _cancelSession();
 
@@ -499,6 +508,7 @@ class VoiceController extends ChangeNotifier {
       initialAudio: initialAudio,
       stripWakePhrase: initialAudio != null,
       gate: gate,
+      callerOnly: callerOnly,
     );
     _session = session;
     _heard.value = '';

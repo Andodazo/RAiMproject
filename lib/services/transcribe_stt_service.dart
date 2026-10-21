@@ -159,6 +159,61 @@ class TranscriptAccumulator {
 
   /// まだ確定していない結果があるか。
   bool get hasPartial => _results.values.any((r) => r.isPartial);
+
+  /// 出てきた話者のラベル。
+  Set<String> get speakers => {
+        for (final r in _results.values)
+          for (final i in r.items)
+            if (i.speaker != null) i.speaker!,
+      };
+
+  /// 呼んだ人の話者ラベル。
+  ///
+  /// 聞き取りの先頭 [until] 秒には「ねえライム」の音を入れてある。
+  /// その範囲で「ライム」と聞き取られた語の話者を返す。見つからなければ、
+  /// その範囲で一番多く出てきた話者。まだ話者が付いていなければ null。
+  String? callerSpeaker({required double until}) {
+    final counts = <String, int>{};
+    for (final id in _order) {
+      for (final item in _results[id]!.items) {
+        final speaker = item.speaker;
+        if (speaker == null || item.isPunctuation) continue;
+        if (item.startTime >= until) continue;
+        if (_wakeName.hasMatch(item.content)) return speaker;
+        counts[speaker] = (counts[speaker] ?? 0) + 1;
+      }
+    }
+    if (counts.isEmpty) return null;
+    return counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+  }
+
+  /// [speaker] の言葉だけをつなげた文字。
+  ///
+  /// 話者の付いていない結果（途中経過で、まだ付いていないもの）は
+  /// 判断できないので、そのまま入れる。句読点は、直前の語を残したときだけ残す。
+  String textOf(String speaker) {
+    final out = StringBuffer();
+    for (final id in _order) {
+      final result = _results[id]!;
+      final labeled = result.items.any((i) => i.speaker != null);
+      if (!labeled) {
+        out.write(result.text.trim());
+        continue;
+      }
+      var keptLast = false;
+      for (final item in result.items) {
+        if (item.isPunctuation) {
+          if (keptLast) out.write(item.content);
+          continue;
+        }
+        keptLast = item.speaker == null || item.speaker == speaker;
+        if (keptLast) out.write(item.content);
+      }
+    }
+    return out.toString();
+  }
+
+  static final RegExp _wakeName = RegExp(r'ライム|らいむ|raim', caseSensitive: false);
 }
 
 /// WebSocket の差し替え口（テストで偽物を使うため）。
@@ -255,21 +310,33 @@ class TranscribeSttService {
   /// 続けて話されたとき、既に話し終えた部分を渡す。
   /// [stripWakePhrase] なら、結果の先頭の「ねえライム」を取り除く。
   /// [gate] を渡すと、マイクの音を通してから送る（周りの小さい声を消す）。
+  ///
+  /// [callerOnly] なら Transcribe に話者分けをさせ、[initialAudio]（「ねえライム」の
+  /// 音）を話した人の言葉だけを残す。[initialAudio] が無ければ使わない。
   SttSession listen({
     void Function(String text)? onPartial,
     Uint8List? initialAudio,
     bool stripWakePhrase = false,
     NoiseGate? gate,
+    bool callerOnly = false,
   }) {
-    final session = SttSession._(this, onPartial, stripWakePhrase, gate);
-    if (initialAudio != null && initialAudio.isNotEmpty) {
-      session._audio.add(initialAudio);
-    }
+    final hasInitial = initialAudio != null && initialAudio.isNotEmpty;
+    final session = SttSession._(
+      this,
+      onPartial,
+      stripWakePhrase,
+      gate,
+      callerOnly && hasInitial
+          ? initialAudio!.length /
+              (MicStreamService.sampleRate * MicStreamService.bytesPerSample)
+          : null,
+    );
+    if (hasInitial) session._audio.add(initialAudio!);
     unawaited(session._start());
     return session;
   }
 
-  Future<Uri> _presign() async {
+  Future<Uri> _presign({bool showSpeakerLabel = false}) async {
     final override = _presignOverride;
     if (override != null) return override();
 
@@ -281,18 +348,29 @@ class TranscribeSttService {
     return TranscribePresigner.presign(
       credentials: credentials,
       sampleRate: MicStreamService.sampleRate,
+      showSpeakerLabel: showSpeakerLabel,
     );
   }
 }
 
 /// 1回ぶんの聞き取り。
 class SttSession {
-  SttSession._(this._service, this._onPartial, this._strip, this._gate);
+  SttSession._(
+    this._service,
+    this._onPartial,
+    this._strip,
+    this._gate,
+    this._callerUntil,
+  );
 
   final TranscribeSttService _service;
   final void Function(String text)? _onPartial;
   final bool _strip;
   final NoiseGate? _gate;
+
+  /// 呼んだ人の言葉だけを残すとき、先頭の「ねえライム」の音の長さ（秒）。
+  /// 残さないなら null。
+  final double? _callerUntil;
 
   final Completer<SttOutcome> _outcome = Completer<SttOutcome>();
   final TranscriptAccumulator _transcript = TranscriptAccumulator();
@@ -319,8 +397,20 @@ class SttSession {
   Future<SttOutcome> get outcome => _outcome.future;
 
   /// 今の時点で聞き取れている文字。
-  String get text =>
-      _strip ? stripWakePhrase(_transcript.text) : _transcript.text;
+  String get text {
+    final joined = _joined;
+    return _strip ? stripWakePhrase(joined) : joined;
+  }
+
+  /// 呼んだ人の言葉だけを残す。呼んだ人が分からないうちは全部。
+  String get _joined {
+    final until = _callerUntil;
+    if (until != null) {
+      final caller = _transcript.callerSpeaker(until: until);
+      if (caller != null) return _transcript.textOf(caller);
+    }
+    return _transcript.text;
+  }
 
   bool get isDone => _outcome.isCompleted;
 
@@ -354,7 +444,9 @@ class SttSession {
     // 2. 署名付き URL
     final Uri uri;
     try {
-      uri = await _service._presign().timeout(_timing.presignTimeout);
+      uri = await _service
+          ._presign(showSpeakerLabel: _callerUntil != null)
+          .timeout(_timing.presignTimeout);
     } catch (e) {
       RaimLog.e('[STT] 認証情報を用意できませんでした', e.runtimeType);
       await _end(SttEndReason.failed, 'AWS の認証に失敗しました');
@@ -554,6 +646,19 @@ class SttSession {
       '(${seconds.toStringAsFixed(1)}秒)'
       '${gate == null ? '' : ' 周りの声を消した割合 ${(gate.mutedRatio * 100).round()}%'}',
     );
+    final until = _callerUntil;
+    if (until != null) {
+      // 内容は出さず、人数と捨てた文字数だけ
+      final speakers = _transcript.speakers;
+      final caller = _transcript.callerSpeaker(until: until);
+      final dropped = caller == null
+          ? 0
+          : _transcript.text.length - _transcript.textOf(caller).length;
+      RaimLog.i(
+        '[STT] 話者 ${speakers.length}人 '
+        '呼んだ人=${caller ?? "分からない"} ほかの人の言葉 $dropped文字を捨てました',
+      );
+    }
     if (!_outcome.isCompleted) _outcome.complete(outcome);
   }
 

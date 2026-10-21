@@ -95,6 +95,14 @@ const String kVoskModelAsset =
 
 class WakeWordService {
   WakeWordService._();
+
+  /// 検知したときに渡す「ねえライム」の音の長さ。
+  /// 「ねえライム」はふつう1秒前後なので、少し余裕を持たせる。
+  static const Duration callAudioDuration = Duration(milliseconds: 1600);
+  static const int _callAudioBytes = MicStreamService.sampleRate *
+      MicStreamService.bytesPerSample *
+      1600 ~/
+      1000;
   static final WakeWordService instance = WakeWordService._();
 
   /// Vosk に一度に渡すバイト数（200ms ぶん）。
@@ -436,6 +444,13 @@ class WakeWordService {
       final utterance = continued ? round : null;
       // 呼んだ声の大きさ。聞き取りで周りの小さい声を消す基準にする（NoiseGate）
       final level = NoiseGate.speechLevelDb(round);
+      // 「ねえライム」の音。聞き取りの先頭に付けて、呼んだ人を見分ける
+      // （Transcribe の話者分け）。前に別の人の声が混ざらないよう、終わりの
+      // [callAudioDuration] だけにする。
+      final callAudio = round.length > _callAudioBytes
+          ? Uint8List.fromList(
+              Uint8List.sublistView(round, round.length - _callAudioBytes))
+          : round;
       _pending.clear();
       _pendingBytes = 0;
       _clearCarry();
@@ -455,6 +470,7 @@ class WakeWordService {
             at: DateTime.now(),
             utterance: utterance,
             levelDb: level,
+            callAudio: callAudio,
           ),
         );
       }
@@ -636,7 +652,11 @@ class WakeWordDetection {
     required this.at,
     this.utterance,
     this.levelDb,
+    this.callAudio,
   });
+
+  /// 「ねえライム」と言った音（16bit PCM、終わりの [WakeWordService.callAudioDuration]）。
+  final Uint8List? callAudio;
 
   /// 呼んだ声の大きさ（dBFS）。測れなければ null。
   final double? levelDb;

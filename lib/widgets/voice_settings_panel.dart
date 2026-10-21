@@ -289,6 +289,13 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
             enabled: voice.hasStt,
             onTap: () => settings.setNoiseGate(NoiseGateMode.off),
           ),
+          _switchRow(
+            title: '呼んだ人の言葉だけ残す（試験中）',
+            subtitle: '声の違いで話している人を分け、「ねえライム」と言った人'
+                '以外の言葉を捨てます。同時に話していると分けられません',
+            value: settings.callerOnly,
+            onChanged: voice.hasStt ? settings.setCallerOnly : null,
+          ),
 
           // ─── マイク ───
           if (supported) ...[

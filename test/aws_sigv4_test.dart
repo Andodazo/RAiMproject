@@ -189,4 +189,30 @@ void main() {
       expect(AwsClock.offset, Duration.zero);
     });
   });
+
+  test('TranscribePresigner: 話者分けを頼むと show-speaker-label が付く', () {
+    const credentials = AwsCredentials(
+      accessKeyId: 'ASIAEXAMPLEKEY123456',
+      secretKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+      sessionToken: 'token',
+    );
+    final plain = TranscribePresigner.presign(
+      credentials: credentials,
+      sampleRate: 16000,
+      now: DateTime.utc(2026, 9, 28, 12, 34, 56),
+    );
+    final labeled = TranscribePresigner.presign(
+      credentials: credentials,
+      sampleRate: 16000,
+      now: DateTime.utc(2026, 9, 28, 12, 34, 56),
+      showSpeakerLabel: true,
+    );
+    expect(plain.queryParameters.containsKey('show-speaker-label'), isFalse);
+    expect(labeled.queryParameters['show-speaker-label'], 'true');
+    // パラメータも署名に含まれるので、署名が変わる
+    expect(
+      labeled.queryParameters['X-Amz-Signature'],
+      isNot(plain.queryParameters['X-Amz-Signature']),
+    );
+  });
 }

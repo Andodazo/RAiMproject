@@ -63,6 +63,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
   static const _kWeatherUsesLocation = 'weather.usesLocation';
   static const _kSpeechMuted = 'voice.speechMuted';
   static const _kNoiseGate = 'voice.noiseGate';
+  static const _kCallerOnly = 'voice.callerOnly';
 
   SharedPreferences? _prefs;
 
@@ -75,6 +76,10 @@ class VoiceSettingsProvider extends ChangeNotifier {
   bool _weatherUsesLocation = false;
   bool _speechMuted = false;
   NoiseGateMode _noiseGate = NoiseGateMode.weak;
+  bool _callerOnly = true;
+
+  /// 呼んだ人の言葉だけを残すか（Transcribe の話者分け）。既定は ON。
+  bool get callerOnly => _callerOnly;
 
   /// 聞き取りのとき、周りの小さい声を消す強さ。既定は「弱」。
   NoiseGateMode get noiseGate => _noiseGate;
@@ -145,6 +150,8 @@ class VoiceSettingsProvider extends ChangeNotifier {
       orElse: () => VoiceSendMode.delayed,
     );
 
+    _callerOnly = prefs.getBool(_kCallerOnly) ?? true;
+
     final gateName = prefs.getString(_kNoiseGate);
     _noiseGate = NoiseGateMode.values.firstWhere(
       (m) => m.name == gateName,
@@ -161,7 +168,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
       '[VoiceSettings] 読み込み wake=$_wakeWordEnabled '
       'manual=$_manualMicEnabled mode=${_wakePhraseMode.name} '
       'stt=$_sttEnabled send=${_sendMode.name} mute=$_speechMuted '
-      'gate=${_noiseGate.name} '
+      'gate=${_noiseGate.name} callerOnly=$_callerOnly '
       'mic=${_micDeviceId == null ? "既定" : "指定"}',
     );
     notifyListeners();
@@ -227,6 +234,14 @@ class VoiceSettingsProvider extends ChangeNotifier {
     notifyListeners();
     await _prefs?.setString(_kNoiseGate, mode.name);
     RaimLog.i('[VoiceSettings] 周りの声を消す: ${mode.name}');
+  }
+
+  Future<void> setCallerOnly(bool value) async {
+    if (_callerOnly == value) return;
+    _callerOnly = value;
+    notifyListeners();
+    await _prefs?.setBool(_kCallerOnly, value);
+    RaimLog.i('[VoiceSettings] 呼んだ人の言葉だけ残す: ${value ? "ON" : "OFF"}');
   }
 
   Future<void> setMicDeviceId(String? id) async {

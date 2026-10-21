@@ -55,7 +55,19 @@ class _FakeSocket implements SttSocket {
               'StartTime': r.startTime,
               'EndTime': r.endTime,
               'Alternatives': [
-                {'Transcript': r.text, 'Items': <Object>[]},
+                {
+                  'Transcript': r.text,
+                  'Items': [
+                    for (final i in r.items)
+                      {
+                        'Content': i.content,
+                        'StartTime': i.startTime,
+                        'EndTime': i.endTime,
+                        'Type': i.isPunctuation ? 'punctuation' : 'pronunciation',
+                        if (i.speaker != null) 'Speaker': i.speaker,
+                      },
+                  ],
+                },
               ],
             },
         ],
@@ -97,6 +109,29 @@ TranscriptResult _r(String id, String text, {bool partial = false}) =>
       endTime: 0,
     );
 
+/// 話者付きの結果。[words] は (語, 話者, 始まりの秒)。話者が null なら句読点。
+TranscriptResult _spk(String id, List<(String, String?, double)> words,
+    {bool partial = false}) {
+  final items = [
+    for (final w in words)
+      TranscriptItem(
+        content: w.$1,
+        startTime: w.$3,
+        endTime: w.$3 + 0.2,
+        speaker: w.$2,
+        isPunctuation: w.$2 == null,
+      ),
+  ];
+  return TranscriptResult(
+    resultId: id,
+    text: items.map((i) => i.content).join(),
+    isPartial: partial,
+    startTime: 0,
+    endTime: 0,
+    items: items,
+  );
+}
+
 /// テスト用に短くした時間。
 const _fast = SttTiming(
   noSpeechTimeout: Duration(milliseconds: 300),
@@ -128,6 +163,62 @@ void main() {
         ..add(_r('', 'x'))
         ..add(_r('a', '  '));
       expect(acc.text, '');
+    });
+  });
+
+  group('呼んだ人の言葉だけ残す（TranscriptAccumulator）', () {
+    test('先頭で「ライム」と言った人を呼んだ人とみなす', () {
+      final t = TranscriptAccumulator()
+        ..add(_spk('a', [
+          ('えっと', '1', 0.0),
+          ('ねえ', '0', 0.3),
+          ('ライム', '0', 0.6),
+          ('明日', '0', 1.5),
+        ]));
+      expect(t.callerSpeaker(until: 1.0), '0');
+    });
+
+    test('「ライム」が無ければ、先頭で一番多く話した人', () {
+      final t = TranscriptAccumulator()
+        ..add(_spk('a', [
+          ('ねえ', '1', 0.1),
+          ('ね', '1', 0.4),
+          ('明日', '0', 0.8),
+          ('天気', '0', 1.5),
+        ]));
+      expect(t.callerSpeaker(until: 1.0), '1');
+    });
+
+    test('話者が付いていなければ分からない', () {
+      final t = TranscriptAccumulator()..add(_r('a', 'ねえライム'));
+      expect(t.callerSpeaker(until: 1.0), isNull);
+    });
+
+    test('ほかの人の語と、その後ろの句読点を捨てる', () {
+      final t = TranscriptAccumulator()
+        ..add(_spk('a', [
+          ('明日', '0', 1.0),
+          ('の', '0', 1.2),
+          ('天気', '0', 1.4),
+          ('は', '0', 1.6),
+          ('？', null, 1.7),
+        ]))
+        ..add(_spk('b', [
+          ('ラーメン', '1', 2.0),
+          ('食べ', '1', 2.3),
+          ('よう', '1', 2.5),
+          ('。', null, 2.6),
+        ]));
+      expect(t.textOf('0'), '明日の天気は？');
+      expect(t.textOf('1'), 'ラーメン食べよう。');
+      expect(t.speakers, {'0', '1'});
+    });
+
+    test('話者の付いていない途中経過は、判断できないのでそのまま入れる', () {
+      final t = TranscriptAccumulator()
+        ..add(_spk('a', [('明日', '0', 1.0)]))
+        ..add(_r('b', 'ラーメン', partial: true));
+      expect(t.textOf('0'), '明日ラーメン');
     });
   });
 
@@ -281,6 +372,67 @@ void main() {
       expect(outcome.text, '今日の天気は？');
       // 呼びかけだけの途中経過は出さない
       expect(partials, ['今日の天気は？']);
+    });
+
+    test('呼んだ人の言葉だけ残す', () async {
+      socket = _FakeSocket();
+      final stt = TranscribeSttService(
+        presign: () => presign.future,
+        connect: (_) => socket,
+        openMic: () async => mic.stream,
+        timing: _fast,
+      );
+      // 先頭の 1 秒が「ねえライム」の音
+      final session = stt.listen(
+        initialAudio: Uint8List(32000),
+        stripWakePhrase: true,
+        callerOnly: true,
+      );
+      presign.complete(Uri.parse('wss://example.com'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      socket.reply([
+        _spk('a', [
+          ('ねえ', '0', 0.1),
+          ('ライム', '0', 0.4),
+          ('、', null, 0.6),
+          ('明日', '0', 1.3),
+          ('の', '0', 1.5),
+          ('天気', '0', 1.6),
+          ('は', '0', 1.8),
+          ('？', null, 1.9),
+        ]),
+        _spk('b', [
+          ('ラーメン', '1', 1.4),
+          ('食べ', '1', 1.7),
+          ('よう', '1', 1.9),
+          ('。', null, 2.0),
+        ]),
+      ]);
+
+      final outcome = await session.outcome;
+      expect(outcome.text, '明日の天気は？');
+    });
+
+    test('話者が付いてこなければ、今までどおり全部使う', () async {
+      socket = _FakeSocket();
+      final stt = TranscribeSttService(
+        presign: () => presign.future,
+        connect: (_) => socket,
+        openMic: () async => mic.stream,
+        timing: _fast,
+      );
+      final session = stt.listen(
+        initialAudio: Uint8List(32000),
+        stripWakePhrase: true,
+        callerOnly: true,
+      );
+      presign.complete(Uri.parse('wss://example.com'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      socket.reply([_r('a', 'ねえ、ライム、明日の天気は？')]);
+      final outcome = await session.outcome;
+      expect(outcome.text, '明日の天気は？');
     });
 
     test('何も話されなければ noSpeech で閉じる', () async {

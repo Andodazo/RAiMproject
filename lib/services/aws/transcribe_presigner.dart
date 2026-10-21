@@ -31,6 +31,7 @@ class TranscribePresigner {
     String languageCode = RaimConfig.transcribeLanguageCode,
     Duration expires = const Duration(seconds: 60),
     DateTime? now,
+    bool showSpeakerLabel = false,
   }) {
     return AwsSigV4.presign(
       scheme: 'wss',
@@ -43,6 +44,8 @@ class TranscribePresigner {
         'language-code': languageCode,
         'media-encoding': 'pcm',
         'sample-rate': sampleRate.toString(),
+        // 話者分け。結果の語ごとに話者（0, 1, ...）が付く
+        if (showSpeakerLabel) 'show-speaker-label': 'true',
       },
       expires: expires,
       now: now,
