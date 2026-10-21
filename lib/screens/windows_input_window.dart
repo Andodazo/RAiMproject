@@ -105,6 +105,11 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   bool _isSwitching = false;
   String? _switchNote;
 
+  // ---- 画像の枚数の上限を超えたときの知らせ ----
+  // 小窓に SnackBar は出しにくいので、入力欄のプレースホルダに少しの間だけ出す。
+  String? _imageNote;
+  Timer? _imageNoteTimer;
+
   // ---- Unity の起動待ち（「発信中」の小窓） ----
 
   /// これだけ待ってもライムが来なければ「発信中」を消す。
@@ -445,6 +450,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     _exhibitionInactivityTimer?.cancel();
     trayManager.removeListener(this);
     _callingTimer?.cancel();
+    _imageNoteTimer?.cancel();
     _unitySub?.cancel();
     _wakeSub?.cancel();
     _utteranceSub?.cancel();
@@ -611,7 +617,15 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   Future<void> _pickImage() async {
     if (_isExhibitionDemo) return;
-    await context.read<CameraProvider>().pickAndStoreImage(ImageSource.gallery);
+    final dropped =
+        await context.read<CameraProvider>().pickAndStoreImage(ImageSource.gallery);
+    if (dropped > 0 && mounted) {
+      setState(() => _imageNote = CameraProvider.limitMessage);
+      _imageNoteTimer?.cancel();
+      _imageNoteTimer = Timer(const Duration(seconds: 4), () {
+        if (mounted) setState(() => _imageNote = null);
+      });
+    }
   }
 
   /// Unity を終了させてから自分も終わる。
@@ -801,6 +815,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   String _hintText(ChatProvider chat) {
     if (chat.isOffline) return '接続待ち…';
+    final imageNote = _imageNote;
+    if (imageNote != null) return imageNote;
     return _statusText(chat) ?? '何でも話してね';
   }
 
@@ -1043,7 +1059,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         const Divider(color: _line, height: 13),
         _sectionLabel('アプリ'),
         _buildWakeWordRow(),
-        _buildServerRow(),
+        // 配布ビルドでは RAIM_ENABLE_SERVER_SWITCH=false で隠す
+        if (RaimConfig.enableServerSwitch) _buildServerRow(),
         // 開発用: マイクに入っている音を wav に保存して耳で確かめる
         _menuRow(
           _isRecordingDump ? Icons.stop_circle_outlined : Icons.graphic_eq,

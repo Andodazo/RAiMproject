@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:raim_prototype/config/raim_config.dart';
 import 'package:raim_prototype/models/image_attachment.dart';
 import 'package:raim_prototype/services/camera_service.dart';
 
@@ -10,8 +11,8 @@ import 'package:raim_prototype/services/camera_service.dart';
 class CameraProvider extends ChangeNotifier {
   /// 一度に添付できる画像の枚数上限。
   ///
-  /// ギャラリーから数十枚選ばれた場合でも、Coreの上限と一致させる。
-  static const int maxImageCount = 10;
+  /// ギャラリーから数十枚選ばれた場合でも、サーバーの上限と一致させる。
+  static const int maxImageCount = RaimConfig.maxImageCount;
 
   final CameraService _cameraService = CameraService();
   final List<PendingImage> _selectedImages = [];
@@ -22,7 +23,10 @@ class CameraProvider extends ChangeNotifier {
   bool get hasImage => _selectedImages.isNotEmpty;
 
   /// 画像を取得してキープする（カメラかギャラリーかを引数で指定）
-  Future<void> pickAndStoreImage(ImageSource source) async {
+  ///
+  /// 上限（[maxImageCount]）を超えて入れられなかった枚数を返す。
+  /// 0 より大きければ、画面で「4枚までです」と知らせる。
+  Future<int> pickAndStoreImage(ImageSource source) async {
     // ★ サービス側に source を横流しする
     final results= await _cameraService.selectAndProcessImages(source);
     //選ぶ画面から戻ってないかつ画像が0件ではないかの判断
@@ -32,7 +36,10 @@ class CameraProvider extends ChangeNotifier {
       // 2回目の選択で1回目に選んだ画像が消えていた。
       final remaining = maxImageCount - _selectedImages.length;
       if (remaining <= 0) {
-        return;
+        for (final unused in results) {
+          _deleteUploadFile(unused.uploadPath);
+        }
+        return results.length;
       }
 
       final accepted = results.take(remaining).toList();
@@ -42,8 +49,14 @@ class CameraProvider extends ChangeNotifier {
       }
 
       notifyListeners(); // 画面に「画像が選ばれたよ！」と通知してプレビュー表示させる
+      return results.length - accepted.length;
     }
+    return 0;
   }
+
+  /// 上限を超えた分を入れなかったときに出す文。
+  static String get limitMessage =>
+      '画像は$maxImageCount枚まで送れます。$maxImageCount枚目より後は入れていません';
 
   /// 指定されたインデックスの画像だけを削除する
   void removeImageAt(int index) {

@@ -38,7 +38,7 @@ class AwsImageService {
   }) async {
     if (images.isEmpty) return const [];
     if (images.length > RaimConfig.maxImageCount) {
-      throw const FormatException('画像は10枚まで添付できます。');
+      throw const FormatException('画像は${RaimConfig.maxImageCount}枚まで添付できます。');
     }
 
     final credentials = await _credentials.getCredentials(idToken);

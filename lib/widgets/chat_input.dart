@@ -547,39 +547,42 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
         }
       },
       itemBuilder: (context) => /*const*/ [
-        // 接続先切り替えメニュー項目(開発検証用)
-        PopupMenuItem(
-          value: 'switch_server',
-          child: Row(
-            children: [
-              Icon(
-                Icons.swap_horiz_rounded,
-                color: isAws ? const Color(0xFFB7F35A) : Colors.orangeAccent,
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    '接続先切り替え',
-                    style: TextStyle(color: Colors.white, fontSize: 13),
-                  ),
-                  Text(
-                    isAws ? '現在: AWS (CloudFront)' : '現在: Tailscale / Local',
-                    style: TextStyle(
-                      color: isAws ? const Color(0xFFB7F35A) : Colors.orangeAccent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+        // 接続先切り替えメニュー項目（開発検証用）。
+        // 配布ビルドでは RAIM_ENABLE_SERVER_SWITCH=false で隠す。以前は設定があっても出ていた
+        if (RaimConfig.enableServerSwitch) ...[
+          PopupMenuItem(
+            value: 'switch_server',
+            child: Row(
+              children: [
+                Icon(
+                  Icons.swap_horiz_rounded,
+                  color: isAws ? const Color(0xFFB7F35A) : Colors.orangeAccent,
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      '接続先切り替え',
+                      style: TextStyle(color: Colors.white, fontSize: 13),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    Text(
+                      isAws ? '現在: AWS (CloudFront)' : '現在: Tailscale / Local',
+                      style: TextStyle(
+                        color: isAws ? const Color(0xFFB7F35A) : Colors.orangeAccent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-        //------------------------------------
-        const PopupMenuDivider(),
+          //------------------------------------
+          const PopupMenuDivider(),
+        ],
         // メニューに「クレジット表記」ボタンを追加
         PopupMenuItem<String>(
           value: 'credits',
@@ -973,7 +976,8 @@ Future<void> showImageSourceSelector(
                 onTap: () async {
                   Navigator.of(bc).pop(); // シートを閉じる
                   final provider = Provider.of<CameraProvider>(context, listen: false);
-                  await provider.pickAndStoreImage(ImageSource.camera);
+                  final dropped = await provider.pickAndStoreImage(ImageSource.camera);
+                  if (dropped > 0 && context.mounted) _showImageLimit(context);
                 },
               ),
               ListTile(
@@ -982,7 +986,8 @@ Future<void> showImageSourceSelector(
                 onTap: () async {
                   Navigator.of(bc).pop(); // シートを閉じる
                   final provider = Provider.of<CameraProvider>(context, listen: false);
-                  await provider.pickAndStoreImage(ImageSource.gallery);
+                  final dropped = await provider.pickAndStoreImage(ImageSource.gallery);
+                  if (dropped > 0 && context.mounted) _showImageLimit(context);
                 },
               ),
               const SizedBox(height: 12),
@@ -992,3 +997,10 @@ Future<void> showImageSourceSelector(
       },
     );
   }
+
+/// 上限を超えた画像を入れなかったことを知らせる
+void _showImageLimit(BuildContext context) {
+  ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+    SnackBar(content: Text(CameraProvider.limitMessage)),
+  );
+}

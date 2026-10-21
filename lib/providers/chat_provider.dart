@@ -837,7 +837,7 @@ _toolStatus = null;
         ? const <PendingImage>[]
         : List<PendingImage>.from(pendingImages);
     if (imagesToUpload.length > CameraProvider.maxImageCount) {
-      _addLocalError('画像は10枚まで添付できます。');
+      _addLocalError('画像は${CameraProvider.maxImageCount}枚まで添付できます。');
       unawaited(_imageService.cleanupPendingImages(imagesToUpload));
       return;
     }

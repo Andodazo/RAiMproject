@@ -27,7 +27,13 @@ class RaimConfig {
   static const String transcribeRegion = 'ap-northeast-1';
   static const String transcribeLanguageCode = 'ja-JP';
 
-  static const int maxImageCount = 10;
+  /// 1回に送れる画像の枚数。
+  ///
+  /// サーバー（Edge Lambda の MAX_IMAGE_COUNT）の既定値と合わせる。
+  /// 以前はここが10枚でサーバーが4枚だったため、5枚以上だとアップロードしたあとで
+  /// 断られていた。画像は1枚ごとにモデルへの入力が増え、料金も返事の遅さも増えるので4枚にする。
+  /// 増やすときは、サーバーの MAX_IMAGE_COUNT も同じ値にすること。
+  static const int maxImageCount = 4;
 
   /// Cognito Managed Login のドメイン。
   static const String cognitoDomain =
@@ -78,9 +84,12 @@ class RaimConfig {
   );
 
   /// 接続先切り替え UI を出すか。
+  ///
+  /// 指定が無いときは、debug / profile では出し、release では出さない。
+  /// （tools/release.ps1 を通さない flutter build apk / ipa でも隠れるように）
   static const bool enableServerSwitch = bool.fromEnvironment(
     'RAIM_ENABLE_SERVER_SWITCH',
-    defaultValue: true,
+    defaultValue: !bool.fromEnvironment('dart.vm.product'),
   );
 
   /// 展示用ビルドかどうか。
@@ -102,5 +111,14 @@ class RaimConfig {
   static const Duration exhibitionInactivityTimeout = Duration(minutes: 5);
 
   /// 接続先が AWS かどうか（Authorization ヘッダの付与判定に使う）。
-  static bool isAwsUrl(String url) => url.contains('cloudfront.net');
+  ///
+  /// 以前は URL に 'cloudfront.net' が含まれるかで見ていたため、
+  /// 'cloudfront.net.example.com' のような別のホストにもトークンを送り得た。
+  /// ホスト名で比べる。
+  static bool isAwsUrl(String url) {
+    final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+    if (host.isEmpty) return false;
+    final defaultHost = Uri.tryParse(serverUrl)?.host.toLowerCase() ?? '';
+    return host == defaultHost || host.endsWith('.cloudfront.net');
+  }
 }
