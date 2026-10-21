@@ -36,7 +36,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   final AwsImageService _imageService;
   final Future<String?> Function() _idTokenGetter;
   // サーバーから届いた audio_chunk を順番に再生するキュー
-  final AudioPlayQueue _audioQueue = AudioPlayQueue();
+  final AudioPlayQueue _audioQueue;
   late final AudioChunkAssembler _audioAssembler;
   //messagesとは描画する会話をまとめたもの
 
@@ -124,7 +124,10 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     AwsImageService? imageService,
     Future<String?> Function()? idTokenGetter,
     bool Function()? isSpeechMuted,
-  })  : _imageService = imageService ?? AwsImageService(),
+    // テストでは音を鳴らさない偽物を渡す（本物は作るだけでプラグインを呼ぶため）
+    AudioPlayQueue? audioQueue,
+  })  : _audioQueue = audioQueue ?? AudioPlayQueue(),
+        _imageService = imageService ?? AwsImageService(),
         _idTokenGetter = idTokenGetter ?? (() async => null),
         _isSpeechMuted = isSpeechMuted ?? (() => false) {
     _audioAssembler = AudioChunkAssembler(
