@@ -809,23 +809,6 @@ _toolStatus = null;
     notifyListeners();
   }
 
-  /// 展示アカウントの無操作タイムアウト時に、現在の会話を破棄して
-  /// 次の来場者用の新しい会話へ切り替える。
-  ///
-  /// スレッドの期限切れ・削除はAWS側で管理するため、ここではサーバーへ
-  /// 削除要求を送らず、端末側の表示状態だけを新しくする。
-  Future<void> resetExhibitionSession() {
-    final oldThreadId = _currentThreadId;
-
-    if (oldThreadId != null) {
-      _threads = _threads.where((t) => t.threadId != oldThreadId).toList();
-    }
-    _isLoadingThreads = false;
-    _threadError = null;
-    startNewThread();
-    return Future<void>.value();
-  }
-
   /// スレッド識別子を作る
   ///
   /// サーバー側は未知の threadId を受け取るとその ID でスレッドを作るため、

@@ -171,11 +171,6 @@ void sendToolState({
   }
 
   @override
-  void setExhibitionMode(bool enabled) {
-    // モバイル版には Windows の外部ウィンドウ表示がない。
-  }
-
-  @override
   void setMascotScale(double scale) {
     // スマホのライムは画面に合わせて出すので、大きさの設定は無い
   }

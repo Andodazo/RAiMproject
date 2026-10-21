@@ -658,28 +658,6 @@ public class RAiMCharacterController : MonoBehaviour
                 return;
             }
 
-            // Flutterの展示用ログイン状態に合わせて、Unity自身の表示方式を切り替える。
-            if (typeData != null && typeData.type == "exhibition_mode")
-            {
-#if UNITY_STANDALONE_WIN
-                var displayMode = JsonUtility.FromJson<ExhibitionModeMessage>(json);
-                var overlay = GetComponent<WindowsOverlayController>();
-                if (overlay == null)
-                {
-#if UNITY_2023_1_OR_NEWER
-                    overlay = FindFirstObjectByType<WindowsOverlayController>();
-#else
-                    overlay = FindObjectOfType<WindowsOverlayController>();
-#endif
-                }
-                if (displayMode != null && overlay != null)
-                {
-                    overlay.SetExhibitionMode(displayMode.enabled);
-                }
-#endif
-                return;
-            }
-
             // Flutter のタスクトレイ「ライムの大きさ」で選ばれた
             if (typeData != null && typeData.type == "mascot_scale")
             {
@@ -1138,13 +1116,6 @@ public class ErrorMessage
 {
     public string type;
     public string message;
-}
-
-[Serializable]
-public class ExhibitionModeMessage
-{
-    public string type;
-    public bool enabled;
 }
 
 [Serializable]

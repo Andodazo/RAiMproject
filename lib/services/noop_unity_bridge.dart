@@ -37,9 +37,6 @@ class NoopUnityBridge implements UnityCommunicator {
   Future<void> ensureUnityRunning() async {}
 
   @override
-  void setExhibitionMode(bool enabled) {}
-
-  @override
   void setMascotScale(double scale) {}
 
   @override
