@@ -35,6 +35,31 @@ class AuthService {
   /// 進行中のトークン更新。同じ refresh token で二重に叩かないために共有する。
   Future<AuthTokens?>? _refreshInFlight;
 
+  /// ログアウトや保存済み認証情報の消去のたびに進める番号（D-03）。
+  ///
+  /// トークンの更新やログインは Cognito との通信を待つ。その間にログアウトされると、
+  /// 以前は返ってきた前の人のトークンを、消したあとの保存領域に書き戻していた。
+  /// 始めたときの番号と、保存する直前の番号が同じときだけ保存する。
+  int _authGeneration = 0;
+
+  /// トークンの保存・削除を1本の列に並べる。
+  ///
+  /// 保存は複数のキーを順に書くので、途中で削除やほかの保存が割り込むと
+  /// 前の人と次の人のトークンが混ざり得る。
+  Future<void> _storageQueue = Future.value();
+
+  Future<T> _serialStorage<T>(Future<T> Function() action) {
+    final result = _storageQueue.then((_) => action());
+    _storageQueue = result.then((_) {}, onError: (Object _) {});
+    return result;
+  }
+
+  /// ログアウトなどで、進行中の更新・ログインの結果を使わないようにする
+  void _invalidateInFlight() {
+    _authGeneration++;
+    _refreshInFlight = null;
+  }
+
   /// Cognito への HTTP 呼び出しのタイムアウト。
   ///
   /// 指定しないと、電波の悪い場所で起動したときに Splash が
@@ -96,7 +121,10 @@ class AuthService {
   }
 
   /// 展示用ビルドの起動時など、保存済み認証情報を明示的に破棄する。
-  Future<void> clearStoredTokens() => _storage.clearTokens();
+  Future<void> clearStoredTokens() {
+    _invalidateInFlight();
+    return _serialStorage(() => _storage.clearTokens());
+  }
 
   /// Cognito Managed Login の URL を作ります。
   ///
@@ -194,6 +222,9 @@ class AuthService {
       throw Exception('Cognitoログインエラー: $error ${description ?? ''}');
     }
 
+    // 交換している間にログアウトされたら、返ってきたトークンを保存しない
+    final generation = _authGeneration;
+
     final code = uri.queryParameters['code'];
     final receivedState = uri.queryParameters['state'];
     final savedState = await _storage.readState();
@@ -216,7 +247,14 @@ class AuthService {
         code: code,
         codeVerifier: codeVerifier,
       );
-      await _storage.saveTokens(tokens);
+      final saved = await _serialStorage(() async {
+        if (generation != _authGeneration) return false;
+        await _storage.saveTokens(tokens);
+        return true;
+      });
+      if (!saved) {
+        throw Exception('ログインの途中でログアウトされました。もう一度ログインしてください。');
+      }
       return tokens;
     } finally {
       await _storage.clearPkceState();
@@ -237,7 +275,10 @@ class AuthService {
       return inFlight;
     }
 
-    final future = _refreshTokensInternal(currentTokens);
+    // 更新している間にログアウトされたら、どの結果（前の人のトークン）も返さない
+    final generation = _authGeneration;
+    final future = _refreshTokensInternal(currentTokens)
+        .then((tokens) => generation == _authGeneration ? tokens : null);
     _refreshInFlight = future;
     return future.whenComplete(() {
       if (identical(_refreshInFlight, future)) {
@@ -247,9 +288,12 @@ class AuthService {
   }
 
   Future<AuthTokens?> _refreshTokensInternal(AuthTokens currentTokens) async {
+    // 更新している間にログアウトされたら、結果を保存しない（D-03）
+    final generation = _authGeneration;
+
     final refreshToken = currentTokens.refreshToken;
     if (refreshToken == null || refreshToken.isEmpty) {
-      await _storage.clearTokens();
+      await _clearTokensIfSameGeneration(generation);
       return null;
     }
 
@@ -289,7 +333,9 @@ class AuthService {
       );
 
       if (revoked) {
-        await _storage.clearTokens();
+        // ログアウト前に始めた更新が、revoke 済みで断られた場合もここに来る。
+        // そのあいだに次の人がログインしていたら、その人のトークンを消さない。
+        await _clearTokensIfSameGeneration(generation);
         return null;
       }
       return currentTokens.isExpired ? null : currentTokens;
@@ -307,8 +353,24 @@ class AuthService {
       body,
       fallbackRefreshToken: refreshToken,
     );
-    await _storage.saveTokens(refreshedTokens);
+    final saved = await _serialStorage(() async {
+      if (generation != _authGeneration) return false;
+      await _storage.saveTokens(refreshedTokens);
+      return true;
+    });
+    if (!saved) {
+      RaimLog.d('[AuthService] 更新している間にログアウトされたので、新しいトークンを捨てます');
+      return null;
+    }
     return refreshedTokens;
+  }
+
+  /// 始めたときから世代が変わっていなければ、保存済みのトークンを消す
+  Future<void> _clearTokensIfSameGeneration(int generation) {
+    return _serialStorage(() async {
+      if (generation != _authGeneration) return;
+      await _storage.clearTokens();
+    });
   }
 
   Future<String?> getValidAccessToken() async {
@@ -323,15 +385,27 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    // 進行中のトークン更新・ログインの結果を、このあと保存させない
+    _invalidateInFlight();
+
+    // 先に読んで消してから revoke する。
+    // 以前は revoke の通信（最大15秒）を待ってから消していたので、その間に
+    // 残っているトークンを読んで更新が始まり、ログアウト後に書き戻され得た。
+    final tokens = await _serialStorage(() async {
+      final current = await _storage.readTokens();
+      await _storage.clearTokens();
+      return current;
+    });
+    // 読んで消すまでの間に始まった更新の結果も保存させない
+    _invalidateInFlight();
+
     // 端末からトークンを消すだけでは Cognito 側のセッションと
-    // refresh token が生き続ける。revoke してから消す。
-    final tokens = await _storage.readTokens();
+    // refresh token が生き続ける。読んでおいた refresh token を revoke する。
     await _revokeRefreshToken(tokens?.refreshToken);
 
     await _browserLoginLauncher.closeLaunchedBrowser();
 
     await _storage.clearPkceState();
-    await _storage.clearTokens();
 
     // S3・Transcribe 用の AWS 一時認証情報もメモリから捨てる。
     // 残っていると、ログアウト後も最大1時間は前のユーザーの権限で
