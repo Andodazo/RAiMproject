@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_embed_unity/flutter_embed_unity.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
+import 'package:raim_prototype/providers/camera_provider.dart';
+import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/services/app_exit_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
@@ -431,6 +433,8 @@ class ChatScreen extends StatelessWidget {
 
     final raimService = context.read<RaimServerService>();
     final authProvider = context.read<AuthProvider>();
+    final chat = context.read<ChatProvider>();
+    final camera = context.read<CameraProvider>();
 
     try {
       // Access Token / Refresh Token を削除する。次回起動時は未認証として扱われる。
@@ -447,6 +451,9 @@ class ChatScreen extends StatelessWidget {
       await AppExitService.exitAfterLogout();
       // ここへ戻ってきたということは、アプリを終了できなかった
       // （iOS 実機など）。トークンは消えているので、画面も未認証へ戻す。
+      // 次にログインする人に前の人の会話や選んだ画像を残さない（X-02）。
+      chat.resetForSignOut();
+      camera.clearImage();
       authProvider.notifyLogoutFallback();
     }
   }

@@ -702,6 +702,17 @@ public class RAiMCharacterController : MonoBehaviour
                 return;
             }
 
+            // 返事の途中で失敗した（Windows）。途中まで出した文を、失敗の知らせに置き換える
+            if (typeData != null && typeData.type == "error")
+            {
+                if (BubbleAvailable)
+                {
+                    var error = JsonUtility.FromJson<ErrorMessage>(json);
+                    speechBubble.ShowError(error != null ? error.message : null);
+                }
+                return;
+            }
+
             // Flutter 側のメニューから終了された
             if (typeData != null && typeData.type == "app.quit")
             {
@@ -1120,6 +1131,13 @@ public class ToolStateMessage
     public string type;
     public bool is_using_tool;
     public string description;
+}
+
+[Serializable]
+public class ErrorMessage
+{
+    public string type;
+    public string message;
 }
 
 [Serializable]

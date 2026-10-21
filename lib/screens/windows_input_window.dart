@@ -1159,6 +1159,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   Future<void> _logout() async {
     final auth = context.read<AuthProvider>();
     final raimService = context.read<RaimServerService>();
+    final chat = context.read<ChatProvider>();
+    final camera = context.read<CameraProvider>();
 
     await _closeWindow();
 
@@ -1174,6 +1176,11 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
     // Unity側に通常表示を戻す指示を先に出してから認証状態を破棄する。
     context.read<UnityCommunicator>().setExhibitionMode(false);
+
+    // 次にログインする人の画面に、前の人の会話を残さない
+    chat.resetForSignOut();
+    // 選んだまま送っていない画像も、次の人が送れないように消す
+    camera.clearImage();
 
     await auth.logout();
   }

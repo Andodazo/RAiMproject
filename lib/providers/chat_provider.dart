@@ -81,6 +81,12 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   bool _isLoadingOlder = false;
   bool _isLoading = false;
   Message? _currentStreamingMessage;
+
+  /// 今の返事の文が入り始める位置（送った発言のすぐ後ろ）。返事が終わったら null。
+  ///
+  /// エラーで返事の途中の文を消すときに使う。bubble_break で吹き出しが分かれると
+  /// _currentStreamingMessage は最後の1つしか指さないので、位置で覚えておく。
+  int? _replyStartIndex;
   bool _isUsingTool = false;
   // 追加: metadata受信中かどうかを管理する
   bool _isThinking = false;
@@ -106,6 +112,9 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // _connectionState はRAiMサーバーとの接続状態。
   String? _toolStatus;
   int _conversationGeneration = 0;
+
+  /// ログアウトのたびに進める。ログアウト前に始めた一覧の読み込み結果を捨てるのに使う
+  int _signOutGeneration = 0;
   RaimConnectionState _connectionState = RaimConnectionState.connected;
   StreamSubscription<RaimConnectionState>? _stateSubscription;
   //ここは使わない
@@ -260,6 +269,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
 
     // ストリーミング中メッセージを終了扱いにする
     _currentStreamingMessage = null;
+    _replyStartIndex = null;
     // 検索中表示を消す
     _toolStatus = null;
     // AI返答待ち状態を解除する
@@ -435,6 +445,34 @@ _toolStatus = null;
      // 追加: エラー時も「考え中」表示を終了する
     _isThinking = false;
     _isUsingTool = false;
+
+    // 返事を途中まで流したあとでエラーになったら、途中の文は消して声も止める（R-08）。
+    // サーバーは返事の速さのために、最後の確認より先に本文を流している。
+    // 確認で失敗した返事の途中を、正しい返事のように残さないため。
+    // bubble_break で分かれた前の吹き出しも消す（送った発言より後ろのライムの文すべて）。
+    var removedPartial = false;
+    final start = _replyStartIndex;
+    if (start != null && start <= _messages.length) {
+      for (var i = _messages.length - 1; i >= start; i--) {
+        if (_messages[i].role == MessageRole.assistant) {
+          _messages.removeAt(i);
+          removedPartial = true;
+        }
+      }
+    }
+    final partial = _currentStreamingMessage;
+    if (partial != null && _messages.remove(partial)) {
+      removedPartial = true;
+    }
+    _replyStartIndex = null;
+    if (removedPartial) {
+      _audioAssembler.reset();
+      unawaited(_audioQueue.reset());
+      // Windows の吹き出しも、途中の文から失敗の知らせに置き換える
+      _unityThinking = false;
+      _unityBridge.sendError(message: 'ごめん、うまく話せなかった。もう一回言って？');
+    }
+
     _messages.add(Message(
       text: response.text.isNotEmpty ? response.text : 'エラーが発生しました',
       role: MessageRole.assistant,
@@ -495,20 +533,27 @@ _toolStatus = null;
       return;
     }
 
+    // 読んでいる間にログアウトしたら、前の人の一覧や失敗表示を出さない
+    final signOutGeneration = _signOutGeneration;
     _isLoadingThreads = true;
     _threadError = null;
     notifyListeners();
 
     try {
-      _threads = await service.fetchThreadList();
+      final threads = await service.fetchThreadList();
+      if (signOutGeneration != _signOutGeneration) return;
+      _threads = threads;
       RaimLog.d('[ChatProvider] スレッド一覧: ${_threads.length}件');
     } catch (e) {
+      if (signOutGeneration != _signOutGeneration) return;
       RaimLog.d('[ChatProvider] スレッド一覧の取得に失敗: $e');
       _threads = [];
       _threadError = '会話一覧を読み込めませんでした';
     } finally {
-      _isLoadingThreads = false;
-      notifyListeners();
+      if (signOutGeneration == _signOutGeneration) {
+        _isLoadingThreads = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -540,6 +585,7 @@ _toolStatus = null;
       _currentThreadId = threadId;
       _messages.clear();
       _currentStreamingMessage = null;
+      _replyStartIndex = null;
 
       if (history != null) {
         _historyCursor = history.hasMore ? history.startIndex : null;
@@ -638,6 +684,9 @@ _toolStatus = null;
     if (threadId == null || cursor == null || cursor <= 0) return;
     if (_isLoadingOlder) return;
 
+    // 読み込んでいる間に会話を切り替えられたら、結果を捨てるために覚えておく
+    final generation = _conversationGeneration;
+
     _isLoadingOlder = true;
     notifyListeners();
 
@@ -647,11 +696,23 @@ _toolStatus = null;
         beforeIndex: cursor,
       );
 
+      // 読み込んでいる間に別の会話へ切り替わっていたら、古い会話の履歴を
+      // 今の画面に差し込まない（X-04）。以前は確かめずに先頭へ入れていた
+      if (generation != _conversationGeneration ||
+          threadId != _currentThreadId ||
+          cursor != _historyCursor) {
+        RaimLog.d('[ChatProvider] 会話が切り替わったので、古いメッセージの読み込み結果を捨てました');
+        return;
+      }
+
       if (history != null && history.messages.isNotEmpty) {
         final older = history.messages.map(_toMessage).toList();
 
         // 古い方を先頭へ差し込む
         _messages.insertAll(0, older);
+        // 返事の途中なら、その文の位置も同じだけ後ろにずれる
+        final replyStart = _replyStartIndex;
+        if (replyStart != null) _replyStartIndex = replyStart + older.length;
 
         _historyCursor = history.hasMore ? history.startIndex : null;
         _hasMoreHistory = history.hasMore;
@@ -704,12 +765,47 @@ _toolStatus = null;
     _hasMoreHistory = false;
     _messages.clear();
     _currentStreamingMessage = null;
+    _replyStartIndex = null;
     _isLoading = false;
     _isThinking = false;
     _isUsingTool = false;
     _toolStatus = null;
 
     RaimLog.d('[ChatProvider] 新しい会話: $_currentThreadId');
+    notifyListeners();
+  }
+
+  /// ログアウトしたときに、前の人の会話を画面と手元から消す（X-02）。
+  ///
+  /// ChatProvider はログイン画面より上で作られていて、ログアウトしても残る。
+  /// 以前は Windows で A がログアウトして B がログインすると、A の会話・会話 ID・
+  /// 一覧が B の画面に残っていた（送った文も A の会話 ID へ送られ得た）。
+  /// 世代も進めるので、A の返事が後から届いても画面に出ない。
+  void resetForSignOut() {
+    _endUnityThinking();
+    _conversationGeneration++;
+    _signOutGeneration++;
+    _audioAssembler.reset();
+    unawaited(_audioQueue.reset());
+    // 次にログインしたとき、その人の最後の会話を開き直せるよう null にする
+    _currentThreadId = null;
+    _threads = [];
+    _threadError = null;
+    _isLoadingThreads = false;
+    _historyCursor = null;
+    _hasMoreHistory = false;
+    _isLoadingOlder = false;
+    _messages.clear();
+    _currentStreamingMessage = null;
+    _replyStartIndex = null;
+    _isLoading = false;
+    _isThinking = false;
+    _isUsingTool = false;
+    _toolStatus = null;
+    _voiceMuted = false;
+    _persona.value = 'bright';
+
+    RaimLog.d('[ChatProvider] ログアウトしたので会話の表示を消しました');
     notifyListeners();
   }
 
@@ -740,6 +836,7 @@ _toolStatus = null;
     _audioAssembler.reset();
     _messages.clear();
     _currentStreamingMessage = null;
+    _replyStartIndex = null;
     _toolStatus = null;
     _isLoading = false;
     // 追加: Hot Reload時に状態をリセットする
@@ -889,6 +986,8 @@ _toolStatus = null;
           : _messages.sublist(0, _messages.length - 1);
       //chatがかえってきているかの有無
       bool chatReceived = false;
+      // ここから後ろに入るライムの文が、この返事の文
+      _replyStartIndex = _messages.length;
       // AIに text・履歴・画像を送る
       // v2.2では返答が複数回に分かれて届くため、await for で順番に受け取る
       await for (final response in _llmService.sendMessage(
@@ -929,7 +1028,10 @@ _toolStatus = null;
     } finally {
       // エラー・時間切れ・旧形式の返事など、chat_end が来ないまま終わったときに
       // Windows の吹き出しの考え中の点を残さない
-      if (generation == _conversationGeneration) _endUnityThinking();
+      if (generation == _conversationGeneration) {
+        _endUnityThinking();
+        _replyStartIndex = null;
+      }
       await _imageService.cleanupPendingImages(imagesToUpload);
       if (generation == _conversationGeneration) {
         _isLoading = false;
