@@ -4,7 +4,6 @@
 // 使っていないメソッドは noSuchMethod で受け流す（呼ばれたら例外になる）。
 
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:raim_prototype/models/conversation_thread.dart';

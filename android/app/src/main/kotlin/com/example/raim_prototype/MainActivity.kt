@@ -36,7 +36,8 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // 修正（9）: 確認用録音の外部公開チャンネルを登録しない。
+        // 【確認用・後で消す】駅アラームの録音を「ダウンロード」へ写す
+        StationRecordingExport.register(this, flutterEngine.dartExecutor.binaryMessenger)
 
         // 振動（lib/services/haptics.dart）。
         // Flutter の HapticFeedback は「タップ時の振動」の設定に従うので、

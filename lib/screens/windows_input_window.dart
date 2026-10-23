@@ -779,11 +779,14 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                     // しか出ておらず、Windows では何も出ていなかった。
                     hintText: voice.isTranscribing
                         ? (heard.isEmpty ? '聞いてるよ…' : _tail(heard))
-                        : voice.sttError != null
-                            ? '聞き取れませんでした（${voice.sttError}）'
-                            : _hintText(chat),
+                        : voice.sttNotice ??
+                            (voice.sttError != null
+                                ? '聞き取れませんでした（${voice.sttError}）'
+                                : _hintText(chat)),
                     hintStyle: TextStyle(
-                      color: voice.isTranscribing || _statusText(chat) != null
+                      color: voice.isTranscribing ||
+                              voice.sttNotice != null ||
+                              _statusText(chat) != null
                           ? _lime
                           : voice.sttError != null
                               ? const Color(0xFFE06C6C)

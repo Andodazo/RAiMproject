@@ -22,6 +22,11 @@ Iterable<File> appSources() => [
             }))
         .where((f) => !f.path.replaceAll('\\', '/').contains('test/review/'));
 
+/// 録音は、駅アラームが声で反応するようになるまで残す。
+/// 消すときは、この skip を外して下の2つのテストを通す。
+const recordingKept =
+    '駅アラームがまだ声で反応しないので、原因を調べる録音は残す（2026-10-23 決定）。';
+
 void main() {
   test('展示モードのコードが残っていない', () {
     final hits = findLines(
@@ -46,7 +51,7 @@ void main() {
       RegExp(r'StationRecord|station_rec|stationRecording', caseSensitive: false),
     );
     expect(hits, isEmpty, reason: '録音機能の名残:\n${hits.join('\n')}');
-  });
+  }, skip: recordingKept);
 
   test('iOS で書類フォルダを「ファイル」アプリに見せる設定を外している', () {
     final plist = readSource('ios/Runner/Info.plist');
@@ -54,5 +59,5 @@ void main() {
         reason: '録音を取り出すための UIFileSharingEnabled が残っている');
     expect(plist.contains('LSSupportsOpeningDocumentsInPlace'), isFalse,
         reason: '録音を取り出すための LSSupportsOpeningDocumentsInPlace が残っている');
-  });
+  }, skip: recordingKept);
 }

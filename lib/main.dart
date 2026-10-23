@@ -315,6 +315,8 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
             auth: widget.authProvider,
             speaking: context.read<ChatProvider>().isSpeaking,
             stopSpeaking: context.read<ChatProvider>().stopSpeaking,
+            // 聞き取れなかったときの一言を、サーバーの人格の口調に合わせる
+            persona: context.read<ChatProvider>().persona,
             stt: TranscribeSttService(
               idTokenGetter: widget.authProvider.getValidIdToken,
             ),

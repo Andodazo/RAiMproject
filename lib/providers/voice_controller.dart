@@ -57,7 +57,9 @@ class VoiceController extends ChangeNotifier {
     VoidCallback? stopSpeaking,
     WakeWordService? wakeWord,
     TranscribeSttService? stt,
+    ValueListenable<String>? persona,
   })  : _settings = settings,
+        _persona = persona,
         _auth = auth,
         _speaking = speaking,
         _stopSpeaking = stopSpeaking,
@@ -198,6 +200,13 @@ class VoiceController extends ChangeNotifier {
   final StreamController<String> _utterances =
       StreamController<String>.broadcast();
   String? _sttError;
+
+  /// サーバーの人格（'bright' | 'downer'）。知らせる文の口調を合わせる。
+  final ValueListenable<String>? _persona;
+
+  /// 聞き取りがうまくいかなかったとき、ライムの口調で少しの間だけ出す一言。
+  String? _sttNotice;
+  Timer? _sttNoticeTimer;
   Timer? _sttErrorTimer;
 
   /// 聞き取りの失敗を表示しておく時間。
@@ -263,6 +272,10 @@ class VoiceController extends ChangeNotifier {
 
   /// 直前の聞き取りが失敗したときの説明。しばらくすると null に戻る。
   String? get sttError => _sttError;
+
+  /// ライムの口調の一言（周りの声と重なって聞き取れなかったときなど）。
+  /// しばらくすると null に戻る。
+  String? get sttNotice => _sttNotice;
 
   // ─── 起動と停止 ───
 
@@ -494,6 +507,7 @@ class VoiceController extends ChangeNotifier {
     bool callerOnly = false,
   }) async {
     _cancelSession();
+    _setSttNotice(null);
 
     // ライムが喋っている（またはこれから返答の続きを喋る）と、
     // その声をマイクが拾って、ユーザーの発言として文字にしてしまう。
@@ -534,6 +548,14 @@ class VoiceController extends ChangeNotifier {
         break;
     }
 
+    // 話者分けで、呼んだ人の言葉が残らなかった（文字が出ないので noSpeech で
+    // 終わることが多い）。何も起きないと聞こえていないのかと迷うので、
+    // もう一度呼んでもらう
+    if (outcome.callerLost) {
+      RaimLog.i('[Voice] 呼んだ人の言葉が残らなかったので、もう一度呼んでもらいます');
+      _setSttNotice(_callerLostMessage);
+    }
+
     // ウェイクワードを使っていないときにマイクボタンで開いたマイクは閉じる。
     // 起動・停止と同じ列に並べる。並べないと、ちょうど ON にされて
     // ウェイクワードが開いたマイクをここで閉じてしまうことがある。
@@ -561,6 +583,22 @@ class VoiceController extends ChangeNotifier {
   /// 聞き取りの失敗を少しの間だけ見せる。
   ///
   /// 出しっぱなしだと、次に成功するまで入力欄に失敗の表示が残る。
+  String get _callerLostMessage => _persona?.value == 'downer'
+      ? '周りの声と混ざって聞き取れなかった…もう一回呼んで'
+      : 'ごめん、周りの声と重なっちゃった！もう一回呼んでね';
+
+  void _setSttNotice(String? message) {
+    _sttNoticeTimer?.cancel();
+    _sttNoticeTimer = null;
+    _sttNotice = message;
+    if (message == null) return;
+    _sttNoticeTimer = Timer(sttErrorDuration, () {
+      _sttNoticeTimer = null;
+      _sttNotice = null;
+      if (!_disposed) notifyListeners();
+    });
+  }
+
   void _setSttError(String? message) {
     _sttErrorTimer?.cancel();
     _sttErrorTimer = null;
@@ -674,6 +712,7 @@ class VoiceController extends ChangeNotifier {
     _cancelTimers();
     _cancelSession();
     _sttErrorTimer?.cancel();
+    _sttNoticeTimer?.cancel();
     _heard.dispose();
     unawaited(_detectionSub.cancel());
     unawaited(_wakeEvents.close());
