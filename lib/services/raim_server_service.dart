@@ -207,6 +207,8 @@ class RaimServerService implements LLMService {
 
   /// 接続先サーバーの切り替え処理
   Future<void> switchServer(String targetUrl, {String? accessToken}) async {
+    // 【追加】表示だけでなく、実際の切り替えも制限する。
+    if (!RaimConfig.enableServerSwitch) return;
     // 1. すでに切り替え処理中なら連打を無視して終了
     if (_isSwitching) {
       RaimLog.d('[RaimServerService] 切り替え処理中のため連打を無視しました');

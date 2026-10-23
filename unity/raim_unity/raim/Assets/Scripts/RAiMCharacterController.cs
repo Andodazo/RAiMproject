@@ -633,6 +633,21 @@ public class RAiMCharacterController : MonoBehaviour
                 return;
             }
 
+            // 【追加】Flutterの返答失敗を、Unityの吹き出しにも反映する。
+            if (typeData != null && typeData.type == "error")
+            {
+                var data = JsonUtility.FromJson<ErrorMessage>(json);
+                if (BubbleAvailable)
+                {
+                    // 途中の本文を、既存のShowErrorで置き換える。
+                    speechBubble.ShowError(
+                        string.IsNullOrEmpty(data?.message)
+                            ? "エラーが発生しました"
+                            : data.message);
+                }
+                return;
+            }
+
             // Flutterの展示用ログイン状態に合わせて、Unity自身の表示方式を切り替える。
             if (typeData != null && typeData.type == "exhibition_mode")
             {
@@ -1088,6 +1103,15 @@ public class ChatEndMessage
     public string type;
     public string full_text;
 }
+
+// 【追加】Flutterが送るtypeとmessageを読み取る型。
+[Serializable]
+public class ErrorMessage
+{
+    public string type;
+    public string message;
+}
+
 
 [Serializable]
 public class ToolStateMessage

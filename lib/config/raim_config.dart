@@ -1,3 +1,6 @@
+// 【追加】releaseビルドかどうかの判定に使う。
+import 'package:flutter/foundation.dart';
+
 /// RAiM クライアント側で使う接続・認証設定です。
 ///
 /// ここに置いている値は、Flutter アプリが直接利用してよい公開設定だけです。
@@ -80,7 +83,8 @@ class RaimConfig {
   /// 接続先切り替え UI を出すか。
   static const bool enableServerSwitch = bool.fromEnvironment(
     'RAIM_ENABLE_SERVER_SWITCH',
-    defaultValue: true,
+    // 【変更】指定がなければreleaseでは無効にする。
+    defaultValue: !kReleaseMode,
   );
 
   /// 展示用ビルドかどうか。
@@ -101,6 +105,22 @@ class RaimConfig {
   /// 展示用アカウントの無操作セッションを破棄するまでの時間。
   static const Duration exhibitionInactivityTimeout = Duration(minutes: 5);
 
-  /// 接続先が AWS かどうか（Authorization ヘッダの付与判定に使う）。
-  static bool isAwsUrl(String url) => url.contains('cloudfront.net');
+  // 【追加】トークンを送ってよい、確認済みのホスト。
+  static const _allowedAwsHosts = <String>{
+    'd1403ont6098ah.cloudfront.net',
+  };
+
+  /// 接続先にAuthorizationヘッダーを付けてよいか。
+  static bool isAwsUrl(String url) {
+    // 【変更】URL全体の部分一致ではなく、解析したホスト名を使う。
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        uri.scheme != 'wss' ||
+        uri.userInfo.isNotEmpty) {
+      return false;
+    }
+
+    // 他のホストのパスやユーザー名にcloudfront.netがあっても通さない。
+    return _allowedAwsHosts.contains(uri.host.toLowerCase());
+  }
 }

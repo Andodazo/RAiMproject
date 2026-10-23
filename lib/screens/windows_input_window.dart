@@ -554,6 +554,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   // 小窓に SnackBar は出しにくいので、メニュー行の下に状態を出す。
 
   Future<void> _switchServer() async {
+    // 【追加】無効なビルドでは、トークン取得も開始しない。
+    if (!RaimConfig.enableServerSwitch) return;
     if (_isSwitching) return;
     _isSwitching = true;
     setState(() => _switchNote = '切り替え中…');
@@ -1043,7 +1045,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         const Divider(color: _line, height: 13),
         _sectionLabel('アプリ'),
         _buildWakeWordRow(),
-        _buildServerRow(),
+        // 【追加】配布版では接続先切り替えの行を作らない。
+        if (RaimConfig.enableServerSwitch)
+          _buildServerRow(),
         // 開発用: マイクに入っている音を wav に保存して耳で確かめる
         _menuRow(
           _isRecordingDump ? Icons.stop_circle_outlined : Icons.graphic_eq,
@@ -1142,6 +1146,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   Future<void> _logout() async {
     final auth = context.read<AuthProvider>();
     final raimService = context.read<RaimServerService>();
+
+    // 【追加】ウィンドウ操作や通信を待つ前に、状態を消す。
+    context.read<ChatProvider>().resetForSignOut();
+    context.read<CameraProvider>().clearImage();
 
     await _closeWindow();
 

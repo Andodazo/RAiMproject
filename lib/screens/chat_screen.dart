@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_embed_unity/flutter_embed_unity.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
+// 【追加・課題1】ログアウト時に会話と選択画像を消すために使う。
+import 'package:raim_prototype/providers/chat_provider.dart';
+import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/services/app_exit_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
@@ -431,6 +434,11 @@ class ChatScreen extends StatelessWidget {
 
     final raimService = context.read<RaimServerService>();
     final authProvider = context.read<AuthProvider>();
+
+    // 【追加】終了できない端末でも、前の人の状態を残さない。
+    // 非同期のログアウトを待つ前に、表示と選択画像を消す。
+    context.read<ChatProvider>().resetForSignOut();
+    context.read<CameraProvider>().clearImage();
 
     try {
       // Access Token / Refresh Token を削除する。次回起動時は未認証として扱われる。

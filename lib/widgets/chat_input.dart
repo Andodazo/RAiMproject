@@ -493,6 +493,8 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
         switch (value) {
           //開発検証用------------------------------
           case 'switch_server':
+            // 【追加・課題5】無効なビルドでは、処理を開始しない。
+            if (!RaimConfig.enableServerSwitch) return;
             // すでに切り替え中ならタップを無視（ロック）
             if (_isSwitching) return;
             _isSwitching = true;
@@ -548,6 +550,8 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
       },
       itemBuilder: (context) => /*const*/ [
         // 接続先切り替えメニュー項目(開発検証用)
+        // 【追加】有効なビルドだけ、項目をリストへ入れる。
+        if (RaimConfig.enableServerSwitch)
         PopupMenuItem(
           value: 'switch_server',
           child: Row(
@@ -579,7 +583,9 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
           ),
         ),
         //------------------------------------
-        const PopupMenuDivider(),
+        // 【追加】項目を隠したら、この区切り線も隠す。
+        if (RaimConfig.enableServerSwitch)
+          const PopupMenuDivider(),
         // メニューに「クレジット表記」ボタンを追加
         PopupMenuItem<String>(
           value: 'credits',
