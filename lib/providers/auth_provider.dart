@@ -2,9 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:raim_prototype/models/auth_tokens.dart';
 import 'package:raim_prototype/services/app_window_service.dart';
 import 'package:raim_prototype/services/auth_service.dart';
-import 'package:raim_prototype/config/raim_config.dart';
-import 'package:raim_prototype/services/demo_account_policy.dart';
-import 'package:raim_prototype/services/raim_log.dart';
 
 enum AuthStatus {
   checking,
@@ -14,14 +11,13 @@ enum AuthStatus {
   error,
 }
 
-/// 起動時認証とログイン状態を UI に渡す Provider です。
+/// 起動時認証とログイン状態を UI に渡す Provider 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService;
 
   AuthStatus _status = AuthStatus.checking;
   AuthTokens? _tokens;
   String? _errorMessage;
-  static const _demoAccountPolicy = DemoAccountPolicy();
 
   AuthProvider(this._authService);
 
@@ -29,49 +25,24 @@ class AuthProvider extends ChangeNotifier {
   AuthTokens? get tokens => _tokens;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _status == AuthStatus.authenticated;
-  bool get isExhibitionDemo =>
-      RaimConfig.exhibitionEnabled &&
-      _demoAccountPolicy.isDemoAccount(_tokens);
 
   Future<void> initialize() async {
     _setStatus(AuthStatus.checking);
 
-    // ここで例外が抜けると SplashScreen は checking のまま固まり、
-    // 再試行もログイン画面への遷移もできなくなる。
-    // 起動できないより、未認証としてログイン画面へ進めるほうがまし。
-    try {
-      if (RaimConfig.exhibitionEnabled) {
-        // 展示端末を次の来場者へ引き渡す際に、前の利用者のセッションを
-        // 自動復元しない。通常ビルドには影響しない。
-        await _authService.clearStoredTokens();
-      }
+    await _authService.startListening(onCallback: handleCallback);
 
-      await _authService.startListening(onCallback: handleCallback);
-
-      final tokens = await _authService.loadValidTokens();
-      if (tokens == null) {
-        _tokens = null;
-        _setStatus(AuthStatus.unauthenticated);
-        return;
-      }
-
-      _tokens = tokens;
-      _setStatus(AuthStatus.authenticated);
-    } catch (e) {
-      RaimLog.e('[AuthProvider] 起動時の認証初期化に失敗', e);
+    final tokens = await _authService.loadValidTokens();
+    if (tokens == null) {
       _tokens = null;
-      _errorMessage = '認証情報を確認できませんでした。通信状態を確認してやり直してください。';
       _setStatus(AuthStatus.unauthenticated);
-    }
-  }
-
-  Future<void> startLogin() async {
-    // 進行中のログインがあるうちは新しい試行を始めない。
-    // AuthService 側でも共有するが、UI 側の状態遷移も抑える。
-    if (_status == AuthStatus.authenticating) {
       return;
     }
 
+    _tokens = tokens;
+    _setStatus(AuthStatus.authenticated);
+  }
+
+  Future<void> startLogin() async {
     try {
       _errorMessage = null;
       _setStatus(AuthStatus.authenticating);
@@ -117,6 +88,7 @@ class AuthProvider extends ChangeNotifier {
     return _authService.getValidAccessToken();
   }
 
+  // 修正: main.dart から参照するIDトークン取得APIを保持し、接続時のコンパイルエラーを防ぐ。
   Future<String?> getValidIdToken() {
     return _authService.getValidIdToken();
   }
@@ -135,17 +107,11 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logoutForExit() async {
     await _authService.logout();
     _tokens = null;
-    // 通知はしないが状態は未認証にしておく。
-    // 以前は status が authenticated のまま残っていたため、
-    // iOS のようにアプリを終了できない環境では
-    // 「トークンは消えているのに画面上はログイン中」になっていた。
+    // 修正（1）: アプリを終了できない場合も、ログアウト後の状態を未認証にする。
     _status = AuthStatus.unauthenticated;
   }
 
-  /// 終了できなかったときに、未認証状態を UI へ反映させる。
-  ///
-  /// [logoutForExit] は LoginScreen の自動ログインが走らないよう
-  /// あえて通知しない。アプリが終了しなかった場合だけここを呼ぶ。
+  // 修正（1）: chat_screen.dart が終了失敗時に呼ぶ通知APIを保持する。
   void notifyLogoutFallback() {
     notifyListeners();
   }

@@ -51,7 +51,7 @@ import 'package:raim_prototype/services/station/station_listener.dart';
 import 'package:raim_prototype/services/station/station_lookup.dart';
 import 'package:raim_prototype/services/station/station_notifications.dart';
 import 'package:raim_prototype/services/station/station_proximity.dart';
-import 'package:raim_prototype/services/station/station_recorder.dart';
+// 修正（9）: 駅アラームの確認用録音・ログ保存への依存を除去する。
 import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 
 enum StationAlarmState { idle, starting, riding, arrived, error }
@@ -409,10 +409,9 @@ class StationAlarmController extends ChangeNotifier {
       accuracy: p.accuracy,
       at: DateTime.now(),
     );
-    // 【確認用・後で消す】
-    StationRecorder.note('GPS ${proximity.distance?.round()}m（精度${p.accuracy.round()}m）');
+    // 修正（9）: GPS は到着判定にだけ使い、録音用ログへ保存しない。
     if (stage != null && _state != StationAlarmState.arrived) {
-      StationRecorder.note('GPS で知らせた: ${stage.name}'); // 【確認用・後で消す】
+      // 修正（9）: 確認用の記録を除去し、GPS による通知は維持する。
       RaimLog.i('[StationAlarm] GPS で知らせます: ${stage.name}');
       _alert(StationAlarmEvent(
         stage: stage,
@@ -431,7 +430,7 @@ class StationAlarmController extends ChangeNotifier {
   void _onVoiceEvent(StationAlarmEvent event) {
     final proximity = _proximity;
     if (proximity != null && !proximity.allowsVoice(DateTime.now())) {
-      StationRecorder.note('駅から遠いので聞き間違いとみなした'); // 【確認用・後で消す】
+      // 修正（9）: 聞き間違いの判定は保ち、確認用ファイルへは記録しない。
       RaimLog.i(
         '[StationAlarm] 駅から遠いので聞き間違いとみなしました '
         '(${proximity.distance?.round()}m / ${event.stage.name})',

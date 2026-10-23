@@ -170,10 +170,7 @@ void sendToolState({
     // モバイルでは Unity がアプリ内にいるので起動制御は不要
   }
 
-  @override
-  void setExhibitionMode(bool enabled) {
-    // モバイル版には Windows の外部ウィンドウ表示がない。
-  }
+  // 修正（9）: 廃止した展示表示 API の空実装を除去する。
 
   @override
   void setMascotScale(double scale) {

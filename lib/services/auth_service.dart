@@ -1,3 +1,4 @@
+// 修正: 競合を解消し、更新済みの通常認証の世代管理・破棄処理を保持した。
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';

@@ -54,7 +54,7 @@ class WindowsUnityBridge implements UnityCommunicator {
   final List<String> _pending = [];
   static const int _maxPending = 16;
 
-  bool? _exhibitionMode;
+  // 修正（9）: 展示状態を保持せず、Unity は通常のマスコットとして起動する。
 
   /// ライムの大きさ（窓の倍率）。null ならまだ決まっていない
   double? _mascotScale;
@@ -131,10 +131,7 @@ class WindowsUnityBridge implements UnityCommunicator {
 
           // 溜まっていた分を流して、接続直後から正しい状態にする
           _flushPending(webSocket);
-          final exhibitionMode = _exhibitionMode;
-          if (exhibitionMode != null) {
-            _sendToClient(webSocket, _exhibitionMessage(exhibitionMode));
-          }
+          // 修正（9）: 接続後に展示表示の切り替えメッセージを送らない。
           final mascotScale = _mascotScale;
           if (mascotScale != null) {
             _sendToClient(webSocket, _mascotScaleMessage(mascotScale));
@@ -325,12 +322,10 @@ class WindowsUnityBridge implements UnityCommunicator {
     }
 
     try {
-      final launchArgs = _exhibitionMode == true
-          ? const <String>['-raim-exhibition']
-          : const <String>[];
+      // 修正（9）: 展示専用の起動引数を渡さない。
       _unityProcess = await Process.start(
         exePath,
-        launchArgs,
+        const <String>[],
         // Flutter 側が Unity の標準出力を握り続けないよう分離する。
         // Unity はログを大量に吐くため。終了は stop() の kill で行う。
         mode: ProcessStartMode.detached,
@@ -419,10 +414,7 @@ class WindowsUnityBridge implements UnityCommunicator {
     }
   }
 
-  String _exhibitionMessage(bool enabled) => jsonEncode({
-        'type': 'exhibition_mode',
-        'enabled': enabled,
-      });
+  // 修正（9）: 展示用の送信形式を除去し、大きさの通知だけを維持する。
 
   String _mascotScaleMessage(double scale) => jsonEncode({
         'type': 'mascot_scale',
@@ -432,21 +424,13 @@ class WindowsUnityBridge implements UnityCommunicator {
   @override
   void setMascotScale(double scale) {
     _mascotScale = scale;
-    // 展示モードと同じく、未接続なら保留に積まず、つながった直後に今の値を1回だけ送る
+    // 修正（9）: 未接続なら保留に積まず、つながった直後に今の倍率を1回だけ送る。
     if (_clients.isNotEmpty) {
       _broadcast(_mascotScaleMessage(scale));
     }
   }
 
-  @override
-  void setExhibitionMode(bool enabled) {
-    _exhibitionMode = enabled;
-    // 未接続時は保留キューへ積まず、認証直後に現在値を1回だけ送る。
-    // 途中で false→true のように変わっても、最新状態だけが必要。
-    if (_clients.isNotEmpty) {
-      _broadcast(_exhibitionMessage(enabled));
-    }
-  }
+  // 修正（9）: 展示表示への切り替え処理を除去する。
 
   @override
   void sendEmotion({

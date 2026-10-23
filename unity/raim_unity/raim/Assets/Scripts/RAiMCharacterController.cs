@@ -1,3 +1,4 @@
+// 修正: 更新済みのエラー処理と受信ログ対策を保持し、不要機能削除との競合を解消した。
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -194,7 +195,8 @@ public class RAiMCharacterController : MonoBehaviour
     /// </summary>
     public void ReceiveEmotion(string emotion)
     {
-        Debug.Log($"[Unity] 単一感情受信: {emotion}");
+        // 修正（7）: 単一感情の受信値も任意の文字列になり得るため、本文ではなく文字数だけを記録する。
+        Debug.Log($"[Unity] 単一感情受信 chars={emotion?.Length ?? 0}");
 
         if (string.IsNullOrEmpty(emotion))
         {
@@ -218,7 +220,8 @@ public class RAiMCharacterController : MonoBehaviour
     /// </summary>
     public void ReceiveEmotions(string json)
     {
-        Debug.Log($"[Unity] 複数感情受信: {json}");
+        // 修正: 会話本文や認証情報を含む受信データは出力せず、文字数のみ記録する。
+        Debug.Log($"[Unity] 複数感情受信 chars={json?.Length ?? 0}");
 
         try
         {
@@ -240,7 +243,8 @@ public class RAiMCharacterController : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError($"複数感情JSONエラー: {e.Message}");
+            // 修正: 受信内容が例外メッセージ経由でログに残るのを防ぐため、例外の型名のみ記録する。
+            Debug.LogError($"複数感情JSONエラー: {e.GetType().Name}");
         }
     }
 
@@ -271,7 +275,8 @@ public class RAiMCharacterController : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError($"レイアウトJSONエラー: {e.Message}");
+            // 修正: 受信内容が例外メッセージ経由でログに残るのを防ぐため、例外の型名のみ記録する。
+            Debug.LogError($"レイアウトJSONエラー: {e.GetType().Name}");
         }
     }
 
@@ -290,7 +295,8 @@ public class RAiMCharacterController : MonoBehaviour
     /// </summary>
     public void ReceiveToolState(string json)
     {
-        Debug.Log($"[Unity] Tool状態受信: {json}");
+       // 修正: 会話本文や認証情報を含む受信データは出力せず、文字数のみ記録する。
+       Debug.Log($"[Unity] Tool状態受信 chars={json?.Length ?? 0}");
 
         try
         {
@@ -311,7 +317,8 @@ public class RAiMCharacterController : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError($"Tool状態JSONエラー: {e.Message}");
+            // 修正: 受信内容が例外メッセージ経由でログに残るのを防ぐため、例外の型名のみ記録する。
+            Debug.LogError($"Tool状態JSONエラー: {e.GetType().Name}");
         }
     }
 
@@ -320,7 +327,8 @@ public class RAiMCharacterController : MonoBehaviour
     /// </summary>
     public void ReceiveMessage(string json)
     {
-        Debug.Log($"[Unity] JSON受信: {json}");
+        // 修正: 会話本文や認証情報を含む受信データは出力せず、文字数のみ記録する。
+        Debug.Log($"[Unity] JSON受信 chars={json?.Length ?? 0}");
 
         try
         {
@@ -348,7 +356,8 @@ public class RAiMCharacterController : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError($"JSONパースエラー: {e.Message}");
+            // 修正: 受信内容が例外メッセージ経由でログに残るのを防ぐため、例外の型名のみ記録する。
+            Debug.LogError($"JSONパースエラー: {e.GetType().Name}");
         }
     }
 
@@ -380,7 +389,8 @@ public class RAiMCharacterController : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError($"text_chunk JSONエラー: {e.Message}");
+            // 修正: 受信内容が例外メッセージ経由でログに残るのを防ぐため、例外の型名のみ記録する。
+            Debug.LogError($"text_chunk JSONエラー: {e.GetType().Name}");
         }
     }
 
@@ -407,7 +417,8 @@ public class RAiMCharacterController : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError($"chat_end JSONエラー: {e.Message}");
+            // 修正: 受信内容が例外メッセージ経由でログに残るのを防ぐため、例外の型名のみ記録する。
+            Debug.LogError($"chat_end JSONエラー: {e.GetType().Name}");
             speechBubble.EndSpeech();
         }
     }
@@ -454,7 +465,8 @@ public class RAiMCharacterController : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError($"Flutter への送信に失敗: {e.Message}");
+            // 修正: 送信内容が例外メッセージ経由でログに残るのを防ぐため、例外の型名のみ記録する。
+            Debug.LogError($"Flutter への送信に失敗: {e.GetType().Name}");
         }
     }
 
@@ -523,7 +535,8 @@ public class RAiMCharacterController : MonoBehaviour
         socket.OnError += (errorMessage) =>
         {
             isConnecting = false;
-            Debug.LogError($"WebSocketエラー: {errorMessage}");
+            // 修正: OnError内には例外変数eがないため、エラー詳細を含まない固定文を記録する。
+            Debug.LogError("WebSocketエラーが発生しました。");
         };
 
         socket.OnClose += (closeCode) =>
@@ -537,9 +550,10 @@ public class RAiMCharacterController : MonoBehaviour
             string message =
                 System.Text.Encoding.UTF8.GetString(bytes);
 
-            Debug.Log($"WebSocket受信: {message}");
+            // 修正: 会話本文や認証情報を含む受信データは出力せず、文字数のみ記録する。
+            Debug.Log($"[Unity] WebSocket受信 chars={message.Length}");
 
-            HandleWebSocketMessage(message);
+            HandleWebSocketMessage(message);    
         };
 
         try
@@ -648,27 +662,7 @@ public class RAiMCharacterController : MonoBehaviour
                 return;
             }
 
-            // Flutterの展示用ログイン状態に合わせて、Unity自身の表示方式を切り替える。
-            if (typeData != null && typeData.type == "exhibition_mode")
-            {
-#if UNITY_STANDALONE_WIN
-                var displayMode = JsonUtility.FromJson<ExhibitionModeMessage>(json);
-                var overlay = GetComponent<WindowsOverlayController>();
-                if (overlay == null)
-                {
-#if UNITY_2023_1_OR_NEWER
-                    overlay = FindFirstObjectByType<WindowsOverlayController>();
-#else
-                    overlay = FindObjectOfType<WindowsOverlayController>();
-#endif
-                }
-                if (displayMode != null && overlay != null)
-                {
-                    overlay.SetExhibitionMode(displayMode.enabled);
-                }
-#endif
-                return;
-            }
+            // 修正（9）: 展示切り替えを除去し、更新済みのエラー表示処理は保持する。
 
             // Flutter のタスクトレイ「ライムの大きさ」で選ばれた
             if (typeData != null && typeData.type == "mascot_scale")
@@ -711,7 +705,8 @@ public class RAiMCharacterController : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError($"WebSocket JSONエラー: {e.Message}");
+            // 修正: 受信内容が例外メッセージ経由でログに残るのを防ぐため、例外の型名のみ記録する。
+            Debug.LogError($"WebSocket JSONエラー: {e.GetType().Name}");
         }
     }
 
@@ -847,8 +842,9 @@ public class RAiMCharacterController : MonoBehaviour
         // Tool使用中は通常感情で上書きしない
         if (isUsingTool)
         {
+            // 修正（7）: 保留中の受信感情をそのままログへ出さず、文字数だけを記録する。
             Debug.Log(
-                $"Tool使用中のため感情変更を保留: {emotion}"
+                $"Tool使用中のため感情変更を保留 chars={emotion?.Length ?? 0}"
             );
             return;
         }
@@ -874,14 +870,16 @@ public class RAiMCharacterController : MonoBehaviour
             ) && sprite != null)
         {
             spriteRenderer.sprite = sprite;
-            Debug.Log($"表情変更: {emotion}");
+            // 修正（7）: 表情変更時も受信文字列の内容は記録しない。
+            Debug.Log($"表情変更 chars={emotion?.Length ?? 0}");
         }
         else
         {
             spriteRenderer.sprite = defaultSprite;
 
+            // 修正（7）: 未知の感情には会話本文が紛れ込む可能性があるため、文字数だけを記録する。
             Debug.LogWarning(
-                $"未知の感情: {emotion} → defaultに変更"
+                $"未知の感情 chars={emotion?.Length ?? 0} → defaultに変更"
             );
         }
     }
@@ -1121,12 +1119,7 @@ public class ToolStateMessage
     public string description;
 }
 
-[Serializable]
-public class ExhibitionModeMessage
-{
-    public string type;
-    public bool enabled;
-}
+// 修正（9）: 廃止した展示メッセージ型を削除した。
 
 [Serializable]
 public class MascotScaleMessage

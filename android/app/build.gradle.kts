@@ -8,14 +8,19 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// release 署名の鍵の情報。android/key.properties に置く（Git には入れない）。
-// 無ければ debug の鍵で署名する（チームの誰でもビルドはできるように）。
-// debug の鍵は PC ごとに違うので、配布する版は必ず key.properties のある PC で作ること。
-val keystoreProperties = Properties()
+// 修正: 署名設定の不足や読み取り失敗は release の検証タスクで通知し、debug の構成を妨げない。
 val keystorePropertiesFile = rootProject.file("key.properties")
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+val keystorePropertiesResult = runCatching {
+    Properties().apply {
+        if (keystorePropertiesFile.isFile) {
+            FileInputStream(keystorePropertiesFile).use { load(it) }
+        }
+    }
 }
+val keystoreProperties = keystorePropertiesResult.getOrDefault(Properties())
+val releaseKeystoreFile = keystoreProperties.getProperty("storeFile")
+    ?.takeIf { it.isNotBlank() }
+    ?.let { file(it) }
 
 android {
     namespace = "com.example.raim_prototype"
@@ -53,26 +58,70 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keystorePropertiesFile.exists()) {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
-            }
+            // 修正: 未設定値を強制変換せず、必須項目と鍵ファイルは release 実行時だけ検証する。
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
+            storeFile = releaseKeystoreFile
+            storePassword = keystoreProperties.getProperty("storePassword")
         }
     }
 
     buildTypes {
         release {
-            // key.properties があれば配布用の鍵で署名する。
-            // 以前は常に debug の鍵で、PC ごとに鍵が違うため、別の PC で作った版を
-            // 上書きインストールできなかった。
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            // 修正: 配布版は必ず release 鍵を使い、debug 鍵への自動切り替えを禁止する。
+            signingConfig = signingConfigs.getByName("release")
         }
+    }
+}
+
+// 修正: 同じ署名チェックを、明示的なrelease要求とreleaseタスクの両方で使う。
+fun validateReleaseSigningFiles() {
+    if (!keystorePropertiesFile.isFile) {
+        throw GradleException(
+            "release の作成には android/key.properties と配布用 keystore が必要です。" +
+                "debug ビルドは鍵なしで実行できます。",
+        )
+    }
+    if (keystorePropertiesResult.isFailure) {
+        throw GradleException("android/key.properties を読み取れません。形式と読み取り権限を確認してください。")
+    }
+    val missing = listOf("keyAlias", "keyPassword", "storeFile", "storePassword")
+        .filter { keystoreProperties.getProperty(it).isNullOrBlank() }
+    if (missing.isNotEmpty()) {
+        throw GradleException("android/key.properties の必須項目が未設定です: ${missing.joinToString(", ")}")
+    }
+    if (releaseKeystoreFile?.isFile != true) {
+        throw GradleException("android/key.properties の storeFile が既存の keystore ファイルを指していません。")
+    }
+}
+
+// 修正: releaseが明示された場合は構成時にも不足を知らせる。debugや一般タスクには適用しない。
+val releaseArtifactRequested = gradle.startParameter.taskNames.any { requestedTask ->
+    val taskName = requestedTask.substringAfterLast(':')
+    taskName == "preReleaseBuild" || taskName == "validateSigningRelease" ||
+        taskName == "validateReleaseSigning" ||
+        (taskName.endsWith("Release", ignoreCase = true) &&
+            listOf("assemble", "bundle", "package", "install").any {
+                taskName.startsWith(it, ignoreCase = true)
+            })
+}
+if (releaseArtifactRequested) {
+    validateReleaseSigningFiles()
+}
+
+// 修正: 依存関係経由でreleaseが要求された場合も、ビルドと署名の前に同じ検証を行う。
+val validateReleaseSigning by tasks.registering {
+    group = "verification"
+    description = "release 用の署名設定と keystore の存在を確認します。"
+    doLast {
+        validateReleaseSigningFiles()
+    }
+}
+
+// 修正: debug タスクには依存を追加せず、release のビルドと署名より先に検証する。
+tasks.configureEach {
+    if (name == "preReleaseBuild" || name == "validateSigningRelease") {
+        dependsOn(validateReleaseSigning)
     }
 }
 

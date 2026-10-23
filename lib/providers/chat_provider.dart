@@ -1,3 +1,4 @@
+// 修正: 課題1〜5の更新を保持し、画像上限と廃止機能の変更を統合して競合を解消した。
 //全体メッセージの管理と必要な情報をファイルごとに分けている
 // lib/providers/chat_provider.dart  (v3 - 永続接続対応)
 // 変更点:
@@ -19,7 +20,8 @@ import 'package:raim_prototype/services/audio_chunk_assembler.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
-import 'package:raim_prototype/providers/camera_provider.dart';
+// 修正: 画像上限は共通設定から直接参照する。
+import 'package:raim_prototype/config/raim_config.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/models/image_attachment.dart';
 import 'package:raim_prototype/services/aws_image_service.dart';
@@ -846,22 +848,7 @@ _toolStatus = null;
     notifyListeners();
   }
 
-  /// 展示アカウントの無操作タイムアウト時に、現在の会話を破棄して
-  /// 次の来場者用の新しい会話へ切り替える。
-  ///
-  /// スレッドの期限切れ・削除はAWS側で管理するため、ここではサーバーへ
-  /// 削除要求を送らず、端末側の表示状態だけを新しくする。
-  Future<void> resetExhibitionSession() {
-    final oldThreadId = _currentThreadId;
-
-    if (oldThreadId != null) {
-      _threads = _threads.where((t) => t.threadId != oldThreadId).toList();
-    }
-    _isLoadingThreads = false;
-    _threadError = null;
-    startNewThread();
-    return Future<void>.value();
-  }
+  // 修正: 展示専用リセットを削除し、通常のログアウト処理は保持する。
 
   /// スレッド識別子を作る
   ///
@@ -976,8 +963,9 @@ _toolStatus = null;
     final imagesToUpload = pendingImages == null
         ? const <PendingImage>[]
         : List<PendingImage>.from(pendingImages);
-    if (imagesToUpload.length > CameraProvider.maxImageCount) {
-      _addLocalError('画像は10枚まで添付できます。');
+    // 修正: アップロード前に共通上限で拒否し、設定と同じ枚数を通知する。
+    if (imagesToUpload.length > RaimConfig.maxImageCount) {
+      _addLocalError('画像は${RaimConfig.maxImageCount}枚まで添付できます。');
       unawaited(_imageService.cleanupPendingImages(imagesToUpload));
       return;
     }
