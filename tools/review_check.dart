@@ -18,7 +18,7 @@ const items = <int, String>{
   6: '画像は4枚まで（サーバーとそろえる）',
   7: 'Unity のログに会話の中身を出さない',
   8: '鍵が無ければ release を作らない',
-  9: '展示モードと駅アラームの録音を消す',
+  9: '展示モードを消す（駅アラームの録音は当面残す）',
 };
 
 Future<void> main(List<String> args) async {

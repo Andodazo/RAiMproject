@@ -14,7 +14,7 @@ import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/station_alarm_controller.dart';
 import 'package:raim_prototype/services/station/station_alarm.dart';
 import 'package:raim_prototype/services/station/station_database.dart';
-// 修正（9）: 確認用の録音スイッチ・保存先表示を公開画面から除去する。
+import 'package:raim_prototype/widgets/station_recording_toggle.dart';
 
 const _bg = Color(0xFF111418);
 const _card = Color(0xFF1B1F26);
@@ -119,7 +119,10 @@ class _StationAlarmScreenState extends State<StationAlarmScreen> {
         backgroundColor: _bg,
         foregroundColor: _text,
         title: const Text('駅アラーム'),
-        // 修正（9）: 車内音声の確認用録音を操作するボタンは設けない。
+        actions: [
+          // 【確認用・後で消す】車内の音を録音する／しない
+          if (StationAlarmController.isSupported) const StationRecordingToggle(),
+        ],
       ),
       body: SafeArea(
         child: !StationAlarmController.isSupported
@@ -128,7 +131,8 @@ class _StationAlarmScreenState extends State<StationAlarmScreen> {
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // 修正（9）: 録音ファイルの保存先表示を除去する。
+                  // 【確認用・後で消す】録音が ON のとき保存先を出す
+                  const StationRecordingNote(),
                   Expanded(
                     child: alarm.isActive
                         ? _Riding(alarm: alarm)

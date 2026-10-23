@@ -6,6 +6,10 @@
 // モデルは共有し（sharedModel）、マイクも同じ1本を共有する。
 // そのため乗車中も「ねえライム」はそのまま使える。
 //
+// 【雑音を消す】
+// 走行音などの雑音は StationDenoiser で消してから Vosk に渡す（使えなければそのまま）。
+// 録音（StationRecorder）には消す前の音を残す。
+//
 // 【ライムの声を拾わない】
 // ライムが「次は新宿だよ」と喋ると、その声で自分が反応してしまう。
 // ライムが喋っている間と喋り終わって少しの間は、音を渡さない。
@@ -20,7 +24,8 @@ import 'package:vosk_flutter/vosk_flutter.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/station/station_alarm.dart';
-// 修正（9）: 駅名認識に不要な確認用録音への依存を除去する。
+import 'package:raim_prototype/services/station/station_denoiser.dart';
+import 'package:raim_prototype/services/station/station_recorder.dart';
 import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 import 'package:raim_prototype/services/wake_word_service.dart';
 
@@ -52,6 +57,7 @@ class StationListener {
   final StreamController<String> _heard = StreamController<String>.broadcast();
 
   Recognizer? _recognizer;
+  StationDenoiser? _denoiser;
   StreamSubscription<Uint8List>? _micSub;
   final BytesBuilder _pending = BytesBuilder(copy: false);
   Future<void> _feeding = Future.value();
@@ -76,6 +82,8 @@ class StationListener {
       grammar: plan.grammar,
     );
     _recognizer = recognizer;
+    // 走行音などの雑音を消してから聞く。使えなければ null（そのまま聞く）
+    _denoiser = await StationDenoiser.create();
 
     final mic = MicStreamService.instance;
     mic.hold(this);
@@ -95,11 +103,14 @@ class StationListener {
       mic.unhold(this);
       _recognizer = null;
       await recognizer.dispose();
+      _denoiser?.dispose();
+      _denoiser = null;
       rethrow;
     }
 
     _speaking?.addListener(_onSpeakingChanged);
-    // 修正（9）: 車内音声は認識にだけ使い、確認用ファイルへ保存しない。
+    // 【確認用・後で消す】設定が ON なら、聞いている音を wav に残す
+    await StationRecorder.startIfEnabled(destination: plan.destination.name);
     RaimLog.i(
       '[Station] 聞き取り開始 ${plan.destination.name} '
       '(文法 ${plan.grammar.length}語)',
@@ -108,7 +119,7 @@ class StationListener {
 
   Future<void> stop() async {
     _speaking?.removeListener(_onSpeakingChanged);
-    // 修正（9）: 認識器と共有マイクだけを停止する。
+    await StationRecorder.stop(); // 【確認用・後で消す】
 
     final sub = _micSub;
     _micSub = null;
@@ -120,6 +131,8 @@ class StationListener {
     _recognizer = null;
     await _feeding.catchError((Object _) {});
     await recognizer?.dispose();
+    _denoiser?.dispose();
+    _denoiser = null;
     _pending.clear();
 
     final mic = MicStreamService.instance;
@@ -139,7 +152,7 @@ class StationListener {
 
   void _onSpeakingChanged() {
     final speaking = _speaking?.value ?? false;
-    // 修正（9）: 発話中のミュート制御は保ち、確認用ログファイルへは書かない。
+    StationRecorder.note(speaking ? 'ライムが喋り始めた（聞かない）' : 'ライムが喋り終えた'); // 【確認用・後で消す】
     if (speaking) {
       _mutedUntil = null;
       _pending.clear();
@@ -151,7 +164,7 @@ class StationListener {
 
   /// しばらく聞かない。ライムの声（知らせのセリフ）を鳴らすときに使う。
   void muteFor(Duration duration) {
-    // 修正（9）: 録音ログを残さず、認識への音声入力だけを一時停止する。
+    StationRecorder.note('ライムの声を鳴らすので ${duration.inSeconds}秒 聞かない'); // 【確認用・後で消す】
     final until = DateTime.now().add(duration);
     final current = _mutedUntil;
     if (current == null || until.isAfter(current)) _mutedUntil = until;
@@ -166,9 +179,11 @@ class StationListener {
   }
 
   void _onChunk(Uint8List chunk) {
-    // 修正（9）: PCM はファイルへ複製せず、Vosk の入力にだけ渡す。
+    StationRecorder.add(chunk); // 【確認用・後で消す】聞かない間の音も残す
+    // 雑音を消す。聞かない間も渡し続ける（途中で途切れると消し方が乱れる）
+    final clean = _denoiser?.process(chunk) ?? chunk;
     if (_muted) return;
-    _pending.add(chunk);
+    _pending.add(clean);
     if (_pending.length < _feedBytes) return;
 
     final buffer = _pending.takeBytes();
@@ -195,13 +210,14 @@ class StationListener {
       if (!_heard.isClosed) _heard.add(text);
 
       final allowRepeated = _allowRepeated?.call() ?? false;
-      // 修正（9）: 確認用の認識ログ保存を除去し、駅名の判定は維持する。
+      // 【確認用・後で消す】
+      StationRecorder.note('聞こえた: $text${allowRepeated ? '（GPSで駅の近く）' : ''}');
       final event = _detector.onResult(
         text,
         allowRepeated: allowRepeated,
       );
       if (event != null) {
-        // 修正（9）: 検知結果を確認用ファイルへ保存しない。
+        StationRecorder.note('検知: $event'); // 【確認用・後で消す】
         RaimLog.i('[Station] $event');
         if (!_events.isClosed) _events.add(event);
       }
