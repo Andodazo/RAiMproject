@@ -45,7 +45,9 @@ class _FakeEdge {
         received.add((connection, body));
         final result = onRequest(connection, body);
         for (final reply in result.replies) {
-          socket.add(jsonEncode(reply));
+          // 本物のサーバーと同じく、要求の requestId を付けて返す
+          // （テストで別の ID を返したいときは reply 側に書く）
+          socket.add(jsonEncode({'requestId': body['requestId'], ...reply}));
         }
         if (result.close) await socket.close();
       });
@@ -180,6 +182,110 @@ void main() {
 
       expect(threads.map((t) => t.threadId), ['t1']);
       expect(edge.connections, 2);
+    });
+  });
+
+  group('別の要求への応答を受け取らない（X-03）', () {
+    late _FakeEdge edge;
+    late RaimServerService service;
+
+    setUp(() async {
+      edge = _FakeEdge();
+      await edge.start();
+      service = RaimServerService(
+        serverUrl: edge.url,
+        requestTimeout: const Duration(seconds: 5),
+      );
+      await service.connect();
+    });
+
+    tearDown(() async {
+      await service.dispose();
+      await edge.stop();
+    });
+
+    test('画像が無くても requestId を付けて送る', () async {
+      edge.onRequest = (connection, request) => (
+            replies: [
+              {'type': 'chat_end'},
+            ],
+            close: false,
+          );
+
+      await service.sendMessage('やあ').toList();
+
+      final requestId = edge.received.single.$2['requestId'] as String;
+      expect(RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(requestId), isTrue);
+    });
+
+    test('別の requestId の返事は読み飛ばし、自分の返事だけを受け取る', () async {
+      edge.onRequest = (connection, request) => (
+            replies: [
+              {'type': 'text_chunk', 'text': '別の会話', 'requestId': 'other'},
+              {'type': 'chat_end', 'requestId': 'other'},
+              {'type': 'text_chunk', 'text': '自分の返事'},
+              {'type': 'chat_end'},
+            ],
+            close: false,
+          );
+
+      final responses = await service.sendMessage('やあ').toList();
+
+      expect(responses.map((r) => r.text).where((t) => t.isNotEmpty),
+          ['自分の返事']);
+    });
+
+    test('サーバーがやり直した回の分は表示しない（最初に見た回だけ）', () async {
+      edge.onRequest = (connection, request) => (
+            replies: [
+              {'type': 'text_chunk', 'text': 'こんに', 'attempt': 1},
+              {'type': 'text_chunk', 'text': 'こんにちは', 'attempt': 2},
+              {'type': 'chat_end', 'attempt': 2},
+              {'type': 'text_chunk', 'text': 'ちは', 'attempt': 1},
+              {'type': 'chat_end', 'attempt': 1},
+            ],
+            close: false,
+          );
+
+      final responses = await service.sendMessage('やあ').toList();
+
+      expect(responses.map((r) => r.attempt), [1, 1, 1]);
+      expect(responses.where((r) => r.isTextChunk).map((r) => r.text),
+          ['こんに', 'ちは']);
+    });
+
+    test('履歴は、頼んだスレッドの分だけを受け取る', () async {
+      edge.onRequest = (connection, request) => (
+            replies: [
+              {'type': 'thread_history', 'threadId': 't-other', 'messages': []},
+              {
+                'type': 'thread_history',
+                'threadId': 't1',
+                'messages': [
+                  {'role': 'user', 'text': 'やあ', 'createdAt': 'x'},
+                ],
+              },
+            ],
+            close: false,
+          );
+
+      final history = await service.fetchThreadHistory('t1');
+
+      expect(history?.threadId, 't1');
+    });
+
+    test('自分の要求へのエラーなら、待たずに失敗にする', () async {
+      edge.onRequest = (connection, request) => (
+            replies: [
+              {'type': 'error', 'code': 'THREAD_NOT_FOUND', 'message': 'x'},
+            ],
+            close: false,
+          );
+
+      await expectLater(
+        service.fetchThreadHistory('t1'),
+        throwsA(isA<Exception>()),
+      );
     });
   });
 }

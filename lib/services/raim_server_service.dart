@@ -52,6 +52,7 @@ import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/services/llm_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/config/raim_config.dart';
+import 'package:uuid/uuid.dart';
 /// 接続状態の列挙
 ///
 /// 将来 UI 側で立ち絵切替や Zzz... 表示等に使うため、enum で公開する。
@@ -750,6 +751,18 @@ class RaimServerService implements LLMService {
         response.isThreadHistory ||
         response.isThreadDeleted;
   }
+
+  /// 要求に付ける ID を作る。サーバーの形式（英数字・-・_、64文字まで）に合う。
+  static String newRequestId() => const Uuid().v4();
+
+  /// [requestId] の要求への応答か。
+  ///
+  /// 同じ WebSocket で要求が重なると、以前は先に届いた応答を、どの要求のものかを
+  /// 見ずに受け取っていた。会話を切り替えた直後などに、別の会話の返事や
+  /// 別の一覧を受け取り得た（X-03）。今は requestId が一致するものだけを受け取る。
+  static bool isResponseTo(LLMResponse response, String requestId) {
+    return response.requestId == requestId;
+  }
  @override
   Stream<LLMResponse> sendMessage(
     String userInput, {
@@ -774,13 +787,14 @@ class RaimServerService implements LLMService {
     final payload = <String, dynamic>{
       'text': userInput,
     };
-    // 画像がある場合は、S3参照形式と画像付きリクエストの識別子を追加する。
+    // どの要求への応答かを見分けるため、画像が無くても requestId を付ける。
+    // 以前は画像付きのときだけ付けていた。
+    final myRequestId =
+        (requestId == null || requestId.isEmpty) ? newRequestId() : requestId;
+    payload['requestId'] = myRequestId;
+    // 画像がある場合は、S3参照形式を追加する。
     if (images != null && images.isNotEmpty) {
-      if (requestId == null || requestId.isEmpty) {
-        throw const FormatException('画像付きメッセージにはrequestIdが必要です。');
-      }
       payload['type'] = 'user_message';
-      payload['requestId'] = requestId;
       payload['images'] = images;
     }
     // session_id がある場合は送信に含める
@@ -815,6 +829,10 @@ class RaimServerService implements LLMService {
     var iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
     // TOKEN_EXPIRED で送り直したか（送り直すのは1回だけ）
     var resent = false;
+    // 最初に届いた応答の attempt（サーバーが要求をやり直した回数）。
+    // やり直すと1回目の途中までの分と2回目の分が両方届き得るので、
+    // 最初に見た回の分だけを渡す（同じ文が二重に表示されないように）。
+    int? lockedAttempt;
 
     try {
       // 先に受信待ちを開始してから送信する
@@ -835,6 +853,22 @@ class RaimServerService implements LLMService {
       // text_chunk / audio_chunk / tool_call などを順番に返す
       while (hasResponse) {
         final response = iterator.current;
+        // 別の要求への応答・別の回の分は読み飛ばす
+        final attempt = response.attempt;
+        final mine = isResponseTo(response, myRequestId);
+        if (mine) lockedAttempt ??= attempt;
+        if (!mine || (attempt != null && attempt != lockedAttempt)) {
+          hasResponse = await iterator.moveNext().timeout(
+            requestTimeout,
+            onTimeout: () {
+              throw TimeoutException(
+                'RAiMからの次の応答が遅すぎます',
+                requestTimeout,
+              );
+            },
+          );
+          continue;
+        }
         // トークンの期限切れで断られた。サーバーはこの要求を受け付けていない
         // （会話を進める前に断っている）ので、つなぎ直して同じものを送り直してよい。
         if (!resent && isTokenExpiredError(response)) {
@@ -938,7 +972,9 @@ class RaimServerService implements LLMService {
         'threadId': threadId,
         'beforeIndex': ?beforeIndex,
       },
-      matches: (r) => r.isThreadHistory,
+      // 返ってきた threadId も確かめる（別の会話の履歴を並べないように）
+      matches: (r) =>
+          r.isThreadHistory && (r.threadId == null || r.threadId == threadId),
       label: 'thread.history',
     );
 
@@ -955,7 +991,8 @@ class RaimServerService implements LLMService {
 
     await _requestOnce(
       payload: {'type': 'thread.delete', 'threadId': threadId},
-      matches: (r) => r.isThreadDeleted,
+      matches: (r) =>
+          r.isThreadDeleted && (r.threadId == null || r.threadId == threadId),
       label: 'thread.delete',
     );
   }
@@ -977,6 +1014,10 @@ class RaimServerService implements LLMService {
       throw Exception('RAiMに接続できていません: state=$_state');
     }
 
+    // どの要求への応答かを見分けるための ID
+    final requestId = newRequestId();
+    final body = {...payload, 'requestId': requestId};
+
     _broadcaster ??= StreamController<LLMResponse>.broadcast();
     var iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
     // 待っている間に期限前のつなぎ直しが走ると応答を受け取れないので、数に入れる
@@ -986,7 +1027,7 @@ class RaimServerService implements LLMService {
     try {
       // 送信より先に受信待ちを始める（即答されても取り逃がさないため）
       var hasResponse = iterator.moveNext();
-      _channel!.sink.add(jsonEncode(payload));
+      _channel!.sink.add(jsonEncode(body));
 
       // 目的の応答が来るまで読み飛ばす。
       // 会話の text_chunk などが混ざる可能性があるため。
@@ -999,6 +1040,11 @@ class RaimServerService implements LLMService {
       )) {
         final response = iterator.current;
 
+        // 別の要求への応答は読み飛ばす（X-03）
+        if (!isResponseTo(response, requestId)) {
+          hasResponse = iterator.moveNext();
+          continue;
+        }
         if (matches(response)) {
           return response.raw;
         }
@@ -1009,7 +1055,7 @@ class RaimServerService implements LLMService {
           await _reconnectForExpiredToken();
           iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
           hasResponse = iterator.moveNext();
-          _channel!.sink.add(jsonEncode(payload));
+          _channel!.sink.add(jsonEncode(body));
           continue;
         }
         if (response.isError) {

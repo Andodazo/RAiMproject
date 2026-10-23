@@ -243,6 +243,22 @@ class LLMResponse {
   /// client_action の操作名（例: station_alarm.start）
   String get action => _readString(raw['action']) ?? '';
 
+  /// client_action を1回だけ実行するための ID。古いサーバーでは null。
+  ///
+  /// SQS の再試行で同じ操作がもう一度届いても、同じ ID になる（R-05）。
+  String? get actionId => _readString(raw['actionId']);
+
+  /// どの要求への応答か。サーバーはクライアントが送った requestId をそのまま返す。
+  ///
+  /// 同じ WebSocket で要求が重なったとき、別の要求の応答を受け取らないために使う（X-03）。
+  String? get requestId => _readString(raw['requestId']);
+
+  /// サーバーが同じ要求を何回目にやり直した分の応答か。古いサーバーでは null。
+  int? get attempt {
+    final value = raw['attempt'];
+    return value is int ? value : null;
+  }
+
   /// client_action の引数
   Map<String, dynamic> get actionParams {
     final params = raw['params'];
