@@ -99,9 +99,7 @@ abstract class UnityCommunicator {
   /// 既に繋がっていれば何もしない。
   Future<void> ensureUnityRunning();
 
-  /// Windows展示モードの表示状態を Unity へ通知する。
-  /// モバイル実装では何もしない。
-  void setExhibitionMode(bool enabled);
+  // 修正（9）: 展示表示の切り替え API を廃止し、通常表示だけにする。
 
   /// Windows のデスクトップのライムの大きさ（窓の倍率、1 で元の大きさ）を Unity へ伝える。
   ///

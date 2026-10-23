@@ -14,17 +14,14 @@ public static class MascotScale
     /// <summary>窓の大きさの倍率。1 で元の大きさ（800×700）。</summary>
     public static float Window { get; private set; } = 1f;
 
-    /// <summary>
-    /// 展示モードなどで全画面に出している間 true。
-    /// そのときは窓の大きさを変えないので、吹き出しなども元の大きさにする。
-    /// </summary>
-    public static bool FullScreen { get; set; }
+    // 修正（9）: 展示用の全画面フラグを除去し、通常の窓の倍率だけを使う。
 
     /// <summary>
     /// ライムの見た目の倍率。吹き出しをライムからどれだけ離すか など、
     /// ライムとの位置関係に使う。
     /// </summary>
-    public static float Character => FullScreen ? 1f : Window;
+    // 修正（9）: 通常表示のキャラクター倍率をそのまま返す。
+    public static float Character => Window;
 
     /// <summary>
     /// 吹き出しや「Zzz」の文字の倍率。
@@ -32,7 +29,8 @@ public static class MascotScale
     /// 窓と同じだけ縮めると、小（60%）で文字が11px ほどになって読めない。
     /// 縮め方を半分にする（小 80%・中 90%・大 100%）。
     /// </summary>
-    public static float Ui => FullScreen ? 1f : (1f + Window) * 0.5f;
+    // 修正（9）: 通常表示の読みやすさを保つ倍率だけを計算する。
+    public static float Ui => (1f + Window) * 0.5f;
 
     /// <summary>選べる範囲。Flutter から変な値が来ても窓が消えたり巨大にならないように。</summary>
     public const float Min = 0.4f;

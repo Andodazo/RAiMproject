@@ -1,3 +1,4 @@
+// 修正: 課題1〜5の更新を保持し、画像上限と廃止機能の変更を統合して競合を解消した。
 //全体メッセージの管理と必要な情報をファイルごとに分けている
 // lib/providers/chat_provider.dart  (v3 - 永続接続対応)
 // 変更点:
@@ -19,7 +20,8 @@ import 'package:raim_prototype/services/audio_chunk_assembler.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
-import 'package:raim_prototype/providers/camera_provider.dart';
+// 修正: 画像上限は共通設定から直接参照する。
+import 'package:raim_prototype/config/raim_config.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/models/image_attachment.dart';
 import 'package:raim_prototype/services/aws_image_service.dart';
@@ -35,8 +37,9 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   final UnityCommunicator _unityBridge;
   final AwsImageService _imageService;
   final Future<String?> Function() _idTokenGetter;
-  // サーバーから届いた audio_chunk を順番に再生するキュー
-  final AudioPlayQueue _audioQueue = AudioPlayQueue();
+  // 【変更】ここでは AudioPlayQueue() を作らない。
+  // コンストラクターで、テスト用または通常用のキューを設定する。
+  final AudioPlayQueue _audioQueue;
   late final AudioChunkAssembler _audioAssembler;
   //messagesとは描画する会話をまとめたもの
 
@@ -47,6 +50,10 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // _isLoading はAI返答待ち状態。
   // _currentStreamingMessage は text_chunk を追記中のAIメッセージ。
   final List<Message> _messages = [];
+
+  // 【追加・課題4】今回の返答で作った吹き出しだけを記録する。
+  // 履歴の先頭に古い発言が追加されても、対象を見失わない。
+  final Set<Message> _pendingResponseMessages = Set<Message>.identity();
 
   // ─── 会話スレッド ───
   //
@@ -105,6 +112,9 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // _toolStatus は検索中などの表示文。
   // _connectionState はRAiMサーバーとの接続状態。
   String? _toolStatus;
+  // 【追加】ログアウトするたびに増やす番号。
+  // 通信開始時の番号と違っていたら、その結果は前のユーザーのもの。
+  int _accountGeneration = 0;
   int _conversationGeneration = 0;
   RaimConnectionState _connectionState = RaimConnectionState.connected;
   StreamSubscription<RaimConnectionState>? _stateSubscription;
@@ -115,8 +125,12 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     AwsImageService? imageService,
     Future<String?> Function()? idTokenGetter,
     bool Function()? isSpeechMuted,
-  })  : _imageService = imageService ?? AwsImageService(),
+    // 【追加】テストでは、音声プラグインを使わない偽物のキューを渡せる。
+    AudioPlayQueue? audioQueue,
+  })  : _audioQueue = audioQueue ?? AudioPlayQueue(),
+        // 【変更】省略された通常起動では、上の行で本物を作る。
         _idTokenGetter = idTokenGetter ?? (() async => null),
+        _imageService = imageService ?? AwsImageService(),
         _isSpeechMuted = isSpeechMuted ?? (() => false) {
     _audioAssembler = AudioChunkAssembler(
       onAudioReady: (audio) {
@@ -264,6 +278,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     _toolStatus = null;
     // AI返答待ち状態を解除する
     _isLoading = false;
+    // 【追加】成功が確定した返答は、次の失敗で消さない。
+    _pendingResponseMessages.clear();
     notifyListeners();
   }
   //調べていますを表示する処理
@@ -413,6 +429,8 @@ _toolStatus = null;
     );
     // 作成したAIメッセージを会話履歴に追加する
     _messages.add(_currentStreamingMessage!);
+    // 【追加】分割前の吹き出しも、今回の返答として記録する。
+    _pendingResponseMessages.add(_currentStreamingMessage!);
   // すでにAIの吹き出しがある場合は、
   // 後続の text_chunk を既存の文章の後ろに追加する
   } else {
@@ -431,12 +449,37 @@ _toolStatus = null;
   // ============================================================
   // サーバーから error が届いた場合、エラーメッセージをチャット欄に表示する。
   // 途中のストリーミング状態や検索中表示もここで解除する。
+  // 【変更】サーバーのエラーを、共通の失敗処理へ渡す。
   void _handleError(LLMResponse response) {
-     // 追加: エラー時も「考え中」表示を終了する
+    _failCurrentResponse(
+      response.text.isNotEmpty
+          ? response.text
+          : 'エラーが発生しました',
+    );
+  }
+
+  // 【追加】今回の途中の返答を取り消し、エラーだけを残す。
+  void _failCurrentResponse(String message) {
+    // 再生中・待機中の音声を止め、後から届く音声も鳴らさない。
+    stopSpeaking();
+
+    // 今回の返答だけを削除する。過去の返答やユーザーの発言は残す。
+    _messages.removeWhere(_pendingResponseMessages.contains);
+    _pendingResponseMessages.clear();
+
+    _currentStreamingMessage = null;
+    _isLoading = false;
     _isThinking = false;
     _isUsingTool = false;
+    _toolStatus = null;
+    _unityThinking = false;
+
+    // Unityの処理中表示も終了し、吹き出しをエラーへ置き換える。
+    _unityBridge.sendToolState(isUsingTool: false);
+    _unityBridge.sendError(message: message);
+
     _messages.add(Message(
-      text: response.text.isNotEmpty ? response.text : 'エラーが発生しました',
+      text: message,
       role: MessageRole.assistant,
       timestamp: DateTime.now(),
       emotion: 'sad',
@@ -445,9 +488,6 @@ _toolStatus = null;
       overallIntensity: 0.5,
     ));
 
-    _isLoading = false;
-    _currentStreamingMessage = null;
-    _toolStatus = null;
     notifyListeners();
   }
  //最初に届く感情情報をUnityへ送る処理
@@ -494,21 +534,33 @@ _toolStatus = null;
       RaimLog.d('[ChatProvider] スレッド一覧は RaimServerService でのみ利用できます');
       return;
     }
+    // 【追加】一覧を読み始めた時点のユーザーの世代を覚える。
+    final generation = _accountGeneration;
 
     _isLoadingThreads = true;
     _threadError = null;
     notifyListeners();
 
     try {
-      _threads = await service.fetchThreadList();
+      // 【変更】取得結果を、すぐフィールドへ代入しない。
+      final threads = await service.fetchThreadList();
+      // 【追加】待っている間にログアウトされていたら捨てる。
+      if (generation != _accountGeneration) return;
+      _threads = threads;
       RaimLog.d('[ChatProvider] スレッド一覧: ${_threads.length}件');
     } catch (e) {
+      // 【追加】前のユーザーの通信失敗も、新しい画面には出さない。
+      if (generation != _accountGeneration) return;
       RaimLog.d('[ChatProvider] スレッド一覧の取得に失敗: $e');
       _threads = [];
       _threadError = '会話一覧を読み込めませんでした';
     } finally {
-      _isLoadingThreads = false;
-      notifyListeners();
+      // 【変更】現在のユーザーの処理だけが、読み込み表示を変更できる。
+      // 古い通信の終了で、新しい通信の読み込み表示を消さないため。
+      if (generation == _accountGeneration) {
+        _isLoadingThreads = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -526,8 +578,19 @@ _toolStatus = null;
     _endUnityThinking();
     final generation = ++_conversationGeneration;
 
+    // 【追加】前の会話の履歴取得状態を引き継がない。
+    _isLoadingOlder = false;
+    _historyCursor = null;
+    _hasMoreHistory = false;
+
+    // 【追加】前の会話の返答を、取り消し対象から外す。
+    _pendingResponseMessages.clear();
+
     _audioAssembler.reset();
     await _audioQueue.reset();
+
+    // 【追加】音声停止の待機中にログアウトされた場合も止める。
+    if (generation != _conversationGeneration) return;
 
     _isLoadingThreads = true;
     notifyListeners();
@@ -576,12 +639,18 @@ _toolStatus = null;
     if (service is! RaimServerService) return;
     if (threadId.isEmpty) return;
 
+    // 【追加】削除を始めたユーザーの世代を記録する。
+    final generation = _accountGeneration;
+
     _isLoadingThreads = true;
     _threadError = null;
     notifyListeners();
 
     try {
       await service.deleteThread(threadId);
+
+      // 【追加】ログアウト済みなら、新しいユーザーの一覧に触らない。
+      if (generation != _accountGeneration) return;
 
       _threads = _threads.where((t) => t.threadId != threadId).toList();
 
@@ -594,8 +663,10 @@ _toolStatus = null;
       RaimLog.d('[ChatProvider] スレッド削除に失敗: $e');
       _threadError = '会話を削除できませんでした';
     } finally {
-      _isLoadingThreads = false;
-      notifyListeners();
+      if (generation == _accountGeneration) {
+        _isLoadingThreads = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -608,15 +679,21 @@ _toolStatus = null;
     if (_messages.isNotEmpty) return;
     if (_isLoading) return;
 
+    // 【追加】一覧待ちの間にユーザーが変わったか確認する。
+    final generation = _accountGeneration;
+
     try {
       await loadThreads();
+      if (generation != _accountGeneration) return;
 
       if (_threads.isEmpty) return;
       if (_currentThreadId != null || _messages.isNotEmpty) return;
 
-      await switchThread(_threads.first.threadId);
-      // タイトルは会話内容から作られるためログに出さない
-      RaimLog.d('[ChatProvider] 前回の会話を復元: ${_threads.first.threadId}');
+      final threadId = _threads.first.threadId;
+      await switchThread(threadId);
+      if (generation != _accountGeneration) return;
+      // 【変更】待機後に一覧を参照し直さず、取得済みのIDを使う。
+      RaimLog.d('[ChatProvider] 前回の会話を復元: $threadId');
     } catch (e) {
       // 復元に失敗しても新規会話として続けられるので、黙って諦める
       RaimLog.d('[ChatProvider] 前回の会話を復元できませんでした: $e');
@@ -637,6 +714,14 @@ _toolStatus = null;
     // 遡る先が無い、または読み込み中なら何もしない
     if (threadId == null || cursor == null || cursor <= 0) return;
     if (_isLoadingOlder) return;
+    // 【追加】会話切り替え中には、前の会話の履歴を取得しない。
+    if (_isLoadingThreads) return;
+
+    // 【追加】会話IDと、その会話を開いた世代を記録する。
+    final generation = _conversationGeneration;
+    bool isCurrentConversation() =>
+        generation == _conversationGeneration &&
+        threadId == _currentThreadId;
 
     _isLoadingOlder = true;
     notifyListeners();
@@ -646,6 +731,9 @@ _toolStatus = null;
         threadId,
         beforeIndex: cursor,
       );
+
+      // 【追加】会話が変わっていたら、成功した結果でも捨てる。
+      if (!isCurrentConversation()) return;
 
       if (history != null && history.messages.isNotEmpty) {
         final older = history.messages.map(_toMessage).toList();
@@ -667,8 +755,11 @@ _toolStatus = null;
     } catch (e) {
       RaimLog.d('[ChatProvider] 過去メッセージの取得に失敗: $e');
     } finally {
-      _isLoadingOlder = false;
-      notifyListeners();
+      // 【変更】古い会話の処理で、新しい会話の読み込み表示を消さない。
+      if (isCurrentConversation()) {
+        _isLoadingOlder = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -697,6 +788,10 @@ _toolStatus = null;
     // 返事の途中で新しい会話にしたとき、古い返事の考え中の点を残さない
     _endUnityThinking();
     _conversationGeneration++;
+    // 【追加】前の会話の履歴読み込み状態を解除する。
+    _isLoadingOlder = false;
+    // 【追加】前の返答の取り消し対象を捨てる。
+    _pendingResponseMessages.clear();
     _audioAssembler.reset();
     unawaited(_audioQueue.reset());
     _currentThreadId = _generateThreadId();
@@ -713,22 +808,47 @@ _toolStatus = null;
     notifyListeners();
   }
 
-  /// 展示アカウントの無操作タイムアウト時に、現在の会話を破棄して
-  /// 次の来場者用の新しい会話へ切り替える。
-  ///
-  /// スレッドの期限切れ・削除はAWS側で管理するため、ここではサーバーへ
-  /// 削除要求を送らず、端末側の表示状態だけを新しくする。
-  Future<void> resetExhibitionSession() {
-    final oldThreadId = _currentThreadId;
+  // 【追加】ログアウト時に、前のユーザーのチャット状態を破棄する。
+  void resetForSignOut() {
+    // 実行中の一覧取得や返答を、古い世代の処理にする。
+    // 後から結果が届いても、画面に反映させないため。
+    _accountGeneration++;
+    _conversationGeneration++;
 
-    if (oldThreadId != null) {
-      _threads = _threads.where((t) => t.threadId != oldThreadId).toList();
-    }
+    // Unityの「考え中」表示と、再生中・待機中の音声を止める。
+    _endUnityThinking();
+    stopSpeaking();
+
+    // 会話本文・会話ID・会話一覧を消す。
+    _messages.clear();
+    _currentThreadId = null;
+    _threads = [];
+
+    // 古い履歴を追加取得するための情報を消す。
+    _historyCursor = null;
+    _hasMoreHistory = false;
+    _isLoadingOlder = false;
+
+    // 一覧取得中の表示と、前のユーザーのエラーを消す。
     _isLoadingThreads = false;
     _threadError = null;
-    startNewThread();
-    return Future<void>.value();
+
+    // 返答中・考え中・ツール使用中の表示を解除する。
+    _currentStreamingMessage = null;
+    _isLoading = false;
+    _isThinking = false;
+    _isUsingTool = false;
+    _toolStatus = null;
+
+    // ユーザーごとの状態を初期値に戻す。
+    _persona.value = 'bright';
+    _unityBridge.sendToolState(isUsingTool: false);
+
+    // 状態を変更したことを画面に知らせる。
+    notifyListeners();
   }
+
+  // 修正: 展示専用リセットを削除し、通常のログアウト処理は保持する。
 
   /// スレッド識別子を作る
   ///
@@ -782,6 +902,11 @@ _toolStatus = null;
       return;
     }
 
+    // 【追加】取り消し対象も、新しいMessageへ入れ替える。
+    if (_pendingResponseMessages.remove(current)) {
+      _pendingResponseMessages.add(updated);
+    }
+
     _messages[index] = updated;
     _currentStreamingMessage = updated;
   }
@@ -818,6 +943,8 @@ _toolStatus = null;
     // 新しい返答の音声は鳴らす
     _voiceMuted = false;
     _currentStreamingMessage = null;
+    // 【追加】今回の返答の記録を新しく始める。
+    _pendingResponseMessages.clear();
     _toolStatus = null;
     // ここに追加
     _isThinking = false;
@@ -836,8 +963,9 @@ _toolStatus = null;
     final imagesToUpload = pendingImages == null
         ? const <PendingImage>[]
         : List<PendingImage>.from(pendingImages);
-    if (imagesToUpload.length > CameraProvider.maxImageCount) {
-      _addLocalError('画像は10枚まで添付できます。');
+    // 修正: アップロード前に共通上限で拒否し、設定と同じ枚数を通知する。
+    if (imagesToUpload.length > RaimConfig.maxImageCount) {
+      _addLocalError('画像は${RaimConfig.maxImageCount}枚まで添付できます。');
       unawaited(_imageService.cleanupPendingImages(imagesToUpload));
       return;
     }
@@ -867,6 +995,8 @@ _toolStatus = null;
     try {
       if (imagesToUpload.isNotEmpty) {
         final idToken = await _idTokenGetter();
+        // 【追加】待機中にログアウトされたら、送信を続けない。
+        if (generation != _conversationGeneration) return;
         if (idToken == null || idToken.isEmpty) {
           throw const FormatException('画像アップロードにはログインが必要です。');
         }
@@ -877,6 +1007,8 @@ _toolStatus = null;
           userSub: userSub,
           requestId: requestId!,
         );
+        // 【追加】アップロード待ちの間の切り替えも確認する。
+        if (generation != _conversationGeneration) return;
         targetImages = uploaded.map((image) => image.toJson()).toList();
         RaimLog.d(
           '[ChatProvider] S3画像アップロード完了: '
@@ -887,10 +1019,10 @@ _toolStatus = null;
       final recentHistory = _messages.length > 21
           ? _messages.sublist(_messages.length - 21, _messages.length - 1)
           : _messages.sublist(0, _messages.length - 1);
-      //chatがかえってきているかの有無
-      bool chatReceived = false;
-      // AIに text・履歴・画像を送る
-      // v2.2では返答が複数回に分かれて届くため、await for で順番に受け取る
+      // 【変更】本文が届いただけでは成功にしない。
+      // chat_end / 旧形式chat / error のいずれかで終了を確認する。
+      bool responseEnded = false;
+
       await for (final response in _llmService.sendMessage(
         text,
         history: recentHistory,
@@ -898,32 +1030,32 @@ _toolStatus = null;
         requestId: requestId,
         threadId: requestThreadId,
       )) {
-        if (generation != _conversationGeneration) continue;
+        // 【変更】切り替え前の受信処理を終了する。
+        if (generation != _conversationGeneration) break;
+
         _handleResponse(response);
-        // チャット返答が来たか記録する
-        if (response.isChat || response.isTextChunk || response.isChatEnd) {
-          chatReceived = true;
+
+        // 【追加】エラー表示後に、別の失敗文を追加しない。
+        if (response.isError) {
+          responseEnded = true;
+          break;
+        }
+
+        if (response.isChatEnd || response.isChat) {
+          responseEnded = true;
+          _pendingResponseMessages.clear();
+          break;
         }
       }
-      //もしfalseだったら
-      if (generation == _conversationGeneration && !chatReceived) {
-        _messages.add(Message(
-          text: 'えっと……ごめん、上手く言葉が出なかったみたい。もう一度話しかけて？',
-          role: MessageRole.assistant,
-          timestamp: DateTime.now(),
-          emotion: 'sad',
-          intensity: 0.5,
-        ));
+
+      // 【変更】確定前に通信が終わった場合も、途中の本文を消す。
+      if (generation == _conversationGeneration && !responseEnded) {
+        _failCurrentResponse('返答を最後まで受信できませんでした。');
       }
     } catch (e) {
       if (generation == _conversationGeneration) {
-        _messages.add(Message(
-          text: "エラーが発生しました: $e",
-          role: MessageRole.assistant,
-          timestamp: DateTime.now(),
-          emotion: 'sad',
-          intensity: 0.5,
-        ));
+        // 【変更】通信例外でも、サーバーエラーと同じ後片付けをする。
+        _failCurrentResponse('エラーが発生しました: $e');
       }
       //成功・失敗に関わらず必ず実行される後処理
     } finally {

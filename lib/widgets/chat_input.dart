@@ -1,3 +1,4 @@
+// 修正: 更新済みの接続先制御を保持し、画像通知と不要機能削除の競合を解消した。
 //送信処理・画像添付状態の取得・送信後のリセット・ボタンのデザイン
 import 'dart:async';
 import 'dart:io';
@@ -153,15 +154,8 @@ class _ChatInputState extends State<ChatInput> {
     final text = _controller.text.trim();
     //CameraProviderの状態を取得
     final cameraProvider = context.read<CameraProvider>();
-    final isExhibitionDemo = context.read<AuthProvider>().isExhibitionDemo;
-
-    // 展示用デモでは画像添付を使わせない。既に選択状態が残っていた
-    // 場合も送信対象にしないよう、ここで破棄する。
-    if (isExhibitionDemo && cameraProvider.hasImage) {
-      cameraProvider.clearImage();
-    }
-
-    final hasImage = !isExhibitionDemo && cameraProvider.hasImage;
+    // 修正: 廃止した展示機能による添付制限を削除し、通常の選択状態を使う。
+    final hasImage = cameraProvider.hasImage;
     // リスト型のゲッターをそのまま取得
     final imagePaths = cameraProvider.selectedImagePaths;
     final pendingImages = List.of(cameraProvider.selectedImages);
@@ -189,8 +183,7 @@ class _ChatInputState extends State<ChatInput> {
   
   @override
   Widget build(BuildContext context) {
-  final auth = context.watch<AuthProvider>();
-  final isExhibitionDemo = auth.isExhibitionDemo;
+  // 修正: 展示用アカウントによる入力UIの出し分けを削除した。
   final voice = context.watch<VoiceController>();
   final manualMic = context.watch<VoiceSettingsProvider>().manualMicEnabled;
   final talking = voice.isTranscribing;
@@ -206,7 +199,8 @@ class _ChatInputState extends State<ChatInput> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // 追加：選択した画像を入力欄の上に表示
-          if (!isExhibitionDemo) const _SelectedImagePreview(),
+          // 修正: 通常の画像プレビューを常に利用する。
+          const _SelectedImagePreview(),
         // 聞き取った文を送るまでの待ち時間（設定「少し待ってから送る」）
         ListenableBuilder(
           listenable: _delayed,
@@ -241,10 +235,9 @@ class _ChatInputState extends State<ChatInput> {
           child: Row(
             children: [
               // 画像を添える（カメラ / ギャラリー）。以前は画面上部の CAPTURE ボタンだった
-              if (!isExhibitionDemo) ...[
-                const _AttachImageButton(),
-                const SizedBox(width: 8),
-              ],
+              // 修正: 廃止した展示機能の条件分岐を削除した。
+              const _AttachImageButton(),
+              const SizedBox(width: 8),
               Expanded(
                 child: ValueListenableBuilder<String>(
                   valueListenable: voice.heardText,
@@ -495,6 +488,8 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
         switch (value) {
           //開発検証用------------------------------
           case 'switch_server':
+            // 【追加・課題5】無効なビルドでは、処理を開始しない。
+            if (!RaimConfig.enableServerSwitch) return;
             // すでに切り替え中ならタップを無視（ロック）
             if (_isSwitching) return;
             _isSwitching = true;
@@ -550,6 +545,8 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
       },
       itemBuilder: (context) => /*const*/ [
         // 接続先切り替えメニュー項目(開発検証用)
+        // 【追加】有効なビルドだけ、項目をリストへ入れる。
+        if (RaimConfig.enableServerSwitch)
         PopupMenuItem(
           value: 'switch_server',
           child: Row(
@@ -581,7 +578,9 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
           ),
         ),
         //------------------------------------
-        const PopupMenuDivider(),
+        // 【追加】項目を隠したら、この区切り線も隠す。
+        if (RaimConfig.enableServerSwitch)
+          const PopupMenuDivider(),
         // メニューに「クレジット表記」ボタンを追加
         PopupMenuItem<String>(
           value: 'credits',
@@ -943,6 +942,17 @@ class _ChatGlassButton extends StatelessWidget {
   }
 }
 
+// 修正: 選択後も画面が有効な場合に、上限超過の件数をSnackBarで通知する。
+Future<void> _pickImageAndNotify(BuildContext context, ImageSource source) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final camera = context.read<CameraProvider>();
+  final rejected = await camera.pickAndStoreImage(source);
+  if (!context.mounted || rejected == 0) return;
+  messenger.showSnackBar(SnackBar(
+    content: Text('画像は${RaimConfig.maxImageCount}枚までです。$rejected枚は追加しませんでした。'),
+  ));
+}
+
 Future<void> showImageSourceSelector(
   BuildContext context,
 ) async {
@@ -974,8 +984,8 @@ Future<void> showImageSourceSelector(
                 title: const Text('カメラで撮影', style: TextStyle(color: Colors.white)),
                 onTap: () async {
                   Navigator.of(bc).pop(); // シートを閉じる
-                  final provider = Provider.of<CameraProvider>(context, listen: false);
-                  await provider.pickAndStoreImage(ImageSource.camera);
+                  // 修正: 上限を超えて受け入れなかった枚数も選択元画面で知らせる。
+                  await _pickImageAndNotify(context, ImageSource.camera);
                 },
               ),
               ListTile(
@@ -983,8 +993,8 @@ Future<void> showImageSourceSelector(
                 title: const Text('ギャラリーから選択', style: TextStyle(color: Colors.white)),
                 onTap: () async {
                   Navigator.of(bc).pop(); // シートを閉じる
-                  final provider = Provider.of<CameraProvider>(context, listen: false);
-                  await provider.pickAndStoreImage(ImageSource.gallery);
+                  // 修正: ギャラリーの複数選択でも超過を黙って切り捨てない。
+                  await _pickImageAndNotify(context, ImageSource.gallery);
                 },
               ),
               const SizedBox(height: 12),

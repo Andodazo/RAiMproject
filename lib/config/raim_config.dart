@@ -1,3 +1,6 @@
+// 【追加】releaseビルドかどうかの判定に使う。
+import 'package:flutter/foundation.dart';
+
 /// RAiM クライアント側で使う接続・認証設定です。
 ///
 /// ここに置いている値は、Flutter アプリが直接利用してよい公開設定だけです。
@@ -27,7 +30,8 @@ class RaimConfig {
   static const String transcribeRegion = 'ap-northeast-1';
   static const String transcribeLanguageCode = 'ja-JP';
 
-  static const int maxImageCount = 10;
+  // 修正: 選択・送信・アップロードで使う枚数上限をサーバーと同じ4枚に統一する。
+  static const int maxImageCount = 4;
 
   /// Cognito Managed Login のドメイン。
   static const String cognitoDomain =
@@ -80,27 +84,28 @@ class RaimConfig {
   /// 接続先切り替え UI を出すか。
   static const bool enableServerSwitch = bool.fromEnvironment(
     'RAIM_ENABLE_SERVER_SWITCH',
-    defaultValue: true,
+    // 【変更】指定がなければreleaseでは無効にする。
+    defaultValue: !kReleaseMode,
   );
 
-  /// 展示用ビルドかどうか。
-  ///
-  /// 展示版では保存済みの認証情報を起動時に使わず、毎回ログインを要求する。
-  /// 通常ビルドの既定値は false なので、既存の自動ログイン動作は変わらない。
-  static const bool exhibitionEnabled = bool.fromEnvironment(
-    'RAIM_EXHIBITION_ENABLED',
-    defaultValue: false,
-  );
+  // 修正: 廃止した展示機能のビルドフラグ・グループ・無操作時間設定を削除した。
 
-  /// 展示モードを許可する Cognito グループ名。
-  static const String exhibitionGroup = String.fromEnvironment(
-    'RAIM_EXHIBITION_GROUP',
-    defaultValue: 'raim-demo',
-  );
+  // 【追加】トークンを送ってよい、確認済みのホスト。
+  static const _allowedAwsHosts = <String>{
+    'd1403ont6098ah.cloudfront.net',
+  };
 
-  /// 展示用アカウントの無操作セッションを破棄するまでの時間。
-  static const Duration exhibitionInactivityTimeout = Duration(minutes: 5);
+  /// 接続先にAuthorizationヘッダーを付けてよいか。
+  static bool isAwsUrl(String url) {
+    // 【変更】URL全体の部分一致ではなく、解析したホスト名を使う。
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        uri.scheme != 'wss' ||
+        uri.userInfo.isNotEmpty) {
+      return false;
+    }
 
-  /// 接続先が AWS かどうか（Authorization ヘッダの付与判定に使う）。
-  static bool isAwsUrl(String url) => url.contains('cloudfront.net');
+    // 他のホストのパスやユーザー名にcloudfront.netがあっても通さない。
+    return _allowedAwsHosts.contains(uri.host.toLowerCase());
+  }
 }
