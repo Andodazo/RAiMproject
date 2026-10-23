@@ -356,11 +356,11 @@ class TranscribeSttService {
       stripWakePhrase,
       gate,
       callerOnly && hasInitial
-          ? initialAudio!.length /
+          ? initialAudio.length /
               (MicStreamService.sampleRate * MicStreamService.bytesPerSample)
           : null,
     );
-    if (hasInitial) session._audio.add(initialAudio!);
+    if (hasInitial) session._audio.add(initialAudio);
     unawaited(session._start());
     return session;
   }
