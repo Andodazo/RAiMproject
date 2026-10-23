@@ -57,10 +57,20 @@ enum SttEndReason {
 
 /// 聞き取りの結果。
 class SttOutcome {
-  const SttOutcome({required this.text, required this.reason, this.error});
+  const SttOutcome({
+    required this.text,
+    required this.reason,
+    this.error,
+    this.callerLost = false,
+  });
 
   /// 聞き取れた文字。無ければ空。
   final String text;
+
+  /// 呼んだ人の言葉だけを残そうとしたが、「ねえライム」のあとに呼んだ人の
+  /// 言葉が無く、ほかの人の言葉だけがあった（[text] は空になる）。
+  /// 直後に別の人が話すと、本人の言葉に別の話者が付くことがある。
+  final bool callerLost;
   final SttEndReason reason;
 
   /// 失敗したときの、ユーザーに見せてよい説明。
@@ -185,6 +195,25 @@ class TranscriptAccumulator {
     }
     if (counts.isEmpty) return null;
     return counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+  }
+
+  /// [after] 秒より後に、[speaker] が話した語があるか。
+  bool hasWordsFrom(String speaker, {required double after}) =>
+      _anyWordAfter(after, (s) => s == speaker);
+
+  /// [after] 秒より後に、[speaker] 以外の人が話した語があるか。
+  bool hasWordsFromOthers(String speaker, {required double after}) =>
+      _anyWordAfter(after, (s) => s != speaker);
+
+  bool _anyWordAfter(double after, bool Function(String speaker) test) {
+    for (final result in _results.values) {
+      for (final item in result.items) {
+        final speaker = item.speaker;
+        if (item.isPunctuation || speaker == null) continue;
+        if (item.startTime >= after && test(speaker)) return true;
+      }
+    }
+    return false;
   }
 
   /// [speaker] の言葉だけをつなげた文字。
@@ -412,6 +441,16 @@ class SttSession {
     return _transcript.text;
   }
 
+  /// 呼んだ人の言葉が残らず、ほかの人の言葉だけがあったか（[SttOutcome.callerLost]）。
+  bool get callerLost {
+    final until = _callerUntil;
+    if (until == null) return false;
+    final caller = _transcript.callerSpeaker(until: until);
+    if (caller == null) return false;
+    return !_transcript.hasWordsFrom(caller, after: until) &&
+        _transcript.hasWordsFromOthers(caller, after: until);
+  }
+
   bool get isDone => _outcome.isCompleted;
 
   /// 取り消す。聞き取った文字は捨てる。
@@ -637,7 +676,15 @@ class SttSession {
     }
 
     final heard = reason == SttEndReason.cancelled ? '' : text;
-    final outcome = SttOutcome(text: heard, reason: reason, error: error);
+    final outcome = SttOutcome(
+      text: heard,
+      reason: reason,
+      error: error,
+      callerLost: heard.isEmpty &&
+          reason != SttEndReason.cancelled &&
+          reason != SttEndReason.failed &&
+          callerLost,
+    );
     final seconds =
         _service._clock().difference(_startedAt).inMilliseconds / 1000;
     final gate = _gate;
