@@ -106,6 +106,19 @@ class RaimConfig {
     }
 
     // 他のホストのパスやユーザー名にcloudfront.netがあっても通さない。
-    return _allowedAwsHosts.contains(uri.host.toLowerCase());
+    final host = uri.host.toLowerCase();
+    return _allowedAwsHosts.contains(host) || host == _configuredServerHost;
   }
+
+  /// ビルド時に RAIM_SERVER_URL で決めた接続先のホスト（wss のときだけ）。
+  ///
+  /// 以前は上の固定ホストだけを見ていたので、--dart-define で別の AWS
+  /// （CloudFront を作り直したときなど）を指すと、トークンが付かずに
+  /// 接続を断られていた。ビルドする人が決めた接続先なので信用してよい。
+  /// ws:// の接続先（ローカル・Tailscale）には今までどおり付けない。
+  static final String? _configuredServerHost = () {
+    final uri = Uri.tryParse(serverUrl);
+    if (uri == null || uri.scheme != 'wss' || uri.host.isEmpty) return null;
+    return uri.host.toLowerCase();
+  }();
 }
