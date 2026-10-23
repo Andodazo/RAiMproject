@@ -303,10 +303,29 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     _isLoading = true;
     notifyListeners();
   }
+  /// 実行した client_action の ID（新しいものから最大 [_maxDoneActionIds] 件）
+  final List<String> _doneActionIds = [];
+  static const int _maxDoneActionIds = 100;
+
   /// ライムがアプリに頼んだ操作を流す。実行は ClientActionListener が行う。
+  ///
+  /// サーバーの再試行で同じ操作がもう一度届くことがある。以前はそのたびに
+  /// 実行していたので、駅アラームが二重に始まり得た（R-05）。
+  /// 同じ actionId は1回だけ流す。ID の無い古いサーバーの分はそのまま流す。
   void _handleClientAction(LLMResponse response) {
     final action = response.action;
     if (action.isEmpty) return;
+    final actionId = response.actionId;
+    if (actionId != null && actionId.isNotEmpty) {
+      if (_doneActionIds.contains(actionId)) {
+        RaimLog.d('[ChatProvider] 同じ操作がもう一度届いたので無視します: $action');
+        return;
+      }
+      _doneActionIds.add(actionId);
+      if (_doneActionIds.length > _maxDoneActionIds) {
+        _doneActionIds.removeAt(0);
+      }
+    }
     RaimLog.i('[ChatProvider] ライムから頼まれた操作: $action');
     if (!_clientActions.isClosed) {
       _clientActions.add(
