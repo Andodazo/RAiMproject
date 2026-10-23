@@ -18,6 +18,17 @@ GitHub は 50MB を超えるファイルで警告、100MB で拒否する。
 大きいモデル（`vosk-model-ja-0.22`、約1GB）に差し替える場合は
 リポジトリに入れられないので、Git LFS か別の配布方法を検討すること。
 
+## gtcrn_simple.onnx（駅アラームの雑音除去）
+
+駅アラームで、走行音などの雑音を消してから Vosk に渡すためのモデル（約520KB）。
+`StationDenoiser` が sherpa-onnx で動かす。初回にアプリ専用領域
+（`getApplicationSupportDirectory()/denoise`）へコピーして使う。
+
+元の配布元（sherpa-onnx の speech-enhancement-models）:
+https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx
+
+消すのは声以外の雑音だけで、周りの人の話し声は消えない。
+
 ## なぜ small なのか
 
 ウェイクワード検知は文法モードで認識候補を数語に絞るため、

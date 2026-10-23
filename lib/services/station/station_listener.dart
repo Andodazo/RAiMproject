@@ -6,6 +6,10 @@
 // モデルは共有し（sharedModel）、マイクも同じ1本を共有する。
 // そのため乗車中も「ねえライム」はそのまま使える。
 //
+// 【雑音を消す】
+// 走行音などの雑音は StationDenoiser で消してから Vosk に渡す（使えなければそのまま）。
+// 録音（StationRecorder）には消す前の音を残す。
+//
 // 【ライムの声を拾わない】
 // ライムが「次は新宿だよ」と喋ると、その声で自分が反応してしまう。
 // ライムが喋っている間と喋り終わって少しの間は、音を渡さない。
@@ -20,6 +24,7 @@ import 'package:vosk_flutter/vosk_flutter.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/station/station_alarm.dart';
+import 'package:raim_prototype/services/station/station_denoiser.dart';
 import 'package:raim_prototype/services/station/station_recorder.dart';
 import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 import 'package:raim_prototype/services/wake_word_service.dart';
@@ -52,6 +57,7 @@ class StationListener {
   final StreamController<String> _heard = StreamController<String>.broadcast();
 
   Recognizer? _recognizer;
+  StationDenoiser? _denoiser;
   StreamSubscription<Uint8List>? _micSub;
   final BytesBuilder _pending = BytesBuilder(copy: false);
   Future<void> _feeding = Future.value();
@@ -76,6 +82,8 @@ class StationListener {
       grammar: plan.grammar,
     );
     _recognizer = recognizer;
+    // 走行音などの雑音を消してから聞く。使えなければ null（そのまま聞く）
+    _denoiser = await StationDenoiser.create();
 
     final mic = MicStreamService.instance;
     mic.hold(this);
@@ -95,6 +103,8 @@ class StationListener {
       mic.unhold(this);
       _recognizer = null;
       await recognizer.dispose();
+      _denoiser?.dispose();
+      _denoiser = null;
       rethrow;
     }
 
@@ -121,6 +131,8 @@ class StationListener {
     _recognizer = null;
     await _feeding.catchError((Object _) {});
     await recognizer?.dispose();
+    _denoiser?.dispose();
+    _denoiser = null;
     _pending.clear();
 
     final mic = MicStreamService.instance;
@@ -168,8 +180,10 @@ class StationListener {
 
   void _onChunk(Uint8List chunk) {
     StationRecorder.add(chunk); // 【確認用・後で消す】聞かない間の音も残す
+    // 雑音を消す。聞かない間も渡し続ける（途中で途切れると消し方が乱れる）
+    final clean = _denoiser?.process(chunk) ?? chunk;
     if (_muted) return;
-    _pending.add(chunk);
+    _pending.add(clean);
     if (_pending.length < _feedBytes) return;
 
     final buffer = _pending.takeBytes();
