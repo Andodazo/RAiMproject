@@ -412,6 +412,40 @@ void main() {
 
       final outcome = await session.outcome;
       expect(outcome.text, '明日の天気は？');
+      expect(outcome.callerLost, isFalse);
+    });
+
+    test('呼んだ人の続きの言葉が無く、ほかの人だけなら空で callerLost', () async {
+      socket = _FakeSocket();
+      final stt = TranscribeSttService(
+        presign: () => presign.future,
+        connect: (_) => socket,
+        openMic: () async => mic.stream,
+        timing: _fast,
+      );
+      final session = stt.listen(
+        initialAudio: Uint8List(32000),
+        stripWakePhrase: true,
+        callerOnly: true,
+      );
+      presign.complete(Uri.parse('wss://example.com'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      // 直後に別の人が話し、本人の続きにも別の話者が付いてしまった
+      socket.reply([
+        _spk('a', [
+          ('ねえ', '0', 0.1),
+          ('ライム', '0', 0.4),
+          ('、', null, 0.6),
+          ('明日', '1', 1.3),
+          ('の', '1', 1.5),
+          ('天気', '1', 1.6),
+        ]),
+      ]);
+
+      final outcome = await session.outcome;
+      expect(outcome.text, isEmpty);
+      expect(outcome.callerLost, isTrue);
     });
 
     test('話者が付いてこなければ、今までどおり全部使う', () async {

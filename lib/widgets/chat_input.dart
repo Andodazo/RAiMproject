@@ -97,6 +97,8 @@ class _ChatInputState extends State<ChatInput> {
   /// 入力欄のプレースホルダ。聞き取り中は途中経過を出す。
   String _hint(VoiceController voice, String heard) {
     if (voice.isTranscribing) return heard.isEmpty ? '聞いてるよ…' : heard;
+    final notice = voice.sttNotice;
+    if (notice != null) return notice;
     final error = voice.sttError;
     if (error != null) return '聞き取れませんでした（$error）';
     return '何でも話してね';
@@ -284,7 +286,7 @@ class _ChatInputState extends State<ChatInput> {
                             ),
 
                       hintStyle: TextStyle(
-                        color: talking
+                        color: talking || voice.sttNotice != null
                             ? const Color(0xFFB7F35A)
                             : voice.sttError != null
                                 ? const Color(0xFFFF8A80)

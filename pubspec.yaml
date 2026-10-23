@@ -81,6 +81,9 @@ dependencies:
   shared_preferences: ^2.3.3
   # デバッグ用 wav の保存先を得るため
   path_provider: ^2.1.5
+  # 駅アラーム: 走行音などの雑音を消してから車内アナウンスを聞く（GTCRN）。
+  # モデルは assets/models/gtcrn_simple.onnx（約520KB）
+  sherpa_onnx: ^1.13.8
 
   cupertino_icons: ^1.0.8
   # image 4.9 以降は archive ^4 を要求し、vosk_flutter の archive ^3 と

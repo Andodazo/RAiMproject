@@ -126,6 +126,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   }
 
   Future<void> _enterMascotMode() async {
+    // await をまたいで context を使わないよう、先に取っておく
+    final unity = context.read<UnityCommunicator>();
     await _mascot.enterMascotMode();
 
     // 通常は main() で登録済み。_ready を見て二重登録はしないので、
@@ -144,7 +146,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
       // すでに接続済みで位置も分かっている場合だけ、ここで自動表示する。
       // まだUnityの準備前なら、発信中のまま接続通知を待つ。
       if (_isExhibitionDemo &&
-          context.read<UnityCommunicator>().isUnityConnected &&
+          unity.isUnityConnected &&
           _mascot.hasCharacterPosition) {
         await _mascot.showAtCharacter();
         if (mounted && _mascot.isVisible) {
@@ -851,11 +853,14 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                     // しか出ておらず、Windows では何も出ていなかった。
                     hintText: voice.isTranscribing
                         ? (heard.isEmpty ? '聞いてるよ…' : _tail(heard))
-                        : voice.sttError != null
-                            ? '聞き取れませんでした（${voice.sttError}）'
-                            : _hintText(chat),
+                        : voice.sttNotice ??
+                            (voice.sttError != null
+                                ? '聞き取れませんでした（${voice.sttError}）'
+                                : _hintText(chat)),
                     hintStyle: TextStyle(
-                      color: voice.isTranscribing || _statusText(chat) != null
+                      color: voice.isTranscribing ||
+                              voice.sttNotice != null ||
+                              _statusText(chat) != null
                           ? _lime
                           : voice.sttError != null
                               ? const Color(0xFFE06C6C)
@@ -1142,6 +1147,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   Future<void> _logout() async {
     final auth = context.read<AuthProvider>();
     final raimService = context.read<RaimServerService>();
+    final unity = context.read<UnityCommunicator>();
 
     await _closeWindow();
 
@@ -1156,7 +1162,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     await _mascot.exitMascotMode();
 
     // Unity側に通常表示を戻す指示を先に出してから認証状態を破棄する。
-    context.read<UnityCommunicator>().setExhibitionMode(false);
+    unity.setExhibitionMode(false);
 
     await auth.logout();
   }
