@@ -303,10 +303,29 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     _isLoading = true;
     notifyListeners();
   }
+  /// 実行した client_action の ID（新しいものから最大 [_maxDoneActionIds] 件）
+  final List<String> _doneActionIds = [];
+  static const int _maxDoneActionIds = 100;
+
   /// ライムがアプリに頼んだ操作を流す。実行は ClientActionListener が行う。
+  ///
+  /// サーバーの再試行で同じ操作がもう一度届くことがある。以前はそのたびに
+  /// 実行していたので、駅アラームが二重に始まり得た（R-05）。
+  /// 同じ actionId は1回だけ流す。ID の無い古いサーバーの分はそのまま流す。
   void _handleClientAction(LLMResponse response) {
     final action = response.action;
     if (action.isEmpty) return;
+    final actionId = response.actionId;
+    if (actionId != null && actionId.isNotEmpty) {
+      if (_doneActionIds.contains(actionId)) {
+        RaimLog.d('[ChatProvider] 同じ操作がもう一度届いたので無視します: $action');
+        return;
+      }
+      _doneActionIds.add(actionId);
+      if (_doneActionIds.length > _maxDoneActionIds) {
+        _doneActionIds.removeAt(0);
+      }
+    }
     RaimLog.i('[ChatProvider] ライムから頼まれた操作: $action');
     if (!_clientActions.isClosed) {
       _clientActions.add(
@@ -451,11 +470,31 @@ _toolStatus = null;
   // 途中のストリーミング状態や検索中表示もここで解除する。
   // 【変更】サーバーのエラーを、共通の失敗処理へ渡す。
   void _handleError(LLMResponse response) {
+    if (response.raw['code'] == 'THREAD_DELETED') {
+      _handleThreadDeleted();
+      return;
+    }
     _failCurrentResponse(
       response.text.isNotEmpty
           ? response.text
           : 'エラーが発生しました',
     );
+  }
+
+  /// 送った会話がサーバーで消されていた（別の端末で消した など）。
+  ///
+  /// サーバーは消したスレッドを作り直さずに THREAD_DELETED を返す（R-02）。
+  /// 以前はその ID で作り直されて、消した会話が復活していた。
+  /// 画面の発言は残したまま新しい会話の ID に切り替え、送り直してもらう。
+  /// （startNewThread だと、今送った発言まで画面から消えてしまう）
+  void _handleThreadDeleted() {
+    final deletedId = _currentThreadId;
+    _threads = _threads.where((t) => t.threadId != deletedId).toList();
+    _currentThreadId = _generateThreadId();
+    _historyCursor = null;
+    _hasMoreHistory = false;
+    RaimLog.d('[ChatProvider] 会話が消されていたので、新しい会話にしました');
+    _failCurrentResponse('この会話は消されていたので、新しい会話にしました。もう一度送ってください。');
   }
 
   // 【追加】今回の途中の返答を取り消し、エラーだけを残す。
@@ -1014,6 +1053,14 @@ _toolStatus = null;
           '[ChatProvider] S3画像アップロード完了: '
           'requestId=$requestId, count=${targetImages.length}, bytes=$totalBytes',
         );
+      }
+      // 画像のアップロードなどを待っている間に会話が変わっていたら送らない。
+      // 以前はここで確かめておらず、待っている間に別の会話を開くと、
+      // 前の会話あての発言をそのまま送っていた（R-02）。
+      if (generation != _conversationGeneration) return;
+      if (requestThreadId != _currentThreadId) {
+        _failCurrentResponse('会話が切り替わったので、送りませんでした。');
+        return;
       }
       //20のmessageまで履歴に残す
       final recentHistory = _messages.length > 21

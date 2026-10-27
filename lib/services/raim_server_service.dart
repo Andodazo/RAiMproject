@@ -34,6 +34,11 @@
 // 5. 「話しかけて起こす」フロー
 //    offline 状態でユーザーが送信したら、内部で再接続を試みる。
 //    成功すれば「寝ていたライムが起きた」演出になる。
+//
+// 6. アクセストークンの期限
+//    サーバー（Edge）は、接続したときのトークンの期限（約1時間）が切れた接続への
+//    要求に TOKEN_EXPIRED を返して切断する。期限の少し前に新しいトークンで
+//    つなぎ直し、それでも TOKEN_EXPIRED が返ったら、つなぎ直して1回だけ送り直す。
 
 import 'dart:async';
 import 'dart:convert';
@@ -47,6 +52,7 @@ import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/services/llm_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/config/raim_config.dart';
+import 'package:uuid/uuid.dart';
 /// 接続状態の列挙
 ///
 /// 将来 UI 側で立ち絵切替や Zzz... 表示等に使うため、enum で公開する。
@@ -158,6 +164,18 @@ class RaimServerService implements LLMService {
   /// disconnect() はログアウトなどでも呼ぶため、StreamController は dispose() でだけ閉じる。
   bool _disposed = false;
 
+  /// トークンの期限の前につなぎ直すためのタイマー
+  Timer? _tokenRefreshTimer;
+
+  /// 期限前のつなぎ直しを、返事を待ち終わるまで延ばしているか
+  bool _tokenRefreshPending = false;
+
+  /// トークンの期限のどれだけ前につなぎ直すか。
+  ///
+  /// AuthService は期限まで5分を切ったトークンを更新してから返すので、
+  /// それより短くして、つなぎ直すときに新しいトークンが来るようにする。
+  static const Duration tokenRefreshMargin = Duration(minutes: 3);
+
   /// 現在のセッションID
   /// サーバーから session_start で受信して保持する
   String? _sessionId;
@@ -259,12 +277,14 @@ class RaimServerService implements LLMService {
       };
       // AWS（cloudfront.net）接続時のみアクセストークンを付与する
       final isAws = RaimConfig.isAwsUrl(_serverUrl);
+      DateTime? tokenExpiresAt;
       if (isAws) {
         // 引数で渡されたトークンか、無ければ accessTokenGetter から最新トークンを取得
         final token = accessToken ?? await accessTokenGetter?.call();
         if (token != null && token.isNotEmpty) {
           headers['Authorization'] = 'Bearer $token';
           // Tailscale の場合は isAws が false になるため、Authorization ヘッダーは付与されない
+          tokenExpiresAt = tokenExpiry(token);
         }
       }
       // ヘッダーを付与してWebSocket 接続を確立
@@ -298,6 +318,7 @@ class RaimServerService implements LLMService {
       _reconnectAttempts = 0;
       // 新しくつながったので、古い接続が生きているかの確認はもういらない
       _stopAliveCheck();
+      _scheduleTokenRefresh(tokenExpiresAt);
       _setState(RaimConnectionState.connected);
     } catch (e) {
       // 張り直しや切断で捨てられた接続の失敗は、再接続の予約に使わない
@@ -318,6 +339,94 @@ class RaimServerService implements LLMService {
     } catch (_) {}
   }
 
+  // ─────────────────────────────────────────────
+  // アクセストークンの期限
+  // ─────────────────────────────────────────────
+
+  /// JWT の `exp`（期限）を読む。読めなければ null。
+  ///
+  /// 署名は確かめない（確かめるのはサーバーの Authorizer）。
+  /// つなぎ直す時刻を決めるためだけに使う。
+  static DateTime? tokenExpiry(String token) {
+    final parts = token.split('.');
+    if (parts.length != 3) return null;
+    try {
+      final payload = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      );
+      if (payload is! Map) return null;
+      final exp = payload['exp'];
+      if (exp is! num) return null;
+      return DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 期限 [expiresAt] のトークンでつないだとき、いつつなぎ直すか。
+  ///
+  /// もう [tokenRefreshMargin] を切っていたら null（予約しない）。
+  /// 更新に失敗して古いトークンしか無いと、すぐにつなぎ直しを繰り返すため。
+  /// そのときは TOKEN_EXPIRED が返ったときの送り直しに任せる。
+  static Duration? tokenRefreshDelay(DateTime expiresAt, {DateTime? now}) {
+    final delay =
+        expiresAt.difference(now ?? DateTime.now()) - tokenRefreshMargin;
+    return delay > Duration.zero ? delay : null;
+  }
+
+  /// サーバーの「トークンの期限切れ」エラーか。
+  static bool isTokenExpiredError(LLMResponse response) {
+    return response.isError && response.raw['code'] == 'TOKEN_EXPIRED';
+  }
+
+  void _scheduleTokenRefresh(DateTime? expiresAt) {
+    _cancelTokenRefresh();
+    if (expiresAt == null) return;
+    final delay = tokenRefreshDelay(expiresAt);
+    if (delay == null) return;
+    RaimLog.d('[RaimServerService] トークンの期限の前に、${delay.inMinutes}分後につなぎ直します');
+    _tokenRefreshTimer = Timer(delay, _onTokenRefreshDue);
+  }
+
+  void _cancelTokenRefresh() {
+    _tokenRefreshTimer?.cancel();
+    _tokenRefreshTimer = null;
+    _tokenRefreshPending = false;
+  }
+
+  void _onTokenRefreshDue() {
+    _tokenRefreshTimer = null;
+    // 返事を待っている途中に張り直すと、古い接続あての返事を受け取れない。
+    // 待ち終わってからつなぎ直す（期限までは少し余裕がある）
+    if (_repliesInFlight > 0) {
+      RaimLog.d('[RaimServerService] 返事を待っているので、終わってからつなぎ直します');
+      _tokenRefreshPending = true;
+      return;
+    }
+    RaimLog.d('[RaimServerService] トークンの期限が近いので、つなぎ直します');
+    unawaited(reconnectNow());
+  }
+
+  /// 返事を待ち終わったときに呼ぶ。延ばしていたつなぎ直しをする。
+  void _runPendingTokenRefresh() {
+    if (!_tokenRefreshPending || _repliesInFlight > 0) return;
+    _tokenRefreshPending = false;
+    RaimLog.d('[RaimServerService] 延ばしていたつなぎ直しをします');
+    unawaited(reconnectNow());
+  }
+
+  /// TOKEN_EXPIRED で切られたあと、新しいトークンですぐにつなぎ直す。
+  ///
+  /// 以前はこれが無く、期限が切れた後の最初の送信がエラーになり、
+  /// 自動の再接続が済んだ次の送信からやっと届いていた。
+  Future<void> _reconnectForExpiredToken() async {
+    RaimLog.d('[RaimServerService] トークンの期限切れで切られたので、つなぎ直して送り直します');
+    await reconnectNow();
+    if (_state != RaimConnectionState.connected) {
+      throw Exception('RAiMに接続できていません: state=$_state');
+    }
+  }
+
   /// 再接続の待ち時間を決める。
   ///
   /// 1, 2, 4, 8, 16, 32, 60秒 と伸ばし、上限は [_maxReconnectDelaySeconds]。
@@ -336,6 +445,7 @@ class RaimServerService implements LLMService {
     _intentionalClose = true;  // 自動再接続を抑止
     _connectGen++;  // 接続を待っている途中なら、その結果を捨てる
     _stopAliveCheck();
+    _cancelTokenRefresh();
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
 
@@ -456,6 +566,7 @@ class RaimServerService implements LLMService {
   void _onDone() {
     RaimLog.d('[RaimServerService] Connection closed by server');
     _sessionId = null;  // セッションIDも消す（再接続時は新セッション）
+    _cancelTokenRefresh();  // 次につないだときのトークンで予約し直す
     if (_intentionalClose) return;  // 意図的な切断ならリトライしない
     _scheduleReconnect();
   }
@@ -521,6 +632,7 @@ class RaimServerService implements LLMService {
     RaimLog.d('[RaimServerService] 接続を張り直します（state=$_state）');
     // ここで張り直すので、生きているかの確認はもういらない
     _stopAliveCheck();
+    _cancelTokenRefresh();
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     // 裏で接続を待っている途中なら、その結果を捨てる（二重につながらないように）
@@ -639,6 +751,18 @@ class RaimServerService implements LLMService {
         response.isThreadHistory ||
         response.isThreadDeleted;
   }
+
+  /// 要求に付ける ID を作る。サーバーの形式（英数字・-・_、64文字まで）に合う。
+  static String newRequestId() => const Uuid().v4();
+
+  /// [requestId] の要求への応答か。
+  ///
+  /// 同じ WebSocket で要求が重なると、以前は先に届いた応答を、どの要求のものかを
+  /// 見ずに受け取っていた。会話を切り替えた直後などに、別の会話の返事や
+  /// 別の一覧を受け取り得た（X-03）。今は requestId が一致するものだけを受け取る。
+  static bool isResponseTo(LLMResponse response, String requestId) {
+    return response.requestId == requestId;
+  }
  @override
   Stream<LLMResponse> sendMessage(
     String userInput, {
@@ -663,13 +787,14 @@ class RaimServerService implements LLMService {
     final payload = <String, dynamic>{
       'text': userInput,
     };
-    // 画像がある場合は、S3参照形式と画像付きリクエストの識別子を追加する。
+    // どの要求への応答かを見分けるため、画像が無くても requestId を付ける。
+    // 以前は画像付きのときだけ付けていた。
+    final myRequestId =
+        (requestId == null || requestId.isEmpty) ? newRequestId() : requestId;
+    payload['requestId'] = myRequestId;
+    // 画像がある場合は、S3参照形式を追加する。
     if (images != null && images.isNotEmpty) {
-      if (requestId == null || requestId.isEmpty) {
-        throw const FormatException('画像付きメッセージにはrequestIdが必要です。');
-      }
       payload['type'] = 'user_message';
-      payload['requestId'] = requestId;
       payload['images'] = images;
     }
     // session_id がある場合は送信に含める
@@ -699,14 +824,20 @@ class RaimServerService implements LLMService {
     } catch (_) {
       // 位置が無ければ、ライムが「どこの天気？」と聞く
     }
-    // 送信後に返ってくる複数メッセージを順番に受け取るためのIterator
-    final iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
     _repliesInFlight++;
+    // 送信後に返ってくる複数メッセージを順番に受け取るためのIterator
+    var iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
+    // TOKEN_EXPIRED で送り直したか（送り直すのは1回だけ）
+    var resent = false;
+    // 最初に届いた応答の attempt（サーバーが要求をやり直した回数）。
+    // やり直すと1回目の途中までの分と2回目の分が両方届き得るので、
+    // 最初に見た回の分だけを渡す（同じ文が二重に表示されないように）。
+    int? lockedAttempt;
 
     try {
       // 先に受信待ちを開始してから送信する
       // 送信直後に返答が来ても取り逃がさないため
-      final firstResponse = iterator.moveNext();
+      var firstResponse = iterator.moveNext();
       // WebSocketでサーバーへ送信する
       _channel!.sink.add(jsonEncode(payload));
       // 最初の応答を待つ
@@ -722,6 +853,45 @@ class RaimServerService implements LLMService {
       // text_chunk / audio_chunk / tool_call などを順番に返す
       while (hasResponse) {
         final response = iterator.current;
+        // 別の要求への応答・別の回の分は読み飛ばす
+        final attempt = response.attempt;
+        final mine = isResponseTo(response, myRequestId);
+        if (mine) lockedAttempt ??= attempt;
+        if (!mine || (attempt != null && attempt != lockedAttempt)) {
+          hasResponse = await iterator.moveNext().timeout(
+            requestTimeout,
+            onTimeout: () {
+              throw TimeoutException(
+                'RAiMからの次の応答が遅すぎます',
+                requestTimeout,
+              );
+            },
+          );
+          continue;
+        }
+        // トークンの期限切れで断られた。サーバーはこの要求を受け付けていない
+        // （会話を進める前に断っている）ので、つなぎ直して同じものを送り直してよい。
+        if (!resent && isTokenExpiredError(response)) {
+          resent = true;
+          await iterator.cancel();
+          await _reconnectForExpiredToken();
+          // つなぎ直すとセッションは新しくなる
+          payload.remove('session_id');
+          if (_sessionId != null) payload['session_id'] = _sessionId;
+          iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
+          firstResponse = iterator.moveNext();
+          _channel!.sink.add(jsonEncode(payload));
+          hasResponse = await firstResponse.timeout(
+            requestTimeout,
+            onTimeout: () {
+              throw TimeoutException(
+                'RAiMからの最初の応答が遅すぎます',
+                requestTimeout,
+              );
+            },
+          );
+          continue;
+        }
         // スレッド操作への応答は会話の応答ではないので渡さない。
         // 以前はそのまま渡しており、ChatProvider が
         // 「未対応のメッセージ type: thread_list」を出していた。
@@ -748,6 +918,7 @@ class RaimServerService implements LLMService {
       _repliesInFlight--;
       // このsendMessage専用の受信待ちを終了する
       await iterator.cancel();
+      _runPendingTokenRefresh();
     }
   }
 
@@ -801,7 +972,9 @@ class RaimServerService implements LLMService {
         'threadId': threadId,
         'beforeIndex': ?beforeIndex,
       },
-      matches: (r) => r.isThreadHistory,
+      // 返ってきた threadId も確かめる（別の会話の履歴を並べないように）
+      matches: (r) =>
+          r.isThreadHistory && (r.threadId == null || r.threadId == threadId),
       label: 'thread.history',
     );
 
@@ -818,7 +991,8 @@ class RaimServerService implements LLMService {
 
     await _requestOnce(
       payload: {'type': 'thread.delete', 'threadId': threadId},
-      matches: (r) => r.isThreadDeleted,
+      matches: (r) =>
+          r.isThreadDeleted && (r.threadId == null || r.threadId == threadId),
       label: 'thread.delete',
     );
   }
@@ -840,13 +1014,20 @@ class RaimServerService implements LLMService {
       throw Exception('RAiMに接続できていません: state=$_state');
     }
 
+    // どの要求への応答かを見分けるための ID
+    final requestId = newRequestId();
+    final body = {...payload, 'requestId': requestId};
+
     _broadcaster ??= StreamController<LLMResponse>.broadcast();
-    final iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
+    var iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
+    // 待っている間に期限前のつなぎ直しが走ると応答を受け取れないので、数に入れる
+    _repliesInFlight++;
+    var resent = false;
 
     try {
       // 送信より先に受信待ちを始める（即答されても取り逃がさないため）
       var hasResponse = iterator.moveNext();
-      _channel!.sink.add(jsonEncode(payload));
+      _channel!.sink.add(jsonEncode(body));
 
       // 目的の応答が来るまで読み飛ばす。
       // 会話の text_chunk などが混ざる可能性があるため。
@@ -859,8 +1040,23 @@ class RaimServerService implements LLMService {
       )) {
         final response = iterator.current;
 
+        // 別の要求への応答は読み飛ばす（X-03）
+        if (!isResponseTo(response, requestId)) {
+          hasResponse = iterator.moveNext();
+          continue;
+        }
         if (matches(response)) {
           return response.raw;
+        }
+        // トークンの期限切れで断られたら、つなぎ直して1回だけ送り直す
+        if (!resent && isTokenExpiredError(response)) {
+          resent = true;
+          await iterator.cancel();
+          await _reconnectForExpiredToken();
+          iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
+          hasResponse = iterator.moveNext();
+          _channel!.sink.add(jsonEncode(body));
+          continue;
         }
         if (response.isError) {
           throw Exception('$label に失敗しました: ${response.text}');
@@ -871,7 +1067,9 @@ class RaimServerService implements LLMService {
 
       throw Exception('$label の応答が得られませんでした');
     } finally {
+      _repliesInFlight--;
       await iterator.cancel();
+      _runPendingTokenRefresh();
     }
   }
 }
