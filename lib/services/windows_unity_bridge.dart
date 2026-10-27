@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_web_socket/shelf_web_socket.dart';
@@ -53,6 +54,46 @@ class WindowsUnityBridge implements UnityCommunicator {
   /// Unity がまだ繋がっていない間のメッセージを溜めておく。
   final List<String> _pending = [];
   static const int _maxPending = 16;
+
+  static const Duration _deviceTimeSyncInterval = Duration(minutes: 5);
+  Timer? _timeTimer;
+  AppLifecycleListener? _timeLifecycle;
+
+  String _deviceTimeMessage() {
+    // 日時と時差は、同じ1回の取得結果から送る。
+    final now = DateTime.now();
+    return jsonEncode({
+      'type': 'device_time',
+      'unix_ms': now.millisecondsSinceEpoch,
+      'utc_offset_minutes': now.timeZoneOffset.inMinutes,
+    });
+  }
+
+  void _sendDeviceTime() {
+    if (_timeTimer == null || _clients.isEmpty) return;
+    final message = _deviceTimeMessage();
+    // 時刻は保留せず、認証済みの接続にだけ送る。
+    for (final client in _clients) {
+      _sendToClient(client, message);
+    }
+  }
+
+  void _startDeviceClock() {
+    // start()が繰り返されても、タイマーと復帰通知を増やさない。
+    _timeTimer ??= Timer.periodic(
+      _deviceTimeSyncInterval,
+      (_) => _sendDeviceTime(),
+    );
+    _timeLifecycle ??= AppLifecycleListener(onResume: _sendDeviceTime);
+    _sendDeviceTime();
+  }
+
+  void _stopDeviceClock() {
+    _timeTimer?.cancel();
+    _timeTimer = null;
+    _timeLifecycle?.dispose();
+    _timeLifecycle = null;
+  }
 
   // 修正（9）: 展示状態を保持せず、Unity は通常のマスコットとして起動する。
 
@@ -128,6 +169,9 @@ class WindowsUnityBridge implements UnityCommunicator {
 
           _clients.add(webSocket);
           RaimLog.d('Unity 認証成功: ${_clients.length}台目');
+
+          // 初回接続・再接続とも、認証成功の通知に続けて新しい時刻を送る。
+          _sendToClient(webSocket, _deviceTimeMessage());
 
           // 溜まっていた分を流して、接続直後から正しい状態にする
           _flushPending(webSocket);
@@ -237,6 +281,8 @@ class WindowsUnityBridge implements UnityCommunicator {
 
     RaimLog.d('WebSocketサーバー起動: ws://localhost:$port');
 
+    _startDeviceClock();
+
     // サーバーを立ててから Unity を起こす。この順序が大事で、
     // 逆にすると Unity 側が接続に失敗して再接続待ちになる。
     if (autoLaunchUnity) {
@@ -262,6 +308,7 @@ class WindowsUnityBridge implements UnityCommunicator {
 
   @override
   Future<void> stop() async {
+    _stopDeviceClock();
     // _clients をそのまま回すと、await の間に onDone が
     // _clients.remove() を呼んで ConcurrentModificationError になる。
     // コピーを回す。
