@@ -154,8 +154,14 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
       },
     );
     _bubbleSync = SpeechBubbleSync(
-      onShow: (text) => _unityBridge.sendText(text: text),
-      onBreak: _unityBridge.sendBubbleBreak,
+      onShow: (text) {
+        RaimLog.d('[Bubble] 表示 ${RaimLog.size(text)}');
+        _unityBridge.sendText(text: text);
+      },
+      onBreak: () {
+        RaimLog.d('[Bubble] ページ送り');
+        _unityBridge.sendBubbleBreak();
+      },
       onEnd: (fullText) => _unityBridge.sendChatEnd(fullText: fullText),
       // 声が鳴らないときは、待たずに届いた順に出す
       isImmediate: () => _voiceMuted || _isSpeechMuted(),

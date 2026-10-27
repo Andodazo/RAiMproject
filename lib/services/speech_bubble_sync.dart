@@ -10,7 +10,7 @@ import 'dart:async';
 /// 【合わせ方】
 /// サーバーは1つの文ごとに chunk_id を振り、同じ chunk_id で文字と声を送ってくる。
 /// 文字はここに持っておき、同じ chunk_id の声が鳴り始めたときに吹き出しへ出す。
-/// 1ページに収まらなくなったら、吹き出しを区切って次のページにする。
+/// 1ページに収まらなくなったら、文の終わりで吹き出しを区切って次のページにする。
 ///
 /// 【声が来ないとき】
 /// 次のどれでも、文字が出ないまま残らないようにする。
@@ -30,6 +30,8 @@ class SpeechBubbleSync {
     this.audioWait = const Duration(milliseconds: 2500),
     this.audioStartLimit = const Duration(seconds: 6),
     this.pageChars = 50,
+    this.commaPageChars = 70,
+    this.maxPageChars = 90,
   })  : _isImmediate = isImmediate ?? (() => false),
         _scheduler = scheduler ?? Timer.new;
 
@@ -51,8 +53,25 @@ class SpeechBubbleSync {
   /// 声は届いたのに鳴り始めないときに、あきらめて出すまでの時間
   final Duration audioStartLimit;
 
-  /// 1ページに入れる文字数の目安。超えそうなら次のページにする
+  /// 1ページに入れる文字数の目安。超えそうなら、文の終わりで次のページにする。
+  ///
+  /// サーバーは文字を「。」だけでなく「、」や30文字ごと（言葉の途中でも）で切って
+  /// 送ってくる。その切れ目でページを替えると、文や言葉の途中で替わって読みにくい。
+  /// そのため、ページを替えるのは前の文字が文の終わり（。！？）のときだけにする。
   final int pageChars;
+
+  /// 文が終わらないまま、ここまで長くなったら「、」の後でページを替える
+  final int commaPageChars;
+
+  /// それでも終わらないとき、ここを超えたら切れ目がどこでもページを替える。
+  /// Unity の吹き出しの高さの上限（超えると古い行から消す）に掛からないため
+  final int maxPageChars;
+
+  /// 今のページに最後に出した文字
+  String _lastShown = '';
+
+  static final RegExp _sentenceEnd = RegExp(r'[。！？!?…\n][」』）)\s]*$');
+  static final RegExp _commaEnd = RegExp(r'[、,][\s]*$');
 
   /// まだ吹き出しに出していない文と区切り（届いた順）
   final List<_Item> _pending = [];
@@ -142,6 +161,7 @@ class SpeechBubbleSync {
     _endPending = false;
     _fullText = null;
     _pageLength = 0;
+    _lastShown = '';
   }
 
   void dispose() => reset();
@@ -158,6 +178,7 @@ class SpeechBubbleSync {
         final fullText = _fullText;
         _fullText = null;
         _pageLength = 0;
+        _lastShown = '';
         onEnd(fullText);
       }
       return;
@@ -204,17 +225,29 @@ class SpeechBubbleSync {
   }
 
   void _show(String text) {
-    // 今のページに収まらないなら、区切ってから出す
-    if (_pageLength > 0 && _pageLength + text.length > pageChars) {
-      _break();
-    }
+    if (_shouldTurnPage(text.length)) _break();
     onShow(text);
     _pageLength += text.length;
+    _lastShown = text;
+  }
+
+  /// 次の文字（[length] 文字）を出す前に、ページを替えるか
+  bool _shouldTurnPage(int length) {
+    if (_pageLength == 0) return false;
+    final total = _pageLength + length;
+    if (total <= pageChars) return false;
+    // 文の終わりなら替える
+    if (_sentenceEnd.hasMatch(_lastShown)) return true;
+    // 文が長く続くときは「、」の後で替える
+    if (total > commaPageChars && _commaEnd.hasMatch(_lastShown)) return true;
+    // それでも収まらないときだけ、どこででも替える
+    return total > maxPageChars;
   }
 
   void _break() {
     onBreak();
     _pageLength = 0;
+    _lastShown = '';
   }
 
   int _indexOf(String? chunkId) {
