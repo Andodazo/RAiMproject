@@ -30,7 +30,17 @@ class FakeAudioQueue implements AudioPlayQueue {
   void stopAfterCurrent() {}
 
   @override
-  void enqueueBytes({required Uint8List bytes, String format = 'wav'}) {}
+  void Function(String? tag)? onItemStarted;
+
+  @override
+  void Function(String? tag)? onItemFinished;
+
+  @override
+  void enqueueBytes({
+    required Uint8List bytes,
+    String format = 'wav',
+    String? tag,
+  }) {}
 
   @override
   Future<void> dispose() async {}

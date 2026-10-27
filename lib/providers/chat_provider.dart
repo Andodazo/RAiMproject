@@ -17,6 +17,7 @@ import 'package:raim_prototype/services/llm_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/audio_play_queue.dart';
 import 'package:raim_prototype/services/audio_chunk_assembler.dart';
+import 'package:raim_prototype/services/speech_bubble_sync.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -41,6 +42,10 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // コンストラクターで、テスト用または通常用のキューを設定する。
   final AudioPlayQueue _audioQueue;
   late final AudioChunkAssembler _audioAssembler;
+
+  /// Windows の吹き出しを読み上げに合わせて出す。
+  /// 文字は届いたそばから出さず、同じ chunk_id の声が鳴り始めたときに出す。
+  late final SpeechBubbleSync _bubbleSync;
   //messagesとは描画する会話をまとめたもの
 
   // ============================================================
@@ -140,9 +145,23 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
         if (_isSpeechMuted()) return;
         // キューは1つの AudioPlayer で直列に鳴らすので、
         // 前の返答の言い残しと重なることはない。後ろに並ぶだけ。
-        _audioQueue.enqueueBytes(bytes: audio.bytes, format: audio.format);
+        _audioQueue.enqueueBytes(
+          bytes: audio.bytes,
+          format: audio.format,
+          tag: audio.chunkId,
+        );
+        _bubbleSync.audioQueued(audio.chunkId);
       },
     );
+    _bubbleSync = SpeechBubbleSync(
+      onShow: (text) => _unityBridge.sendText(text: text),
+      onBreak: _unityBridge.sendBubbleBreak,
+      onEnd: (fullText) => _unityBridge.sendChatEnd(fullText: fullText),
+      // 声が鳴らないときは、待たずに届いた順に出す
+      isImmediate: () => _voiceMuted || _isSpeechMuted(),
+    );
+    _audioQueue.onItemStarted = _bubbleSync.audioStarted;
+    _audioQueue.onItemFinished = _bubbleSync.audioFinished;
     _bindConnectionState();
   }
   //メッセージの中身を編集されないようにするため。(読み取り専用)
@@ -194,6 +213,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     _voiceMuted = true;
     _audioAssembler.reset();
     unawaited(_audioQueue.reset());
+    // 声を待っていた文は、もう鳴らないので全部出す
+    _bubbleSync.flush();
   }
 
   /// 「寝てる」状態か（UI で立ち絵切替などに使用予定）
@@ -212,6 +233,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
         if (newState != RaimConnectionState.connected) {
           _audioAssembler.reset();
           unawaited(_audioQueue.reset());
+          _bubbleSync.flush();
         }
         notifyListeners();
 
@@ -269,8 +291,9 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     );
 
     // 追加: 吹き出しの消去タイマーを開始させる（Windows版のみ効く）
+    // 残りの文を読み上げに合わせて出し切り、声が鳴り終わってから伝える
     _unityThinking = false;
-    _unityBridge.sendChatEnd(fullText: response.fullText);
+    _bubbleSync.end(response.fullText);
 
     // ストリーミング中メッセージを終了扱いにする
     _currentStreamingMessage = null;
@@ -398,7 +421,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     RaimLog.d('[ChatProvider] bubble_break 受信: 次の text_chunk は新規吹き出しにする');
     // 現在のストリーミング吹き出しを区切る
     _currentStreamingMessage = null;
-    _unityBridge.sendBubbleBreak();
+    // 吹き出しの区切りも、前の文を出し終えてから入れる
+    _bubbleSync.addBreak();
     // notifyListeners は不要（UI 変化なし）
   }
   //分割された文章を吹き出しに追加していく処理
@@ -460,7 +484,8 @@ _toolStatus = null;
     );
   }
   _unityThinking = false;
-  _unityBridge.sendText(text: response.text);
+  // 吹き出しへは、同じ chunk_id の声が鳴り始めたときに出す
+  _bubbleSync.addText(response.chunkId, response.text);
   notifyListeners();
 }
   // ============================================================
@@ -499,6 +524,9 @@ _toolStatus = null;
 
   // 【追加】今回の途中の返答を取り消し、エラーだけを残す。
   void _failCurrentResponse(String message) {
+    // 出していない文は捨てる（吹き出しはエラーに置き換えるため）。
+    // stopSpeaking より先に捨てないと、止めた拍子に全部出てしまう
+    _bubbleSync.reset();
     // 再生中・待機中の音声を止め、後から届く音声も鳴らさない。
     stopSpeaking();
 
@@ -626,6 +654,7 @@ _toolStatus = null;
     _pendingResponseMessages.clear();
 
     _audioAssembler.reset();
+    _bubbleSync.reset();
     await _audioQueue.reset();
 
     // 【追加】音声停止の待機中にログアウトされた場合も止める。
@@ -832,6 +861,7 @@ _toolStatus = null;
     // 【追加】前の返答の取り消し対象を捨てる。
     _pendingResponseMessages.clear();
     _audioAssembler.reset();
+    _bubbleSync.reset();
     unawaited(_audioQueue.reset());
     _currentThreadId = _generateThreadId();
     _historyCursor = null;
@@ -897,6 +927,7 @@ _toolStatus = null;
   @override
   void reassemble() {
     _audioAssembler.reset();
+    _bubbleSync.reset();
     _messages.clear();
     _currentStreamingMessage = null;
     _toolStatus = null;
@@ -917,6 +948,7 @@ _toolStatus = null;
     _stateSubscription?.cancel();
     unawaited(_clientActions.close());
     _audioAssembler.dispose();
+    _bubbleSync.dispose();
     _persona.dispose();
     // ChatProvider が破棄されるとき、音声プレイヤーも破棄する
     unawaited(_audioQueue.dispose());
@@ -978,6 +1010,8 @@ _toolStatus = null;
     // 生成に数秒かかるため、その1文は新しい音声が届く前に鳴り終わる。
     // 万一残っていてもキューは直列なので、重ならず後ろに並ぶだけ。
     _audioAssembler.reset();
+    // 前の返事の、まだ出していない文は捨てる（新しい考え中の点に置き換わる）
+    _bubbleSync.reset();
     _audioQueue.stopAfterCurrent();
     // 新しい返答の音声は鳴らす
     _voiceMuted = false;

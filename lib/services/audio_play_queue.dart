@@ -41,6 +41,23 @@ class AudioPlayQueue {
     if (!_disposed) playing.value = value;
   }
 
+  /// 1件の音声が鳴り始めたとき。enqueueBytes の tag が渡る。
+  ///
+  /// Windows の吹き出しを、読み上げに合わせて出すために使う。
+  void Function(String? tag)? onItemStarted;
+
+  /// 1件の音声が鳴り終わったとき（再生に失敗した場合も含む）
+  void Function(String? tag)? onItemFinished;
+
+  /// 今鳴っている音声の tag
+  String? _currentTag;
+
+  void _finishCurrent() {
+    final tag = _currentTag;
+    _currentTag = null;
+    onItemFinished?.call(tag);
+  }
+
   /// dispose 後に再生処理が動かないようにするためのフラグ
   bool _disposed = false;
 
@@ -66,6 +83,7 @@ class AudioPlayQueue {
     _completeSubscription = _player.onPlayerComplete.listen(
       (_) {
         _setPlaying(false);
+        _finishCurrent();
         _playNext();
       },
       // audioplayers は再生の失敗を、全部の購読者にエラーとして流す。
@@ -78,6 +96,7 @@ class AudioPlayQueue {
         _onPlaybackFailed(e);
         if (_disposed) return;
         _setPlaying(false);
+        _finishCurrent();
         _playNext();
       },
     );
@@ -126,13 +145,21 @@ class AudioPlayQueue {
 
   /// デコード済みの音声をキューに追加する。
   /// 分割WAVを再構成した音声の投入にも使用する。
-  void enqueueBytes({required Uint8List bytes, String format = 'wav'}) {
+  ///
+  /// [tag] は鳴り始め・鳴り終わりの通知（[onItemStarted] / [onItemFinished]）に
+  /// そのまま渡る。サーバーの chunk_id を入れる。
+  void enqueueBytes({
+    required Uint8List bytes,
+    String format = 'wav',
+    String? tag,
+  }) {
     if (_disposed) return;
 
     _queue.add(
       _QueuedAudio(
         bytes: bytes,
         mimeType: _mimeTypeFromFormat(format),
+        tag: tag,
       ),
     );
 
@@ -155,6 +182,8 @@ class AudioPlayQueue {
     _generation++;
     _queue.clear();
     _setPlaying(false);
+    // 止めた音声の鳴り終わりは知らせない（使う側も同時に捨てている）
+    _currentTag = null;
     await _player.stop();
   }
 
@@ -200,6 +229,8 @@ class AudioPlayQueue {
 
     // キューの先頭から音声を取り出す
     final audio = _queue.removeFirst();
+    _currentTag = audio.tag;
+    onItemStarted?.call(audio.tag);
 
     RaimLog.d(
       '[AudioPlayQueue] 再生開始: '
@@ -240,6 +271,7 @@ class AudioPlayQueue {
 
       // 失敗した場合も次の音声へ進める
       _setPlaying(false);
+      _finishCurrent();
       _playNext();
     }
   }
@@ -287,7 +319,11 @@ class _QueuedAudio {
   const _QueuedAudio({
     required this.bytes,
     required this.mimeType,
+    this.tag,
   });
+
+  /// 鳴り始め・鳴り終わりの通知に渡す目印（サーバーの chunk_id）
+  final String? tag;
 
   /// 再生する音声のバイト列
   final Uint8List bytes;

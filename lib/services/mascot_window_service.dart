@@ -204,10 +204,23 @@ class MascotWindowService {
   // 高さの変更（下端を固定して上に伸ばす）
   // ------------------------------------------------------------
 
-  /// [height] へリサイズする。入力欄の位置が動かないよう下端を固定する。
+  /// [height] へリサイズする。
+  ///
+  /// ライムに付いて動いているときは、高さに合った場所（背が高ければライムの横）へ
+  /// 大きさと位置を一度に変える。手で動かした後は、入力欄の位置が動かないよう
+  /// 下端を固定して上へ伸ばす。
   Future<void> setHeight(double height) async {
     if (!isSupported || !_mascotMode) return;
     if ((height - _currentHeight).abs() < 1) return;
+
+    final place = _manualPosition ? null : _targetPosition(height);
+    if (place != null) {
+      _currentHeight = height;
+      await windowManager.setBounds(
+        Rect.fromLTWH(place.dx, place.dy, windowWidth, height),
+      );
+      return;
+    }
 
     final pos = await windowManager.getPosition();
 
@@ -341,46 +354,110 @@ class MascotWindowService {
   }
 
   Future<void> _applyPosition() async {
+    final place = _targetPosition(_currentHeight);
+    if (place == null) return;
+
+    if (debugPosition) {
+      RaimLog.d('[Mascot] 配置: left=${place.dx.toStringAsFixed(0)} '
+          'top=${place.dy.toStringAsFixed(0)} '
+          'foot=$_characterFoot area=$_workArea height=$_currentHeight '
+          'scale=${_scale.toStringAsFixed(2)}');
+    }
+
+    await windowManager.setPosition(place);
+  }
+
+  /// 高さ [height] の小窓を置く位置。ライムの位置が分からなければ null。
+  Offset? _targetPosition(double height) {
     // Unity が送ってきた足元の座標を使う。
     // 無ければウィンドウ幅からの推測に落とす（古いビルド向け）。
     final point = _footPoint();
-    if (point == null) return;
-    final foot = _characterFoot;
-    final centerX = point.dx;
-    final footY = point.dy;
+    if (point == null) return null;
+    return placeWindow(
+      centerX: point.dx,
+      footY: point.dy,
+      characterTop: _unityRect?.top,
+      area: _workArea,
+      height: height,
+      collapsedHeight: _collapsedHeight,
+      gapBelow: _gapBelowCharacter,
+    );
+  }
 
+  /// ライムの横に開くときの、ライムと小窓のすき間(px)
+  static const double sideGap = 12;
+
+  /// 立ち絵の幅 ÷ 高さ（assets/images の立ち絵は 753x2089）
+  static const double characterAspect = 0.36;
+
+  /// 小窓を置く位置を決める。
+  ///
+  /// 入力バーだけのときは、ライムの足元の少し下に置く。
+  ///
+  /// ☰ パネルや会話ログを開いて背が高くなったときは、ライムの横に置く。
+  /// 以前は入力欄の位置を変えずに上へ伸ばしていたので、伸びた分が
+  /// ライムの体と顔に重なって姿が見えなくなっていた。
+  /// - 吹き出しはふだんライムの右に出るので、まず左に置く
+  /// - 左に入らなければ右に置く
+  /// - どちらにも入らなければ、広い方に置いて画面の中へ押し戻す（少し重なる）
+  /// - 下端は入力バーのときと同じ高さにそろえる
+  ///
+  /// 座標はすべて論理ピクセル・画面座標（上原点）。
+  /// [characterTop] は Unity ウィンドウの上端。ライムの幅の見積もりに使う。
+  @visibleForTesting
+  static Offset placeWindow({
+    required double centerX,
+    required double footY,
+    required double? characterTop,
+    required Rect? area,
+    required double height,
+    required double collapsedHeight,
+    required double gapBelow,
+  }) {
     // 入力バーの下端がライムの足元の少し下に来るようにする。
-    // パネルを開いて上に伸びてもバーの位置は変わらない。
-    final top = footY + _gapBelowCharacter + _collapsedHeight - _currentHeight;
-
+    // パネルを開いて背が高くなってもバーの下端の高さは変わらない。
+    var top = footY + gapBelow + collapsedHeight - height;
     var left = centerX - windowWidth / 2;
-    var placeTop = top;
+
+    final expanded = height > collapsedHeight + 1;
+    if (expanded) {
+      // ライムの半分の幅。Unity ウィンドウの上端から足元までを
+      // 立ち絵の高さとみなして見積もる（窓の方が高いので、少し広めに出る）。
+      final characterHeight =
+          characterTop == null ? 0.0 : (footY - characterTop).clamp(0.0, 4000.0);
+      final halfWidth = characterHeight * characterAspect / 2;
+
+      final leftSide = centerX - halfWidth - sideGap - windowWidth;
+      final rightSide = centerX + halfWidth + sideGap;
+
+      if (area == null || leftSide >= area.left) {
+        left = leftSide;
+      } else if (rightSide + windowWidth <= area.right) {
+        left = rightSide;
+      } else {
+        final roomLeft = (centerX - halfWidth) - area.left;
+        final roomRight = area.right - (centerX + halfWidth);
+        left = roomLeft >= roomRight ? leftSide : rightSide;
+      }
+    }
 
     // ライムがいるモニタの中に収める。
     // 「画面座標が 0 以上」で判定してはいけない。
     // プライマリの左にサブモニタがあると座標が負になり、
     // 0 で押し戻すとサブモニタへ付いていけなくなる。
-    final area = _workArea;
     if (area != null) {
       final maxLeft = area.right - windowWidth;
       if (maxLeft > area.left) {
         left = left.clamp(area.left, maxLeft);
       }
 
-      final maxTop = area.bottom - _currentHeight;
+      final maxTop = area.bottom - height;
       if (maxTop > area.top) {
-        placeTop = placeTop.clamp(area.top, maxTop);
+        top = top.clamp(area.top, maxTop);
       }
     }
 
-    if (debugPosition) {
-      RaimLog.d('[Mascot] 配置: left=${left.toStringAsFixed(0)} '
-          'top=${placeTop.toStringAsFixed(0)} '
-          'foot=$foot area=$_workArea height=$_currentHeight '
-          'scale=${_scale.toStringAsFixed(2)}');
-    }
-
-    await windowManager.setPosition(Offset(left, placeTop));
+    return Offset(left, top);
   }
 
   /// 入力バーのドラッグ開始時に呼ぶ。
