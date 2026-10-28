@@ -22,12 +22,20 @@ extension PasskeyRegistrationResultMessage on PasskeyRegistrationResult {
   };
 }
 
-/// Web callback でアプリが再起動しても、登録フローを識別するための状態です。
+/// Web callback でアプリが再起動しても、登録フローを識別するための状態と、
+/// この端末でパスキーを登録したユーザーの記録です。
 /// 認証情報や callback の値は保存しません。
 class PasskeyRegistrationStateStorage {
   static const _storage = FlutterSecureStorage();
   static const _pendingKey = 'raim.passkey_registration.pending';
-  static const _registeredKey = 'raim.passkey_registration.registered';
+
+  // 修正: 以前はユーザーを区別しない1つのキーで、ログアウトで消していた。
+  // Cognito に登録済みかを聞けない（scope を戻したため）ので、ログアウトや
+  // 再起動のあとに「登録済み」が消えていた。ユーザーごとのキーにして残す。
+  static const _registeredPrefix = 'raim.passkey_registration.registered.';
+
+  /// 以前の、ユーザーを区別しないキー。読まずに消すだけ。
+  static const _legacyRegisteredKey = 'raim.passkey_registration.registered';
 
   Future<void> markPending() => _storage.write(key: _pendingKey, value: '1');
 
@@ -36,16 +44,11 @@ class PasskeyRegistrationStateStorage {
 
   Future<void> clear() => _storage.delete(key: _pendingKey);
 
-  Future<void> markRegistered() =>
-      _storage.write(key: _registeredKey, value: '1');
-
-  Future<bool> isRegistered() async =>
-      (await _storage.read(key: _registeredKey)) == '1';
-
-  Future<void> clearRegistered() => _storage.delete(key: _registeredKey);
-
-  Future<void> clearAll() async {
-    await clear();
-    await clearRegistered();
+  Future<void> markRegistered(String userSub) async {
+    await _storage.write(key: '$_registeredPrefix$userSub', value: '1');
+    await _storage.delete(key: _legacyRegisteredKey);
   }
+
+  Future<bool> isRegistered(String userSub) async =>
+      (await _storage.read(key: '$_registeredPrefix$userSub')) == '1';
 }

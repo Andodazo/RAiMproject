@@ -161,63 +161,38 @@ class AuthService {
     });
   }
 
-  /// パスキーの表示用の状態を消す。失敗してもログアウトは止めない。
+  /// 登録途中の状態を消す。失敗してもログアウトは止めない。
+  ///
+  /// 登録済みの記録はユーザーごとなので消さない。次に同じ人がログインしたとき
+  /// にも「登録済み」と出すため。
   Future<void> _clearPasskeyStateQuietly() async {
     try {
-      await _passkeyState.clearAll();
+      await _passkeyState.clear();
     } catch (e) {
       RaimLog.d('[Passkey] 登録状態を消せませんでした: ${e.runtimeType}');
     }
   }
 
-  /// 現在のユーザーに登録済みのパスキーがあるか確認します。
+  /// 今ログインしている人が、この端末でパスキーを登録したことがあるか。
   ///
-  /// Cognito の一覧 API が一時的に利用できない場合は、直近にこのアプリで
-  /// 登録成功を確認した状態へフォールバックします。トークンや API 応答の
-  /// 内容はログへ出力しません。
+  // 修正: 以前は Cognito の ListWebAuthnCredentials で確かめていた。この API には
+  // aws.cognito.signin.user.admin の scope が要るが、App Client が許可していない
+  // ため #76 で scope を戻し、毎回失敗するようになった。端末の記録だけを見る。
+  // 別の端末で登録した場合や、Cognito 側で消した場合は分からない。
   Future<bool> hasRegisteredPasskey() async {
-    final locallyKnown = await _passkeyState.isRegistered();
-    final accessToken = await getValidAccessToken();
-    if (accessToken == null || accessToken.isEmpty) return locallyKnown;
-
+    final sub = await _currentUserSub();
+    if (sub == null) return false;
     try {
-      String? nextToken;
-      do {
-        final response = await http
-            .post(
-              Uri.parse(
-                'https://cognito-idp.${RaimConfig.cognitoRegion}.amazonaws.com/',
-              ),
-              headers: {
-                'Content-Type': 'application/x-amz-json-1.1',
-                'X-Amz-Target':
-                    'AWSCognitoIdentityProviderService.ListWebAuthnCredentials',
-              },
-              body: jsonEncode({
-                'AccessToken': accessToken,
-                'MaxResults': 20,
-                ...?nextToken == null ? null : {'NextToken': nextToken},
-              }),
-            )
-            .timeout(_httpTimeout);
-
-        if (response.statusCode != 200) return locallyKnown;
-
-        final body = jsonDecode(response.body) as Map<String, dynamic>;
-        final credentials = body['Credentials'];
-        if (credentials is List && credentials.isNotEmpty) {
-          await _passkeyState.markRegistered();
-          return true;
-        }
-        nextToken = body['NextToken'] as String?;
-      } while (nextToken != null && nextToken.isNotEmpty);
-
-      await _passkeyState.clearRegistered();
-      return false;
+      return await _passkeyState.isRegistered(sub);
     } catch (e) {
-      RaimLog.d('[Passkey] 登録状態の確認に失敗しました: ${e.runtimeType}');
-      return locallyKnown;
+      RaimLog.d('[Passkey] 登録状態を読めませんでした: ${e.runtimeType}');
+      return false;
     }
+  }
+
+  Future<String?> _currentUserSub() async {
+    final tokens = await _withTokenStorage(_storage.readTokens);
+    return tokens?.userSub;
   }
 
   /// Cognito Managed Login の URL を作ります。
@@ -379,7 +354,8 @@ class AuthService {
 
     final result = _classifyPasskeyCallback(uri);
     if (result == PasskeyRegistrationResult.registered) {
-      await _passkeyState.markRegistered();
+      final sub = await _currentUserSub();
+      if (sub != null) await _passkeyState.markRegistered(sub);
     }
     await _passkeyState.clear();
     final completer = _passkeyCallbackCompleter;

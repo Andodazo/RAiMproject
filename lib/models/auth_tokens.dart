@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Cognito から受け取った Token 一式です。
 ///
 /// `expiresAt` は Cognito が返す `expires_in` からクライアント側で計算します。
@@ -27,6 +29,23 @@ class AuthTokens {
     return DateTime.now().isAfter(
       expiresAt.subtract(const Duration(minutes: 5)),
     );
+  }
+
+  /// ID Token の sub（Cognito のユーザーID）。読めなければ null。
+  ///
+  /// 署名は確かめていない。端末の中で「誰の記録か」を分けるためだけに使う。
+  String? get userSub {
+    final parts = idToken?.split('.');
+    if (parts == null || parts.length != 3) return null;
+    try {
+      final payload = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      );
+      final sub = payload is Map ? payload['sub'] : null;
+      return sub is String && sub.isNotEmpty ? sub : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   AuthTokens copyWith({

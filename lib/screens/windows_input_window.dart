@@ -110,6 +110,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   String? _passkeyNote;
   bool _passkeyRegistered = false;
 
+  /// 登録済みのときに「もう一度登録しますか？」を出しているか
+  bool _confirmingPasskey = false;
+
   // ---- Unity の起動待ち（「発信中」の小窓） ----
 
   /// これだけ待ってもライムが来なければ「発信中」を消す。
@@ -396,6 +399,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
       setState(() {
         _mode = mode;
         _confirmingDeleteId = null;
+        _confirmingPasskey = false;
       });
       await _mascot.collapse();
     } else {
@@ -415,9 +419,12 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
       setState(() {
         _mode = mode;
         _confirmingDeleteId = null;
+        _confirmingPasskey = false;
       });
       if (mode == _PanelMode.menu) {
         unawaited(context.read<ChatProvider>().loadThreads());
+        // 小窓は起動直後（ログイン前）に作られるので、開くたびに読み直す
+        unawaited(_loadPasskeyRegistrationState());
       }
     }
 
@@ -497,8 +504,20 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     }
   }
 
+  /// メニューの「パスキーを登録する」を押したとき。
+  // 修正: 以前は登録済みでも、押すとすぐブラウザが開いていた。登録済みなら
+  // 先にメニューの中で確かめる。
+  void _onPasskeyTap() {
+    if (_passkeyRegistered) {
+      setState(() => _confirmingPasskey = true);
+      return;
+    }
+    _registerPasskey();
+  }
+
   Future<void> _registerPasskey() async {
     final auth = context.read<AuthProvider>();
+    setState(() => _confirmingPasskey = false);
     await _setMode(_PanelMode.none);
     final restoreMascot = _mascot.isMascotMode;
     if (restoreMascot) {
@@ -1046,22 +1065,54 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
           'クレジット表記',
           () => _setMode(_PanelMode.credits),
         ),
-        _menuRow(
-          Icons.key_rounded,
-          _passkeyRegistered ? 'パスキーを登録する（登録済み）' : 'パスキーを登録する',
-          _registerPasskey,
-        ),
-        if (_passkeyNote != null)
+        _menuRow(Icons.key_rounded, 'パスキーを登録する', _onPasskeyTap),
+        if (_confirmingPasskey)
+          _buildPasskeyConfirm()
+        // 修正: 以前は登録した直後の結果しか出さず、再起動すると消えていた。
+        // 結果がないときは、登録済みかどうかを出す。
+        else if ((_passkeyNote ?? (_passkeyRegistered ? '登録済み' : null))
+            case final note?)
           Padding(
             padding: const EdgeInsets.fromLTRB(40, 0, 14, 6),
             child: Text(
-              _passkeyNote!,
+              note,
               style: const TextStyle(color: _lime, fontSize: 10.5),
             ),
           ),
         _menuRow(Icons.logout_rounded, 'ログアウト', _logout),
         _menuRow(Icons.power_settings_new, '終了', _quit),
       ],
+    );
+  }
+
+  Widget _buildPasskeyConfirm() {
+    return Container(
+      color: _bg2,
+      padding: const EdgeInsets.fromLTRB(40, 2, 8, 2),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              '登録済みです。もう一度登録しますか？',
+              style: TextStyle(color: _text, fontSize: 12),
+            ),
+          ),
+          TextButton(
+            onPressed: () => setState(() => _confirmingPasskey = false),
+            child: const Text(
+              'やめる',
+              style: TextStyle(color: _mut, fontSize: 12),
+            ),
+          ),
+          TextButton(
+            onPressed: _registerPasskey,
+            child: const Text(
+              '登録する',
+              style: TextStyle(color: _lime, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
