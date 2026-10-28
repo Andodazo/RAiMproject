@@ -72,7 +72,7 @@ enum RaimConnectionState {
   offline,
 }
 
-class RaimServerService implements LLMService {
+class RaimServerService implements LLMService, GreetingService {
   // ─── 設定値（コンストラクタで受け取る） ───
   
   /// サーバーの URL
@@ -770,6 +770,30 @@ class RaimServerService implements LLMService {
     List<Map<String, dynamic>>? images,
     String? requestId,
     String? threadId,
+  }) {
+    return _send(
+      userInput,
+      images: images,
+      requestId: requestId,
+      threadId: threadId,
+    );
+  }
+
+  /// アプリを開いたときに、ライムから一言話しかけてもらう。
+  ///
+  /// 本文は送らない。サーバーは「アプリが開かれた」ことだけを受け取り、
+  /// 時間帯や前回からの間に合わせた一言を返す（返り方は sendMessage と同じ）。
+  @override
+  Stream<LLMResponse> sendGreeting({String? threadId}) {
+    return _send('', threadId: threadId, greeting: true);
+  }
+
+  Stream<LLMResponse> _send(
+    String userInput, {
+    List<Map<String, dynamic>>? images,
+    String? requestId,
+    String? threadId,
+    bool greeting = false,
   }) async* {
     // オフラインまたは切断中なら、送信前に再接続を試す
     if (_state == RaimConnectionState.offline ||
@@ -792,8 +816,12 @@ class RaimServerService implements LLMService {
     final myRequestId =
         (requestId == null || requestId.isEmpty) ? newRequestId() : requestId;
     payload['requestId'] = myRequestId;
+    // ライムから話しかけてもらう要求。本文は持たない
+    if (greeting) {
+      payload['type'] = 'greeting';
+    }
     // 画像がある場合は、S3参照形式を追加する。
-    if (images != null && images.isNotEmpty) {
+    if (!greeting && images != null && images.isNotEmpty) {
       payload['type'] = 'user_message';
       payload['images'] = images;
     }

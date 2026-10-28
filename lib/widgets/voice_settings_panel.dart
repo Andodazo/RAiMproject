@@ -304,6 +304,16 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
             _micSelector(settings),
           ],
 
+          // ─── 起動時の話しかけ（音声ではないが、設定の置き場所がここしか無い） ───
+          _divider(),
+          _switchRow(
+            title: '開いたらライムから話しかける',
+            subtitle: 'アプリを開いたときに、時間帯や前に話したことに合わせて'
+                'ライムが一言話しかけます',
+            value: settings.greetOnLaunch,
+            onChanged: settings.setGreetOnLaunch,
+          ),
+
           // ─── 天気（音声ではないが、設定の置き場所がここしか無い） ───
           if (ApproxLocation.isSupported) ...[
             _divider(),

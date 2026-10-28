@@ -64,6 +64,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
   static const _kSpeechMuted = 'voice.speechMuted';
   static const _kNoiseGate = 'voice.noiseGate';
   static const _kCallerOnly = 'voice.callerOnly';
+  static const _kGreetOnLaunch = 'app.greetOnLaunch';
 
   SharedPreferences? _prefs;
 
@@ -77,6 +78,13 @@ class VoiceSettingsProvider extends ChangeNotifier {
   bool _speechMuted = false;
   NoiseGateMode _noiseGate = NoiseGateMode.weak;
   bool _callerOnly = true;
+  bool _greetOnLaunch = true;
+
+  /// アプリを開いたときに、ライムから一言話しかけるか。既定は ON。
+  ///
+  /// 1回ごとにライムの返事を作るので（利用料がかかる）、切れるようにしておく。
+  /// 音声の設定ではないが、設定の置き場所がここしか無いので一緒に持つ。
+  bool get greetOnLaunch => _greetOnLaunch;
 
   /// 呼んだ人の言葉だけを残すか（Transcribe の話者分け）。既定は ON。
   bool get callerOnly => _callerOnly;
@@ -143,6 +151,7 @@ class VoiceSettingsProvider extends ChangeNotifier {
     _sttEnabled = prefs.getBool(_kSttEnabled) ?? true;
     _weatherUsesLocation = prefs.getBool(_kWeatherUsesLocation) ?? false;
     _speechMuted = prefs.getBool(_kSpeechMuted) ?? false;
+    _greetOnLaunch = prefs.getBool(_kGreetOnLaunch) ?? true;
 
     final sendName = prefs.getString(_kSendMode);
     _sendMode = VoiceSendMode.values.firstWhere(
@@ -180,6 +189,14 @@ class VoiceSettingsProvider extends ChangeNotifier {
     notifyListeners();
     await _prefs?.setBool(_kWeatherUsesLocation, value);
     RaimLog.i('[Settings] 天気に現在地を使う: ${value ? "ON" : "OFF"}');
+  }
+
+  Future<void> setGreetOnLaunch(bool value) async {
+    if (_greetOnLaunch == value) return;
+    _greetOnLaunch = value;
+    notifyListeners();
+    await _prefs?.setBool(_kGreetOnLaunch, value);
+    RaimLog.i('[Settings] 起動時の話しかけ: ${value ? "ON" : "OFF"}');
   }
 
   Future<void> setSpeechMuted(bool value) async {

@@ -297,6 +297,7 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
             imageService: AwsImageService(),
             idTokenGetter: widget.authProvider.getValidIdToken,
             isSpeechMuted: () => widget.voiceSettings.speechMuted,
+            greetOnLaunchEnabled: () => widget.voiceSettings.greetOnLaunch,
           ),
         ),
         //新しく追加するCameraProvider

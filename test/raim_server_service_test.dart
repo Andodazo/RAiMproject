@@ -218,6 +218,25 @@ void main() {
       expect(RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(requestId), isTrue);
     });
 
+    test('話しかけは type: greeting で送り、本文も画像も付けない', () async {
+      edge.onRequest = (connection, request) => (
+            replies: [
+              {'type': 'text_chunk', 'text': 'おはよ'},
+              {'type': 'chat_end'},
+            ],
+            close: false,
+          );
+
+      final replies = await service.sendGreeting(threadId: 'thread-1').toList();
+
+      final sent = edge.received.single.$2;
+      expect(sent['type'], 'greeting');
+      expect(sent['text'], isEmpty);
+      expect(sent.containsKey('images'), isFalse);
+      expect(sent['threadId'], 'thread-1');
+      expect(replies.map((r) => r.type), ['text_chunk', 'chat_end']);
+    });
+
     test('別の requestId の返事は読み飛ばし、自分の返事だけを受け取る', () async {
       edge.onRequest = (connection, request) => (
             replies: [
