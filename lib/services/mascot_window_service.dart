@@ -528,14 +528,15 @@ class MascotWindowService {
     await windowManager.hide();
   }
 
-  /// 外部認証ブラウザを操作できるよう、一時的に小窓を隠します。
+  /// 外部認証ブラウザを操作できるよう、一時的に小窓の最前面表示をやめます。
   ///
-  /// マスコット小窓は常に最前面なので、表示したままだとブラウザの
+  /// マスコット小窓は常に最前面なので、そのままだとブラウザの
   /// パスキー画面をクリックできないことがあります。
+  // 修正: 以前は小窓を隠していた。ブラウザを閉じると callback が来ないため、
+  // タイムアウトまでライムが消えたままになっていた。最前面をやめるだけにする。
   Future<void> prepareForExternalAuthentication() async {
     if (!isSupported || !_mascotMode) return;
     await windowManager.setAlwaysOnTop(false);
-    await hide();
   }
 
   /// 外部認証ブラウザから戻った後に小窓を再表示します。

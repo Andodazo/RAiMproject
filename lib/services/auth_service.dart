@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:app_links/app_links.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:http/http.dart' as http;
 import 'package:raim_prototype/services/aws/cognito_credentials_provider.dart';
 import 'package:raim_prototype/config/raim_config.dart';
@@ -56,6 +57,14 @@ class AuthService {
   /// 指定しないと、電波の悪い場所で起動したときに Splash が
   /// 無期限に固まる（既定のタイムアウトが無いため）。
   static const Duration _httpTimeout = Duration(seconds: 15);
+
+  /// パスキー登録ページから戻るのを待つ時間。
+  // 修正: 以前は10分待っていた。ブラウザを閉じただけでも10分間「登録中」のままに
+  // なり、Windows では小窓も消えたままだったので5分に縮めた。
+  static const Duration _passkeyTimeout = Duration(minutes: 5);
+
+  /// アプリに戻ってから、callback が届くのを待つ時間。
+  static const Duration _passkeyResumeGrace = Duration(seconds: 3);
 
   AuthService({
     TokenStorage? storage,
@@ -144,10 +153,21 @@ class AuthService {
     // 【追加】進行中の更新も無効にし、削除を直列化する。
     _authGeneration++;
     _refreshInFlight = null;
+    // 修正: 以前はパスキーの状態を先に消していた。端末の保存領域でそこが失敗すると
+    // トークンが消えずに残り、ログアウトにならなかったので、トークンを先に消す。
     return _withTokenStorage(() async {
-      await _passkeyState.clearAll();
       await _storage.clearTokens();
+      await _clearPasskeyStateQuietly();
     });
+  }
+
+  /// パスキーの表示用の状態を消す。失敗してもログアウトは止めない。
+  Future<void> _clearPasskeyStateQuietly() async {
+    try {
+      await _passkeyState.clearAll();
+    } catch (e) {
+      RaimLog.d('[Passkey] 登録状態を消せませんでした: ${e.runtimeType}');
+    }
   }
 
   /// 現在のユーザーに登録済みのパスキーがあるか確認します。
@@ -253,7 +273,13 @@ class AuthService {
   Future<bool> shouldHandlePasskeyCallback(Uri uri) async {
     if (!_isExpectedCallbackUri(uri)) return false;
     if (isPasskeyRegistrationPending) return true;
-    if (uri.queryParameters.containsKey('code')) return false;
+    // 修正: 以前は code だけを見ていた。登録中にアプリが落ちて pending が残ると、
+    // 後のログインのエラー callback（code なし）までパスキー登録として扱っていた。
+    // ログインの callback には成功でも失敗でも state が付くので、それも除く。
+    if (uri.queryParameters.containsKey('code') ||
+        uri.queryParameters.containsKey('state')) {
+      return false;
+    }
     return _passkeyState.isPending();
   }
 
@@ -278,7 +304,9 @@ class AuthService {
 
     Future<Uri>? loopbackCallback;
     if (_usesLoopbackRedirect) {
-      loopbackCallback = _localCallbackServer.waitForCallback();
+      loopbackCallback = _localCallbackServer.waitForCallback(
+        timeout: _passkeyTimeout,
+      );
     }
 
     final bool launched;
@@ -300,17 +328,41 @@ class AuthService {
       return PasskeyRegistrationResult.failed;
     }
 
+    // 修正: 以前は登録ページを閉じてアプリに戻っても callback が来ないため、
+    // 10分のタイムアウトまで結果が出なかった。Android/iOS では、アプリに戻って
+    // 少し待っても callback が来なければキャンセルとして扱う。
+    AppLifecycleListener? lifecycle;
+    if (!kIsWeb && !_usesLoopbackRedirect) {
+      lifecycle = AppLifecycleListener(
+        onResume: () {
+          Future<void>.delayed(_passkeyResumeGrace, () {
+            if (!callbackCompleter.isCompleted) {
+              callbackCompleter.complete(PasskeyRegistrationResult.cancelled);
+            }
+          });
+        },
+      );
+    }
+
     try {
       if (loopbackCallback != null) {
-        final callbackUri = await loopbackCallback;
+        final Uri callbackUri;
+        try {
+          callbackUri = await loopbackCallback;
+        } on TimeoutException {
+          // 修正: 以前はタイムアウトが例外のまま上がり「登録できませんでした」と
+          // 出ていた。ブラウザを閉じただけなのでキャンセルとして扱う。
+          return PasskeyRegistrationResult.cancelled;
+        }
         return await handlePasskeyCallback(callbackUri);
       }
 
       return await callbackCompleter.future.timeout(
-        const Duration(minutes: 10),
+        _passkeyTimeout,
         onTimeout: () => PasskeyRegistrationResult.cancelled,
       );
     } finally {
+      lifecycle?.dispose();
       await _passkeyState.clear();
       _passkeyCallbackCompleter = null;
       await _browserLoginLauncher.closeLaunchedBrowser();
@@ -651,7 +703,8 @@ class AuthService {
       // 【変更】ネットワークを待つ前に、端末側の認証情報を消す。
       await _storage.clearPkceState();
       await _storage.clearTokens();
-      await _passkeyState.clearAll();
+      // 修正: 以前はここで例外が出ると revoke まで進まなかった。
+      await _clearPasskeyStateQuietly();
       return tokens;
     });
 
@@ -702,7 +755,13 @@ class AuthService {
       // Token交換を待たず、callbackを受け取った時点で認証画面を閉じる。
       await _browserLoginLauncher.closeLaunchedBrowser();
       await callback(uri);
-      _lastHandledCallbackUri = callbackUri;
+      // 修正: 以前はどの callback も覚えていた。パスキー登録の callback は毎回
+      // 同じ `raim://callback` なので、2回目の登録の callback が「重複」として
+      // 捨てられ、結果が出なかった。重複を防ぎたいのは認可コードなので、
+      // code が付いたものだけ覚える。
+      if (uri.queryParameters.containsKey('code')) {
+        _lastHandledCallbackUri = callbackUri;
+      }
     } finally {
       _callbackInFlight = false;
     }
