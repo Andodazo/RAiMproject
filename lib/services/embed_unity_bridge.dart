@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_embed_unity/flutter_embed_unity.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/raim_log.dart';
@@ -36,6 +38,43 @@ class EmbedUnityBridge implements UnityCommunicator {
   /// Unity の準備ができる前に送ろうとしたもの。送り先のメソッドごとに最新の1件だけ持つ。
   final Map<String, String> _pending = {};
 
+  static const Duration _deviceTimeSyncInterval = Duration(minutes: 5);
+  Timer? _timeTimer;
+  AppLifecycleListener? _timeLifecycle;
+
+  String _deviceTimeMessage() {
+    // 日時と時差は、同じ1回の取得結果から送る。
+    final now = DateTime.now();
+    return jsonEncode({
+      'type': 'device_time',
+      'unix_ms': now.millisecondsSinceEpoch,
+      'utc_offset_minutes': now.timeZoneOffset.inMinutes,
+    });
+  }
+
+  void _sendDeviceTime() {
+    // 準備前の時刻を保留すると古くなるため、送れるときだけ取得する。
+    if (_timeTimer == null || !UnityReadySignal.ready.value) return;
+    _send('ReceiveDeviceTime', _deviceTimeMessage());
+  }
+
+  void _startDeviceClock() {
+    // start()が繰り返されても、タイマーと復帰通知を増やさない。
+    _timeTimer ??= Timer.periodic(
+      _deviceTimeSyncInterval,
+      (_) => _sendDeviceTime(),
+    );
+    _timeLifecycle ??= AppLifecycleListener(onResume: _sendDeviceTime);
+    _sendDeviceTime();
+  }
+
+  void _stopDeviceClock() {
+    _timeTimer?.cancel();
+    _timeTimer = null;
+    _timeLifecycle?.dispose();
+    _timeLifecycle = null;
+  }
+
   /// Unity へ送る。準備ができる前ならためておき、できたところでまとめて送る。
   ///
   /// 以前は準備前でもそのまま送っていて、Unity が読み込まれる前の分は
@@ -54,7 +93,10 @@ class EmbedUnityBridge implements UnityCommunicator {
   }
 
   void _flushPending() {
-    if (!UnityReadySignal.ready.value || _pending.isEmpty) return;
+    if (!UnityReadySignal.ready.value) return;
+    // 保留が空でも、Unityの準備ができた時点の時刻を送る。
+    _sendDeviceTime();
+    if (_pending.isEmpty) return;
     final pending = Map<String, String>.of(_pending);
     _pending.clear();
     RaimLog.d('[EmbedUnityBridge] 準備前にためていた ${pending.length} 件を送ります');
@@ -65,7 +107,7 @@ class EmbedUnityBridge implements UnityCommunicator {
 
   @override
   Future<void> start() async {
-    // flutter_embed_unity は Unity ウィジェット描画時に初期化されるため、ここでは何もしません。
+    _startDeviceClock();
     RaimLog.d('EmbedUnityBridge: 初期化完了（Unity ウィジェット描画時に起動）');
   }
 
@@ -179,7 +221,8 @@ void sendToolState({
 
   @override
   Future<void> stop() async {
-    // flutter_embed_unity は自動管理なので明示的な停止は不要です。
+    _stopDeviceClock();
+    // Unity自体の停止は、既存どおりflutter_embed_unity側が管理する。
   }
 
   // ============================================================

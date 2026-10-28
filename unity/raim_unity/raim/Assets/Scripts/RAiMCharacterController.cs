@@ -280,6 +280,32 @@ public class RAiMCharacterController : MonoBehaviour
         }
     }
 
+    [Serializable]
+    private sealed class DeviceTimeMessage
+    {
+        public string type;
+        public long unix_ms;
+        public int utc_offset_minutes;
+    }
+
+    // モバイルはFlutterから直接呼び、Windowsは認証後の受信処理から呼ぶ。
+    public void ReceiveDeviceTime(string json)
+    {
+        try
+        {
+            var data = JsonUtility.FromJson<DeviceTimeMessage>(json);
+            if (data == null || data.type != "device_time") return;
+
+            // 受信窓口は転送だけを担当し、時計の状態・計算はDeviceClockに任せる。
+            DeviceClock.Sync(data.unix_ms, data.utc_offset_minutes);
+        }
+        catch (Exception e)
+        {
+            // 受信したJSON全体はログに出さない。
+            Debug.LogWarning($"時刻データの読み取りに失敗: {e.GetType().Name}");
+        }
+    }
+
     /// <summary>
     /// 寝ているかを受信する（Android/iOS）。"true" / "false"
     ///
@@ -597,6 +623,12 @@ public class RAiMCharacterController : MonoBehaviour
             }
 
             var typeData = JsonUtility.FromJson<MessageType>(json);
+
+            if (typeData != null && typeData.type == "device_time")
+            {
+                ReceiveDeviceTime(json);
+                return;
+            }
 
             // Tool状態
             if (typeData != null &&
