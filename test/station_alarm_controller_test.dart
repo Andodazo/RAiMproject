@@ -34,4 +34,13 @@ void main() {
     expect(c.isActive, isFalse);
     c.dispose();
   });
+
+  test('鳴っていないときに silence しても何も起きない', () {
+    final c = StationAlarmController();
+    expect(c.isRinging, isFalse);
+    c.silence();
+    expect(c.isRinging, isFalse);
+    expect(c.state, StationAlarmState.idle);
+    c.dispose();
+  });
 }

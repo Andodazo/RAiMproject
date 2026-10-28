@@ -80,7 +80,10 @@ class _ClientActionListenerState extends State<ClientActionListener>
 
     // 裏にいる間に始めたせいで、裏で動けない状態なら直す（Android）
     if (StationAlarmController.isSupported) {
-      unawaited(context.read<StationAlarmController>().retryBackground());
+      final alarm = context.read<StationAlarmController>();
+      // 「着く」を知らせ直している途中なら止める（開いたなら起きている）
+      alarm.silence();
+      unawaited(alarm.retryBackground());
     }
   }
 
