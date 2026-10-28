@@ -95,6 +95,14 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   /// 「ライムがクリックされた」として届き、窓が閉じてしまうことがある。
   /// 直前にこちらでクリックを受けていたら、Unity からの通知は無視する。
   DateTime? _lastLocalPointer;
+
+  /// 入力バーを押した位置。ここから [_manualDragDistance] 以上動いたらドラッグとみなす。
+  Offset? _barDragStart;
+
+  /// 入力バーを手で動かし始めたとみなす距離(px)。
+  // 修正: 以前は onPanStart ですぐ手動配置にしていた。マウスのパン判定は約2pxなので、
+  // 入力欄をクリックしたときに手が少し動いただけで追従が切れていた。
+  static const double _manualDragDistance = 8;
   static const Duration _localClickWindow = Duration(milliseconds: 800);
 
   // 修正: 展示用タイマーを削除し、画像上限の通知だけを小窓内で管理する。
@@ -755,7 +763,19 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                 // Flutter小窓を任意の位置へ移動できるようにする。
                 GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onPanStart: (_) => _mascot.beginManualDrag(),
+                  onPanStart: (d) => _barDragStart = d.globalPosition,
+                  onPanUpdate: (d) {
+                    final start = _barDragStart;
+                    if (start == null) return;
+                    if ((d.globalPosition - start).distance <
+                        _manualDragDistance) {
+                      return;
+                    }
+                    _barDragStart = null;
+                    _mascot.beginManualDrag();
+                  },
+                  onPanEnd: (_) => _barDragStart = null,
+                  onPanCancel: () => _barDragStart = null,
                   child: _buildBar(),
                 ),
               ],
