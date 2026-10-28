@@ -237,6 +237,31 @@ void main() {
       expect(replies.map((r) => r.type), ['text_chunk', 'chat_end']);
     });
 
+    test('覚えていることを読み、選んだ項目を消す', () async {
+      edge.onRequest = (connection, request) => (
+            replies: [
+              {
+                'type': 'memory',
+                'facts': request['type'] == 'memory.get' ? ['猫を飼っている'] : <String>[],
+                'relationship': <String>[],
+                'updatedAt': '2026-10-28T00:00:00.000Z',
+              },
+            ],
+            close: false,
+          );
+
+      final memory = await service.fetchMemory();
+      expect(memory.facts, ['猫を飼っている']);
+      expect(memory.updatedAt, isNotNull);
+
+      final after = await service.forgetMemory(items: ['猫を飼っている']);
+      expect(after.isEmpty, isTrue);
+      final sent = edge.received.last.$2;
+      expect(sent['type'], 'memory.forget');
+      expect(sent['items'], ['猫を飼っている']);
+      expect(sent.containsKey('all'), isFalse);
+    });
+
     test('別の requestId の返事は読み飛ばし、自分の返事だけを受け取る', () async {
       edge.onRequest = (connection, request) => (
             replies: [

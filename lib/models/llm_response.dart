@@ -274,6 +274,9 @@ class LLMResponse {
   /// スレッド削除の応答か
   bool get isThreadDeleted => type == 'thread_deleted';
 
+  /// 覚えていること（memory.get / memory.forget への応答）
+  bool get isMemory => type == 'memory';
+
   /// 通常応答か（UI に吹き出し追加するべきか）
   bool get isChat => type == 'chat';
 

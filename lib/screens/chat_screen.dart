@@ -12,6 +12,7 @@ import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/services/app_exit_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
+import 'package:raim_prototype/widgets/memory_panel.dart';
 import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
 import 'package:raim_prototype/widgets/client_action_listener.dart';
@@ -143,6 +144,10 @@ class ChatScreen extends StatelessWidget {
           onStationAlarm: StationAlarmController.isSupported
               ? () => StationAlarmScreen.open(context)
               : null,
+          onMemory: () => showMemorySheet(
+            context,
+            context.read<RaimServerService>(),
+          ),
           onLogout: () {
             _confirmLogoutAndClose(context);
           },
@@ -304,6 +309,10 @@ class ChatScreen extends StatelessWidget {
             onStationAlarm: StationAlarmController.isSupported
                 ? () => StationAlarmScreen.open(context)
                 : null,
+            onMemory: () => showMemorySheet(
+              context,
+              context.read<RaimServerService>(),
+            ),
             onLogout: () {
               _confirmLogoutAndClose(context);
             },
