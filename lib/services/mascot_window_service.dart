@@ -90,7 +90,7 @@ class MascotWindowService {
   final ValueNotifier<bool> calling = ValueNotifier<bool>(false);
 
   /// ユーザーが入力小窓をドラッグして任意位置へ置いたかどうか。
-  /// 手動配置後はUnityの移動通知で元の位置へ戻さない。
+  /// 手動配置後はUnityの移動通知で元の位置へ戻さない。小窓を閉じると解除する。
   bool _manualPosition = false;
 
   /// Unity の位置がまだ届いていない間に表示を頼まれたか。
@@ -519,6 +519,10 @@ class MascotWindowService {
     _visible = false;
     _pendingShow = false;
     calling.value = false;
+
+    // 修正: 以前は一度手で動かすと、再起動かログアウトまで追従が戻らなかった。
+    // 間違えて動かしたときに戻す方法がなかったので、閉じたら追従に戻す。
+    _manualPosition = false;
 
     // 次に開いたときバーだけの状態から始まるよう畳んでおく。
     // 隠れている間はリサイズしても見えないので位置は動かさない。
