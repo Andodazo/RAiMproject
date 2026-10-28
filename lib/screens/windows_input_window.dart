@@ -21,6 +21,7 @@ import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/passkey_registration.dart';
 import 'package:raim_prototype/services/voice/delayed_send.dart';
 import 'package:raim_prototype/widgets/raim_calling_overlay.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
@@ -45,8 +46,9 @@ class WindowsInputWindow extends StatefulWidget {
 enum _PanelMode { none, menu, log, credits, settings }
 
 class _WindowsInputWindowState extends State<WindowsInputWindow>
-    // 修正: 展示専用のライフサイクル監視を廃止した。
-    with TrayListener {
+        // 修正: 展示専用のライフサイクル監視を廃止した。
+        with
+        TrayListener {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   final _windowFocusNode = FocusNode();
@@ -105,6 +107,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   bool _isSwitching = false;
   String? _switchNote;
+  String? _passkeyNote;
+  bool _passkeyRegistered = false;
 
   // ---- Unity の起動待ち（「発信中」の小窓） ----
 
@@ -121,9 +125,17 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   @override
   void initState() {
     super.initState();
+    _loadPasskeyRegistrationState();
     // 修正: 展示用のアプリ復帰監視を削除した。
     trayManager.addListener(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _enterMascotMode());
+  }
+
+  Future<void> _loadPasskeyRegistrationState() async {
+    final registered = await context
+        .read<AuthProvider>()
+        .hasRegisteredPasskey();
+    if (mounted) setState(() => _passkeyRegistered = registered);
   }
 
   Future<void> _enterMascotMode() async {
@@ -418,8 +430,6 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     }
   }
 
-
-
   // ------------------------------------------------------------
   // 送信（chat_input.dart と同じ手順）
   // ------------------------------------------------------------
@@ -443,10 +453,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     final pendingImages = List.of(camera.selectedImages);
 
     context.read<ChatProvider>().sendUserMessage(
-          text,
-          pendingImages: pendingImages,
-          filePaths: paths,
-        );
+      text,
+      pendingImages: pendingImages,
+      filePaths: paths,
+    );
 
     _controller.clear();
     // 一時ファイルはアップロードサービスが読み終わってから削除する。
@@ -476,13 +486,46 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
       await raimService.switchServer(targetUrl, accessToken: token);
 
       if (mounted) {
-        setState(() =>
-            _switchNote = isAws ? 'Tailscale に切り替えました' : 'AWS に切り替えました');
+        setState(
+          () => _switchNote = isAws ? 'Tailscale に切り替えました' : 'AWS に切り替えました',
+        );
       }
     } catch (e) {
       if (mounted) setState(() => _switchNote = '切り替えに失敗: $e');
     } finally {
       _isSwitching = false;
+    }
+  }
+
+  Future<void> _registerPasskey() async {
+    final auth = context.read<AuthProvider>();
+    await _setMode(_PanelMode.none);
+    final restoreMascot = _mascot.isMascotMode;
+    if (restoreMascot) {
+      await _mascot.prepareForExternalAuthentication();
+    }
+
+    try {
+      final result = await auth.startPasskeyRegistration();
+      if (mounted) {
+        setState(() {
+          _passkeyRegistered =
+              result == PasskeyRegistrationResult.registered ||
+              _passkeyRegistered;
+          _passkeyNote = result.userMessage;
+        });
+      }
+    } catch (e) {
+      RaimLog.e('[Passkey] 登録処理に失敗', e.runtimeType);
+      if (mounted) {
+        setState(
+          () => _passkeyNote = PasskeyRegistrationResult.failed.userMessage,
+        );
+      }
+    } finally {
+      if (restoreMascot) {
+        await _mascot.restoreAfterExternalAuthentication();
+      }
     }
   }
 
@@ -520,11 +563,15 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   Future<void> _pickImage() async {
     // 修正: 画像上限の超過を、小窓の画像列と同じ領域に表示して知らせる。
-    final rejected = await context.read<CameraProvider>().pickAndStoreImage(ImageSource.gallery);
+    final rejected = await context.read<CameraProvider>().pickAndStoreImage(
+      ImageSource.gallery,
+    );
     if (!mounted) return;
-    setState(() => _imageLimitNote = rejected == 0
-        ? null
-        : '画像は${RaimConfig.maxImageCount}枚までです。$rejected枚は追加しませんでした。');
+    setState(
+      () => _imageLimitNote = rejected == 0
+          ? null
+          : '画像は${RaimConfig.maxImageCount}枚までです。$rejected枚は追加しませんでした。',
+    );
   }
 
   /// Unity を終了させてから自分も終わる。
@@ -615,8 +662,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     // Unity の起動待ちの間は「発信中」を出す
     return ValueListenableBuilder<bool>(
       valueListenable: _mascot.calling,
-      builder: (context, calling, child) =>
-          calling ? _buildCalling() : child!,
+      builder: (context, calling, child) => calling ? _buildCalling() : child!,
       child: _buildInputWindow(),
     );
   }
@@ -648,61 +694,74 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         // 修正: 展示用の操作時刻更新を廃止した。
       },
       child: Scaffold(
-      backgroundColor: Colors.transparent,
-      body: KeyboardListener(
-        focusNode: _windowFocusNode,
-        onKeyEvent: _handleKey,
-        child: Container(
-        decoration: BoxDecoration(
-          color: _bg,
-          borderRadius: BorderRadius.circular(11),
-          border: Border.all(color: _line),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          mainAxisSize: MainAxisSize.max,
-          // パネルは上へ伸びるので、バーは常に下端に置く
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            if (_mode != _PanelMode.none)
-              Expanded(
-                child: switch (_mode) {
-                  _PanelMode.menu => _buildMenu(),
-                  _PanelMode.log => _buildLog(),
-                  _PanelMode.credits => _buildCredits(),
-                  _PanelMode.settings => _buildSettings(),
-                  _PanelMode.none => const SizedBox.shrink(),
-                },
-              ),
-            // 修正: 入力中の文字があっても上限通知が見えるよう、プレースホルダに頼らず表示する。
-            if (_showImageStrip)
-              _imageLimitNote == null
-                  ? const _SelectedImageStrip()
-                  : SizedBox(
-                      height: MascotWindowService.imageStripHeight,
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 12),
-                          Expanded(child: Text(_imageLimitNote!, style: const TextStyle(color: _lime, fontSize: 12))),
-                          IconButton(
-                            tooltip: '通知を閉じる',
-                            onPressed: () => setState(() => _imageLimitNote = null),
-                            icon: const Icon(Icons.close, color: _mut, size: 16),
-                          ),
-                        ],
-                      ),
-                    ),
-            // 入力バーをドラッグして、Unityへの自動追従を解除しながら
-            // Flutter小窓を任意の位置へ移動できるようにする。
-            GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onPanStart: (_) => _mascot.beginManualDrag(),
-              child: _buildBar(),
+        backgroundColor: Colors.transparent,
+        body: KeyboardListener(
+          focusNode: _windowFocusNode,
+          onKeyEvent: _handleKey,
+          child: Container(
+            decoration: BoxDecoration(
+              color: _bg,
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(color: _line),
             ),
-          ],
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              mainAxisSize: MainAxisSize.max,
+              // パネルは上へ伸びるので、バーは常に下端に置く
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (_mode != _PanelMode.none)
+                  Expanded(
+                    child: switch (_mode) {
+                      _PanelMode.menu => _buildMenu(),
+                      _PanelMode.log => _buildLog(),
+                      _PanelMode.credits => _buildCredits(),
+                      _PanelMode.settings => _buildSettings(),
+                      _PanelMode.none => const SizedBox.shrink(),
+                    },
+                  ),
+                // 修正: 入力中の文字があっても上限通知が見えるよう、プレースホルダに頼らず表示する。
+                if (_showImageStrip)
+                  _imageLimitNote == null
+                      ? const _SelectedImageStrip()
+                      : SizedBox(
+                          height: MascotWindowService.imageStripHeight,
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  _imageLimitNote!,
+                                  style: const TextStyle(
+                                    color: _lime,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: '通知を閉じる',
+                                onPressed: () =>
+                                    setState(() => _imageLimitNote = null),
+                                icon: const Icon(
+                                  Icons.close,
+                                  color: _mut,
+                                  size: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                // 入力バーをドラッグして、Unityへの自動追従を解除しながら
+                // Flutter小窓を任意の位置へ移動できるようにする。
+                GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onPanStart: (_) => _mascot.beginManualDrag(),
+                  child: _buildBar(),
+                ),
+              ],
+            ),
+          ),
         ),
-      ),
-      ),
       ),
     );
   }
@@ -744,132 +803,137 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     // 中身に必要な高さ（約34px）はウィンドウ高より十分小さいので、
     // 固定せず Row の自然な高さに任せれば余白が緩衝材になる。
     return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Row(
-          children: [
-            _iconButton(
-              Icons.menu,
-              'メニュー',
-              () => _setMode(_PanelMode.menu),
-              active: _mode == _PanelMode.menu,
-            ),
-            Expanded(
-              child: ValueListenableBuilder<String>(
-                valueListenable: voice.heardText,
-                builder: (context, heard, _) => TextField(
-                  controller: _controller,
-                  focusNode: _focusNode,
-                  enabled: !chat.isOffline,
-                  // 送るのを待っている間に触ったり直したりしたら、送らずに止める
-                  onTap: () {
-                    // 修正: 展示用の操作時刻更新を廃止した。
-                    _delayed.cancel();
-                  },
-                  onChanged: (_) {
-                    // 修正: 展示用の操作時刻更新を廃止した。
-                    _delayed.cancel();
-                  },
-                  style: const TextStyle(color: _text, fontSize: 13),
-                  cursorColor: _lime,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    // マスコットモードには状態表示の場所が無いため、
-                    // プレースホルダを状態表示に兼用する。
-                    // 「〇〇を調べています」はチャット画面（message_list）に
-                    // しか出ておらず、Windows では何も出ていなかった。
-                    hintText: voice.isTranscribing
-                        ? (heard.isEmpty ? '聞いてるよ…' : _tail(heard))
-                        : voice.sttNotice ??
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Row(
+        children: [
+          _iconButton(
+            Icons.menu,
+            'メニュー',
+            () => _setMode(_PanelMode.menu),
+            active: _mode == _PanelMode.menu,
+          ),
+          Expanded(
+            child: ValueListenableBuilder<String>(
+              valueListenable: voice.heardText,
+              builder: (context, heard, _) => TextField(
+                controller: _controller,
+                focusNode: _focusNode,
+                enabled: !chat.isOffline,
+                // 送るのを待っている間に触ったり直したりしたら、送らずに止める
+                onTap: () {
+                  // 修正: 展示用の操作時刻更新を廃止した。
+                  _delayed.cancel();
+                },
+                onChanged: (_) {
+                  // 修正: 展示用の操作時刻更新を廃止した。
+                  _delayed.cancel();
+                },
+                style: const TextStyle(color: _text, fontSize: 13),
+                cursorColor: _lime,
+                decoration: InputDecoration(
+                  isDense: true,
+                  // マスコットモードには状態表示の場所が無いため、
+                  // プレースホルダを状態表示に兼用する。
+                  // 「〇〇を調べています」はチャット画面（message_list）に
+                  // しか出ておらず、Windows では何も出ていなかった。
+                  hintText: voice.isTranscribing
+                      ? (heard.isEmpty ? '聞いてるよ…' : _tail(heard))
+                      : voice.sttNotice ??
                             (voice.sttError != null
                                 ? '聞き取れませんでした（${voice.sttError}）'
                                 : _hintText(chat)),
-                    hintStyle: TextStyle(
-                      color: voice.isTranscribing ||
-                              voice.sttNotice != null ||
-                              _statusText(chat) != null
-                          ? _lime
-                          : voice.sttError != null
-                              ? const Color(0xFFE06C6C)
-                              : _mut,
-                      fontSize: 13,
-                    ),
-                    filled: true,
-                    fillColor: _bg2,
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-                    border: _border(_line),
-                    enabledBorder: _border(_line),
-                    focusedBorder: _border(_lime),
-                    disabledBorder: _border(_line),
+                  hintStyle: TextStyle(
+                    color:
+                        voice.isTranscribing ||
+                            voice.sttNotice != null ||
+                            _statusText(chat) != null
+                        ? _lime
+                        : voice.sttError != null
+                        ? const Color(0xFFE06C6C)
+                        : _mut,
+                    fontSize: 13,
                   ),
-                  // 生成中は Enter でも送らない（ボタンは既に無効化済み）
-                  onSubmitted: (_) {
-                    if (context.read<ChatProvider>().isLoading) return;
-                    _send();
-                  },
+                  filled: true,
+                  fillColor: _bg2,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 9,
+                  ),
+                  border: _border(_line),
+                  enabledBorder: _border(_line),
+                  focusedBorder: _border(_lime),
+                  disabledBorder: _border(_line),
                 ),
+                // 生成中は Enter でも送らない（ボタンは既に無効化済み）
+                onSubmitted: (_) {
+                  if (context.read<ChatProvider>().isLoading) return;
+                  _send();
+                },
               ),
             ),
-            // 修正: 展示用の分岐を削除し、通常の画像選択を利用する。
-            _iconButton(Icons.attach_file, '画像を送る', _pickImage),
-            _buildTalkButton(voice),
-            const SizedBox(width: 4),
-            SizedBox(
-              width: 32,
-              height: 32,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Positioned.fill(
-                    child: ElevatedButton(
-                      onPressed: chat.isLoading ? null : _send,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF7CB827),
-                        foregroundColor: const Color(0xFF0D1116),
-                        disabledBackgroundColor: const Color(0xFF3A4450),
-                        padding: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+          ),
+          // 修正: 展示用の分岐を削除し、通常の画像選択を利用する。
+          _iconButton(Icons.attach_file, '画像を送る', _pickImage),
+          _buildTalkButton(voice),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned.fill(
+                  child: ElevatedButton(
+                    onPressed: chat.isLoading ? null : _send,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7CB827),
+                      foregroundColor: const Color(0xFF0D1116),
+                      disabledBackgroundColor: const Color(0xFF3A4450),
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: chat.isLoading
-                          ? const SizedBox(
-                              width: 13,
-                              height: 13,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: _mut),
-                            )
-                          : const Icon(Icons.send, size: 15),
                     ),
+                    child: chat.isLoading
+                        ? const SizedBox(
+                            width: 13,
+                            height: 13,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: _mut,
+                            ),
+                          )
+                        : const Icon(Icons.send, size: 15),
                   ),
-                  // 聞き取った文を送るまでの残り時間。押せばすぐ送る
-                  ListenableBuilder(
-                    listenable: _delayed,
-                    builder: (context, _) => !_delayed.isPending
-                        ? const SizedBox.shrink()
-                        : IgnorePointer(
-                            child: SizedBox(
-                              width: 26,
-                              height: 26,
-                              child: TweenAnimationBuilder<double>(
-                                key: ValueKey(_delayed.startedAt),
-                                tween: Tween<double>(begin: 1.0, end: 0.0),
-                                duration: _delayed.delay,
-                                builder: (context, value, _) =>
-                                    CircularProgressIndicator(
-                                  value: value,
-                                  strokeWidth: 2,
-                                  color: const Color(0xFF0D1116),
-                                ),
-                              ),
+                ),
+                // 聞き取った文を送るまでの残り時間。押せばすぐ送る
+                ListenableBuilder(
+                  listenable: _delayed,
+                  builder: (context, _) => !_delayed.isPending
+                      ? const SizedBox.shrink()
+                      : IgnorePointer(
+                          child: SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: TweenAnimationBuilder<double>(
+                              key: ValueKey(_delayed.startedAt),
+                              tween: Tween<double>(begin: 1.0, end: 0.0),
+                              duration: _delayed.delay,
+                              builder: (context, value, _) =>
+                                  CircularProgressIndicator(
+                                    value: value,
+                                    strokeWidth: 2,
+                                    color: const Color(0xFF0D1116),
+                                  ),
                             ),
                           ),
-                  ),
-                ],
-              ),
+                        ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -892,9 +956,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   }
 
   OutlineInputBorder _border(Color color) => OutlineInputBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(8)),
-        borderSide: BorderSide(color: color),
-      );
+    borderRadius: const BorderRadius.all(Radius.circular(8)),
+    borderSide: BorderSide(color: color),
+  );
 
   Widget _iconButton(
     IconData icon,
@@ -946,11 +1010,13 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
             ),
           )
         else
-          ...chat.threads.map((t) => _threadRow(
-                t.threadId,
-                t.title,
-                isCurrent: t.threadId == chat.currentThreadId,
-              )),
+          ...chat.threads.map(
+            (t) => _threadRow(
+              t.threadId,
+              t.title,
+              isCurrent: t.threadId == chat.currentThreadId,
+            ),
+          ),
         _menuRow(Icons.add, '新しい会話', () {
           context.read<ChatProvider>().startNewThread();
           _setMode(_PanelMode.none);
@@ -962,8 +1028,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         _sectionLabel('アプリ'),
         _buildWakeWordRow(),
         // 【追加】配布版では接続先切り替えの行を作らない。
-        if (RaimConfig.enableServerSwitch)
-          _buildServerRow(),
+        if (RaimConfig.enableServerSwitch) _buildServerRow(),
         // 開発用: マイクに入っている音を wav に保存して耳で確かめる
         _menuRow(
           _isRecordingDump ? Icons.stop_circle_outlined : Icons.graphic_eq,
@@ -971,10 +1036,29 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
           _toggleMicDump,
           color: _isRecordingDump ? _lime : _text,
         ),
-        _menuRow(Icons.settings_outlined, '設定',
-            () => _setMode(_PanelMode.settings)),
-        _menuRow(Icons.record_voice_over, 'クレジット表記',
-            () => _setMode(_PanelMode.credits)),
+        _menuRow(
+          Icons.settings_outlined,
+          '設定',
+          () => _setMode(_PanelMode.settings),
+        ),
+        _menuRow(
+          Icons.record_voice_over,
+          'クレジット表記',
+          () => _setMode(_PanelMode.credits),
+        ),
+        _menuRow(
+          Icons.key_rounded,
+          _passkeyRegistered ? 'パスキーを登録する（登録済み）' : 'パスキーを登録する',
+          _registerPasskey,
+        ),
+        if (_passkeyNote != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(40, 0, 14, 6),
+            child: Text(
+              _passkeyNote!,
+              style: const TextStyle(color: _lime, fontSize: 10.5),
+            ),
+          ),
         _menuRow(Icons.logout_rounded, 'ログアウト', _logout),
         _menuRow(Icons.power_settings_new, '終了', _quit),
       ],
@@ -990,21 +1074,27 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         child: Row(
           children: [
             const Expanded(
-              child: Text('この会話を削除しますか？',
-                  style: TextStyle(color: _text, fontSize: 12.5)),
+              child: Text(
+                'この会話を削除しますか？',
+                style: TextStyle(color: _text, fontSize: 12.5),
+              ),
             ),
             TextButton(
               onPressed: () => setState(() => _confirmingDeleteId = null),
-              child: const Text('やめる',
-                  style: TextStyle(color: _mut, fontSize: 12)),
+              child: const Text(
+                'やめる',
+                style: TextStyle(color: _mut, fontSize: 12),
+              ),
             ),
             TextButton(
               onPressed: () {
                 context.read<ChatProvider>().deleteThread(id);
                 setState(() => _confirmingDeleteId = null);
               },
-              child: const Text('削除',
-                  style: TextStyle(color: Color(0xFFE06C6C), fontSize: 12)),
+              child: const Text(
+                '削除',
+                style: TextStyle(color: Color(0xFFE06C6C), fontSize: 12),
+              ),
             ),
           ],
         ),
@@ -1108,32 +1198,47 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // クレジット表記を増やしたい場合はここに追加
-                Text('音声合成',
-                    style: TextStyle(
-                        color: _text,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold)),
+                Text(
+                  '音声合成',
+                  style: TextStyle(
+                    color: _text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 SizedBox(height: 5),
-                Text('・VOICEVOX: 春日部つむぎ',
-                    style: TextStyle(color: _mut, fontSize: 12.5)),
+                Text(
+                  '・VOICEVOX: 春日部つむぎ',
+                  style: TextStyle(color: _mut, fontSize: 12.5),
+                ),
                 Divider(height: 22, color: _line),
-                Text('音声認識',
-                    style: TextStyle(
-                        color: _text,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold)),
+                Text(
+                  '音声認識',
+                  style: TextStyle(
+                    color: _text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 SizedBox(height: 5),
-                Text('・Vosk（Alpha Cephei、Apache License 2.0）',
-                    style: TextStyle(color: _mut, fontSize: 12.5)),
+                Text(
+                  '・Vosk（Alpha Cephei、Apache License 2.0）',
+                  style: TextStyle(color: _mut, fontSize: 12.5),
+                ),
                 Divider(height: 22, color: _line),
-                Text('駅データ',
-                    style: TextStyle(
-                        color: _text,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold)),
+                Text(
+                  '駅データ',
+                  style: TextStyle(
+                    color: _text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 SizedBox(height: 5),
-                Text('・station_database（Seo-4d696b75、CC BY 4.0）',
-                    style: TextStyle(color: _mut, fontSize: 12.5)),
+                Text(
+                  '・station_database（Seo-4d696b75、CC BY 4.0）',
+                  style: TextStyle(color: _mut, fontSize: 12.5),
+                ),
                 Divider(height: 22, color: _line),
               ],
             ),
@@ -1162,11 +1267,15 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('接続先切り替え',
-                      style: TextStyle(color: _text, fontSize: 13)),
+                  const Text(
+                    '接続先切り替え',
+                    style: TextStyle(color: _text, fontSize: 13),
+                  ),
                   Text(
                     _switchNote ??
-                        (isAws ? '現在: AWS (CloudFront)' : '現在: Tailscale / Local'),
+                        (isAws
+                            ? '現在: AWS (CloudFront)'
+                            : '現在: Tailscale / Local'),
                     style: TextStyle(
                       color: accent,
                       fontSize: 10.5,
@@ -1189,12 +1298,12 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   }
 
   Widget _sectionLabel(String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(14, 11, 14, 5),
-        child: Text(
-          text,
-          style: const TextStyle(color: _mut, fontSize: 10.5, letterSpacing: 1),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(14, 11, 14, 5),
+    child: Text(
+      text,
+      style: const TextStyle(color: _mut, fontSize: 10.5, letterSpacing: 1),
+    ),
+  );
 
   /// 「ねえライム」で呼び出すかどうかの切り替え。
   ///
@@ -1214,14 +1323,14 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         '「ねえライム」: ON（前回: ${voice.sttError}）',
       VoiceState.off ||
       VoiceState.listening ||
-      VoiceState.awake =>
-        '「ねえライム」で呼ぶ: ${enabled ? "ON" : "OFF"}',
+      VoiceState.awake => '「ねえライム」で呼ぶ: ${enabled ? "ON" : "OFF"}',
     };
 
     final color = switch (voice.state) {
       VoiceState.error => const Color(0xFFE06C6C),
-      VoiceState.listening when voice.sttError != null =>
-        const Color(0xFFE06C6C),
+      VoiceState.listening when voice.sttError != null => const Color(
+        0xFFE06C6C,
+      ),
       _ when enabled => _lime,
       _ => _text,
     };
@@ -1311,8 +1420,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         Expanded(
           child: messages.isEmpty
               ? const Center(
-                  child: Text('まだ会話がありません',
-                      style: TextStyle(color: _mut, fontSize: 12.5)),
+                  child: Text(
+                    'まだ会話がありません',
+                    style: TextStyle(color: _mut, fontSize: 12.5),
+                  ),
                 )
               : ListView.builder(
                   reverse: true,
@@ -1330,14 +1441,19 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                         child: Container(
                           constraints: const BoxConstraints(maxWidth: 300),
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 7),
+                            horizontal: 10,
+                            vertical: 7,
+                          ),
                           decoration: BoxDecoration(
                             color: isUser ? const Color(0xFF2E4A1E) : _bg2,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             m.text,
-                            style: const TextStyle(color: _text, fontSize: 12.5),
+                            style: const TextStyle(
+                              color: _text,
+                              fontSize: 12.5,
+                            ),
                           ),
                         ),
                       ),
@@ -1391,8 +1507,10 @@ class _SelectedImageStrip extends StatelessWidget {
                   color: Colors.white70,
                   splashRadius: 11,
                   padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints.tightFor(width: 20, height: 20),
+                  constraints: const BoxConstraints.tightFor(
+                    width: 20,
+                    height: 20,
+                  ),
                   onPressed: () =>
                       context.read<CameraProvider>().removeImageAt(i),
                 ),

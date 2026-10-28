@@ -528,6 +528,22 @@ class MascotWindowService {
     await windowManager.hide();
   }
 
+  /// 外部認証ブラウザを操作できるよう、一時的に小窓を隠します。
+  ///
+  /// マスコット小窓は常に最前面なので、表示したままだとブラウザの
+  /// パスキー画面をクリックできないことがあります。
+  Future<void> prepareForExternalAuthentication() async {
+    if (!isSupported || !_mascotMode) return;
+    await windowManager.setAlwaysOnTop(false);
+    await hide();
+  }
+
+  /// 外部認証ブラウザから戻った後に小窓を再表示します。
+  Future<void> restoreAfterExternalAuthentication() async {
+    if (!isSupported || !_mascotMode) return;
+    await showAtCharacter();
+  }
+
   /// Unity の起動を待つ間、「発信中」の小窓を出す。
   ///
   /// 前回ライムがいた場所の足元に出す。初めて起動したときは画面の中央。
