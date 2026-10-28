@@ -12,6 +12,7 @@ import 'package:raim_prototype/config/raim_config.dart';
 import 'package:raim_prototype/models/auth_tokens.dart';
 import 'package:raim_prototype/services/browser_login_launcher.dart';
 import 'package:raim_prototype/services/local_callback_server.dart';
+import 'package:raim_prototype/services/passkey_registration.dart';
 import 'package:raim_prototype/services/token_storage.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
@@ -24,6 +25,7 @@ class AuthService {
   final AppLinks _appLinks;
   final LocalCallbackServer _localCallbackServer;
   final BrowserLoginLauncher _browserLoginLauncher;
+  final PasskeyRegistrationStateStorage _passkeyState;
 
   StreamSubscription<Uri>? _linkSubscription;
   Future<void> Function(Uri uri)? _onCallback;
@@ -32,6 +34,10 @@ class AuthService {
 
   /// 進行中のログイン処理。多重実行を防ぐために共有する。
   Future<AuthTokens?>? _loginInFlight;
+
+  /// 進行中のパスキー登録。登録ページから戻るまで同じ Future を共有する。
+  Future<PasskeyRegistrationResult>? _passkeyInFlight;
+  Completer<PasskeyRegistrationResult>? _passkeyCallbackCompleter;
 
   /// 進行中のトークン更新。同じ refresh token で二重に叩かないために共有する。
   Future<AuthTokens?>? _refreshInFlight;
@@ -56,10 +62,12 @@ class AuthService {
     AppLinks? appLinks,
     LocalCallbackServer? localCallbackServer,
     BrowserLoginLauncher? browserLoginLauncher,
+    PasskeyRegistrationStateStorage? passkeyState,
   }) : _storage = storage ?? TokenStorage(),
        _appLinks = appLinks ?? AppLinks(),
        _localCallbackServer = localCallbackServer ?? LocalCallbackServer(),
-       _browserLoginLauncher = browserLoginLauncher ?? BrowserLoginLauncher();
+       _browserLoginLauncher = browserLoginLauncher ?? BrowserLoginLauncher(),
+       _passkeyState = passkeyState ?? PasskeyRegistrationStateStorage();
 
   // 【追加】開始時と現在が同じ認証状態かを確認する。
   bool _isCurrentAuth(int generation) =>
@@ -125,9 +133,7 @@ class AuthService {
     final tokens = await _withTokenStorage(_storage.readTokens);
     if (!_isCurrentAuth(generation) || tokens == null) return null;
 
-    final result = tokens.isExpiringSoon
-        ? await refreshTokens(tokens)
-        : tokens;
+    final result = tokens.isExpiringSoon ? await refreshTokens(tokens) : tokens;
 
     // 【追加】更新待ちの間にログアウトされた場合も返さない。
     return _isCurrentAuth(generation) ? result : null;
@@ -138,8 +144,62 @@ class AuthService {
     // 【追加】進行中の更新も無効にし、削除を直列化する。
     _authGeneration++;
     _refreshInFlight = null;
-    return _withTokenStorage(_storage.clearTokens);
+    return _withTokenStorage(() async {
+      await _passkeyState.clearAll();
+      await _storage.clearTokens();
+    });
   }
+
+  /// 現在のユーザーに登録済みのパスキーがあるか確認します。
+  ///
+  /// Cognito の一覧 API が一時的に利用できない場合は、直近にこのアプリで
+  /// 登録成功を確認した状態へフォールバックします。トークンや API 応答の
+  /// 内容はログへ出力しません。
+  Future<bool> hasRegisteredPasskey() async {
+    final locallyKnown = await _passkeyState.isRegistered();
+    final accessToken = await getValidAccessToken();
+    if (accessToken == null || accessToken.isEmpty) return locallyKnown;
+
+    try {
+      String? nextToken;
+      do {
+        final response = await http
+            .post(
+              Uri.parse(
+                'https://cognito-idp.${RaimConfig.cognitoRegion}.amazonaws.com/',
+              ),
+              headers: {
+                'Content-Type': 'application/x-amz-json-1.1',
+                'X-Amz-Target':
+                    'AWSCognitoIdentityProviderService.ListWebAuthnCredentials',
+              },
+              body: jsonEncode({
+                'AccessToken': accessToken,
+                'MaxResults': 20,
+                ...?nextToken == null ? null : {'NextToken': nextToken},
+              }),
+            )
+            .timeout(_httpTimeout);
+
+        if (response.statusCode != 200) return locallyKnown;
+
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        final credentials = body['Credentials'];
+        if (credentials is List && credentials.isNotEmpty) {
+          await _passkeyState.markRegistered();
+          return true;
+        }
+        nextToken = body['NextToken'] as String?;
+      } while (nextToken != null && nextToken.isNotEmpty);
+
+      await _passkeyState.clearRegistered();
+      return false;
+    } catch (e) {
+      RaimLog.d('[Passkey] 登録状態の確認に失敗しました: ${e.runtimeType}');
+      return locallyKnown;
+    }
+  }
+
   /// Cognito Managed Login の URL を作ります。
   ///
   /// PKCE の `code_verifier` と `state` は callback 処理で必要になるため、
@@ -167,6 +227,144 @@ class AuthService {
         'ui_locales': 'ja',
       },
     );
+  }
+
+  /// Cognito Managed Login のパスキー登録 URL を作ります。
+  ///
+  /// WebAuthn の処理は Cognito と OS の認証器に委譲し、アプリでは URL の
+  /// 作成と登録後の callback の受け取りだけを行います。
+  Uri createPasskeyRegistrationUri() {
+    return Uri.parse(RaimConfig.cognitoDomain).replace(
+      path: '/passkeys/add',
+      queryParameters: {
+        'client_id': RaimConfig.clientId,
+        'redirect_uri': _redirectUri,
+      },
+    );
+  }
+
+  bool get isPasskeyRegistrationPending =>
+      _passkeyCallbackCompleter != null &&
+      !_passkeyCallbackCompleter!.isCompleted;
+
+  /// アプリ再起動後の Web callback も、通常ログインの code と区別します。
+  /// 通常ログインの成功には必ず code があり、パスキー登録の成功 callback
+  /// には code がありません。
+  Future<bool> shouldHandlePasskeyCallback(Uri uri) async {
+    if (!_isExpectedCallbackUri(uri)) return false;
+    if (isPasskeyRegistrationPending) return true;
+    if (uri.queryParameters.containsKey('code')) return false;
+    return _passkeyState.isPending();
+  }
+
+  /// ログイン済みの Managed Login セッションでパスキー登録を開始します。
+  Future<PasskeyRegistrationResult> startPasskeyRegistration() {
+    final inFlight = _passkeyInFlight;
+    if (inFlight != null) return inFlight;
+
+    final future = _startPasskeyRegistrationInternal();
+    _passkeyInFlight = future;
+    return future.whenComplete(() {
+      if (identical(_passkeyInFlight, future)) {
+        _passkeyInFlight = null;
+      }
+    });
+  }
+
+  Future<PasskeyRegistrationResult> _startPasskeyRegistrationInternal() async {
+    final callbackCompleter = Completer<PasskeyRegistrationResult>();
+    _passkeyCallbackCompleter = callbackCompleter;
+    await _passkeyState.markPending();
+
+    Future<Uri>? loopbackCallback;
+    if (_usesLoopbackRedirect) {
+      loopbackCallback = _localCallbackServer.waitForCallback();
+    }
+
+    final bool launched;
+    try {
+      launched = await _browserLoginLauncher.launch(
+        createPasskeyRegistrationUri(),
+      );
+    } catch (e) {
+      RaimLog.e('[Passkey] 登録ページを開けませんでした', e.runtimeType);
+      await _localCallbackServer.close();
+      await _passkeyState.clear();
+      _passkeyCallbackCompleter = null;
+      return PasskeyRegistrationResult.failed;
+    }
+    if (!launched) {
+      await _localCallbackServer.close();
+      await _passkeyState.clear();
+      _passkeyCallbackCompleter = null;
+      return PasskeyRegistrationResult.failed;
+    }
+
+    try {
+      if (loopbackCallback != null) {
+        final callbackUri = await loopbackCallback;
+        return await handlePasskeyCallback(callbackUri);
+      }
+
+      return await callbackCompleter.future.timeout(
+        const Duration(minutes: 10),
+        onTimeout: () => PasskeyRegistrationResult.cancelled,
+      );
+    } finally {
+      await _passkeyState.clear();
+      _passkeyCallbackCompleter = null;
+      await _browserLoginLauncher.closeLaunchedBrowser();
+    }
+  }
+
+  /// パスキー登録ページから戻った callback を処理します。
+  ///
+  /// callback に含まれる値は分類にだけ使い、ログや画面には出しません。
+  Future<PasskeyRegistrationResult> handlePasskeyCallback(Uri uri) async {
+    if (!_isExpectedCallbackUri(uri)) {
+      return PasskeyRegistrationResult.failed;
+    }
+
+    final result = _classifyPasskeyCallback(uri);
+    if (result == PasskeyRegistrationResult.registered) {
+      await _passkeyState.markRegistered();
+    }
+    await _passkeyState.clear();
+    final completer = _passkeyCallbackCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(result);
+    }
+    await _browserLoginLauncher.closeLaunchedBrowser();
+    return result;
+  }
+
+  PasskeyRegistrationResult _classifyPasskeyCallback(Uri uri) {
+    final error = uri.queryParameters['error']?.toLowerCase() ?? '';
+    // Cognito の正常な登録完了 callback では error が返りません。
+    // error_description だけが付いている場合も成功として扱います。
+    // エラーの詳細文字列は仕様上固定されていないため、error が無い
+    // callback を詳細文だけで失敗扱いにしないようにします。
+    if (error.isEmpty) return PasskeyRegistrationResult.registered;
+
+    final description =
+        uri.queryParameters['error_description']?.toLowerCase() ?? '';
+    final reason = '$error $description';
+
+    if (reason.contains('redirect')) {
+      return PasskeyRegistrationResult.redirectUriMismatch;
+    }
+    if (RegExp(
+      r'not[_ -]supported|no[_ -]authenticator|no[_ -]credential',
+    ).hasMatch(reason)) {
+      return PasskeyRegistrationResult.noAuthenticator;
+    }
+    if (RegExp(r'cancel|denied|abort|notallowed').hasMatch(reason)) {
+      return PasskeyRegistrationResult.cancelled;
+    }
+    if (RegExp(r'network|timeout|temporar|unavailable').hasMatch(reason)) {
+      return PasskeyRegistrationResult.networkError;
+    }
+    return PasskeyRegistrationResult.failed;
   }
 
   /// Cognito Managed Login を通常の外部ブラウザで開きます。
@@ -320,8 +518,10 @@ class AuthService {
     }
 
     // 【変更】この更新が属する認証世代を、内部処理へ渡す。
-    final future = _refreshTokensInternal(currentTokens, generation)
-        .then((tokens) => _isCurrentAuth(generation) ? tokens : null);
+    final future = _refreshTokensInternal(
+      currentTokens,
+      generation,
+    ).then((tokens) => _isCurrentAuth(generation) ? tokens : null);
     _refreshInFlight = future;
     return future.whenComplete(() {
       if (identical(_refreshInFlight, future)) {
@@ -374,8 +574,8 @@ class AuthService {
       // refresh token が本当に無効になったときだけ消す。
       // 以前は 5xx や一時的な失敗でも消していたため、
       // サーバー側の一瞬の不調で強制ログアウトになっていた。
-      final revoked = response.statusCode == 400 &&
-          response.body.contains('invalid_grant');
+      final revoked =
+          response.statusCode == 400 && response.body.contains('invalid_grant');
 
       RaimLog.e(
         '[AuthService] トークン更新に失敗 status=${response.statusCode} '
@@ -451,6 +651,7 @@ class AuthService {
       // 【変更】ネットワークを待つ前に、端末側の認証情報を消す。
       await _storage.clearPkceState();
       await _storage.clearTokens();
+      await _passkeyState.clearAll();
       return tokens;
     });
 
@@ -473,10 +674,7 @@ class AuthService {
           .post(
             revokeUri,
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: {
-              'token': refreshToken,
-              'client_id': RaimConfig.clientId,
-            },
+            body: {'token': refreshToken, 'client_id': RaimConfig.clientId},
           )
           .timeout(_httpTimeout);
 
@@ -513,21 +711,20 @@ class AuthService {
   bool get _usesLoopbackRedirect =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
-  String get _redirectUri => _usesLoopbackRedirect
-      ? RaimConfig.windowsRedirectUri
+  String get _redirectUri => (_usesLoopbackRedirect || kIsWeb)
+      ? RaimConfig.webRedirectUri
       : RaimConfig.redirectUri;
 
   bool _isExpectedCallbackUri(Uri uri) {
-    final isCustomSchemeCallback =
-        uri.scheme == 'raim' && uri.host == 'callback';
-    final isLoopbackCallback =
-        _usesLoopbackRedirect &&
-        uri.scheme == 'http' &&
-        (uri.host == 'localhost' || uri.host == '127.0.0.1') &&
-        uri.port == 3000 &&
-        uri.path == '/callback';
+    final expected = Uri.tryParse(_redirectUri);
+    if (expected == null || expected.scheme.isEmpty || expected.host.isEmpty) {
+      return false;
+    }
 
-    return isCustomSchemeCallback || isLoopbackCallback;
+    return uri.scheme == expected.scheme &&
+        uri.host == expected.host &&
+        uri.port == expected.port &&
+        uri.path == expected.path;
   }
 
   Future<AuthTokens> _exchangeCodeForTokens({

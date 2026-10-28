@@ -15,6 +15,8 @@ import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/mascot_window_service.dart';
+import 'package:raim_prototype/services/passkey_registration.dart';
 import 'package:raim_prototype/services/voice/delayed_send.dart';
 import 'package:raim_prototype/services/wake_cue.dart';
 import 'package:raim_prototype/services/wake_word_service.dart';
@@ -22,7 +24,7 @@ import 'package:raim_prototype/config/raim_config.dart';
 
 class ChatInput extends StatefulWidget {
   const ChatInput({super.key});
-  
+
   @override
   State<ChatInput> createState() => _ChatInputState();
 }
@@ -45,7 +47,7 @@ class _ChatInputState extends State<ChatInput> {
   void initState() {
     super.initState();
 
-  // 入力欄にフォーカスがあるときのキー入力を監視する
+    // 入力欄にフォーカスがあるときのキー入力を監視する
     _inputFocusNode.onKeyEvent = _handleInputKeyEvent;
 
     final voice = context.read<VoiceController>();
@@ -106,13 +108,14 @@ class _ChatInputState extends State<ChatInput> {
   }
 
   // Windows版のみ:
- // Shift + Enter は改行、Enterのみは送信にする
+  // Shift + Enter は改行、Enterのみは送信にする
   KeyEventResult _handleInputKeyEvent(FocusNode node, KeyEvent event) {
     if (!Platform.isWindows || event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
 
-    final isEnter = event.logicalKey == LogicalKeyboardKey.enter ||
+    final isEnter =
+        event.logicalKey == LogicalKeyboardKey.enter ||
         event.logicalKey == LogicalKeyboardKey.numpadEnter;
 
     if (!isEnter) {
@@ -142,7 +145,7 @@ class _ChatInputState extends State<ChatInput> {
     _controller.dispose();
     super.dispose();
   }
-  
+
   void _sendMessage() {
     // 待っている途中に送信ボタンで送ったときなど、二重に送らない
     _delayed.cancel();
@@ -175,24 +178,24 @@ class _ChatInputState extends State<ChatInput> {
       text,
       pendingImages: pendingImages,
       filePaths: pathsToSend, //画面表示用のファイルパスをChatProviderに渡す
-      );
+    );
     _controller.clear();
     // 一時ファイルはアップロードサービスが読み終わってから削除する。
     cameraProvider.clearImage(deleteTemporaryFiles: false);
   }
-  
+
   @override
   Widget build(BuildContext context) {
-  // 修正: 展示用アカウントによる入力UIの出し分けを削除した。
-  final voice = context.watch<VoiceController>();
-  final manualMic = context.watch<VoiceSettingsProvider>().manualMicEnabled;
-  final talking = voice.isTranscribing;
+    // 修正: 展示用アカウントによる入力UIの出し分けを削除した。
+    final voice = context.watch<VoiceController>();
+    final manualMic = context.watch<VoiceSettingsProvider>().manualMicEnabled;
+    final talking = voice.isTranscribing;
 
-  return TapRegion(
-    // 追加：入力欄の外を押したときにキーボードを閉じる
-    onTapOutside: (_) {
-      FocusManager.instance.primaryFocus?.unfocus();
-    },
+    return TapRegion(
+      // 追加：入力欄の外を押したときにキーボードを閉じる
+      onTapOutside: (_) {
+        FocusManager.instance.primaryFocus?.unfocus();
+      },
 
       // 追加：画像と入力欄を縦に並べる
       child: Column(
@@ -201,172 +204,170 @@ class _ChatInputState extends State<ChatInput> {
           // 追加：選択した画像を入力欄の上に表示
           // 修正: 通常の画像プレビューを常に利用する。
           const _SelectedImagePreview(),
-        // 聞き取った文を送るまでの待ち時間（設定「少し待ってから送る」）
-        ListenableBuilder(
-          listenable: _delayed,
-          builder: (context, _) => !_delayed.isPending
-              ? const SizedBox.shrink()
-              : Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 16, 0),
-                  child: Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'このまま送ります（入力欄を触ると止まります）',
-                          style: TextStyle(
-                            color: Color(0xFFB7F35A),
-                            fontSize: 12,
+          // 聞き取った文を送るまでの待ち時間（設定「少し待ってから送る」）
+          ListenableBuilder(
+            listenable: _delayed,
+            builder: (context, _) => !_delayed.isPending
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 4, 16, 0),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'このまま送ります（入力欄を触ると止まります）',
+                            style: TextStyle(
+                              color: Color(0xFFB7F35A),
+                              fontSize: 12,
+                            ),
                           ),
                         ),
-                      ),
-                      TextButton(
-                        onPressed: _delayed.cancel,
-                        child: const Text(
-                          '送らない',
-                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                        TextButton(
+                          onPressed: _delayed.cancel,
+                          child: const Text(
+                            '送らない',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
+                      ],
+                    ),
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                // 画像を添える（カメラ / ギャラリー）。以前は画面上部の CAPTURE ボタンだった
+                // 修正: 廃止した展示機能の条件分岐を削除した。
+                const _AttachImageButton(),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ValueListenableBuilder<String>(
+                    valueListenable: voice.heardText,
+                    builder: (context, heard, _) => TextField(
+                      // Enterキーの処理を受け取るために FocusNode を設定する
+                      focusNode: _inputFocusNode,
+                      controller: _controller,
+                      // 送るのを待っている間に触ったり直したりしたら、送らずに止める
+                      onTap: _delayed.cancel,
+                      onChanged: (_) => _delayed.cancel(),
+                      keyboardType: TextInputType.multiline,
+                      textInputAction: TextInputAction.newline,
+                      minLines: 1,
+                      maxLines: 4,
+                      style: const TextStyle(color: Colors.white, fontSize: 15),
+                      cursorColor: Colors.white,
+                      decoration: InputDecoration(
+                        hintText: _hint(voice, heard),
+
+                        // マイクボタン。押して話し、もう一度押すか黙ると送る
+                        suffixIcon: !manualMic && !talking
+                            ? null
+                            : IconButton(
+                                tooltip: talking ? '話し終わり' : 'マイクで話しかける',
+                                icon: Icon(
+                                  talking
+                                      ? Icons.stop_circle_rounded
+                                      : Icons.mic_rounded,
+                                  color: talking
+                                      ? const Color(0xFFB7F35A)
+                                      : Colors.white70,
+                                ),
+                                onPressed: talking || voice.canTalk
+                                    ? () => voice.toggleTalk()
+                                    : null,
+                              ),
+
+                        hintStyle: TextStyle(
+                          color: talking || voice.sttNotice != null
+                              ? const Color(0xFFB7F35A)
+                              : voice.sttError != null
+                              ? const Color(0xFFFF8A80)
+                              : Colors.white.withValues(alpha: 0.5),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.15),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.3),
+                            width: 1,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: const BorderSide(
+                            color: Colors.white,
+                            width: 1.5,
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 8),
+
+                // 送信ボタン
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8BC34A),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // 送るまでの残り時間。押せばすぐ送る
+                      ListenableBuilder(
+                        listenable: _delayed,
+                        builder: (context, _) => !_delayed.isPending
+                            ? const SizedBox.shrink()
+                            : SizedBox(
+                                width: 44,
+                                height: 44,
+                                child: TweenAnimationBuilder<double>(
+                                  key: ValueKey(_delayed.startedAt),
+                                  tween: Tween<double>(begin: 1.0, end: 0.0),
+                                  duration: _delayed.delay,
+                                  builder: (context, value, _) =>
+                                      CircularProgressIndicator(
+                                        value: value,
+                                        strokeWidth: 3,
+                                        color: Colors.white,
+                                      ),
+                                ),
+                              ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.send, color: Colors.white),
+                        onPressed: _sendMessage,
                       ),
                     ],
                   ),
                 ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              // 画像を添える（カメラ / ギャラリー）。以前は画面上部の CAPTURE ボタンだった
-              // 修正: 廃止した展示機能の条件分岐を削除した。
-              const _AttachImageButton(),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ValueListenableBuilder<String>(
-                  valueListenable: voice.heardText,
-                  builder: (context, heard, _) => TextField(
-                    // Enterキーの処理を受け取るために FocusNode を設定する
-                    focusNode: _inputFocusNode,
-                    controller: _controller,
-                    // 送るのを待っている間に触ったり直したりしたら、送らずに止める
-                    onTap: _delayed.cancel,
-                    onChanged: (_) => _delayed.cancel(),
-                    keyboardType: TextInputType.multiline,
-                    textInputAction: TextInputAction.newline,
-                    minLines: 1,
-                    maxLines: 4,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                    ),
-                    cursorColor: Colors.white,
-                    decoration: InputDecoration(
-                      hintText: _hint(voice, heard),
-
-                      // マイクボタン。押して話し、もう一度押すか黙ると送る
-                      suffixIcon: !manualMic && !talking
-                          ? null
-                          : IconButton(
-                              tooltip: talking ? '話し終わり' : 'マイクで話しかける',
-                              icon: Icon(
-                                talking
-                                    ? Icons.stop_circle_rounded
-                                    : Icons.mic_rounded,
-                                color: talking
-                                    ? const Color(0xFFB7F35A)
-                                    : Colors.white70,
-                              ),
-                              onPressed: talking || voice.canTalk
-                                  ? () => voice.toggleTalk()
-                                  : null,
-                            ),
-
-                      hintStyle: TextStyle(
-                        color: talking || voice.sttNotice != null
-                            ? const Color(0xFFB7F35A)
-                            : voice.sttError != null
-                                ? const Color(0xFFFF8A80)
-                                : Colors.white.withValues(alpha: 0.5),
-                      ),
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.15),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.3),
-                          width: 1,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: const BorderSide(
-                          color: Colors.white,
-                          width: 1.5,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(width: 8),
-
-              // 送信ボタン
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF8BC34A),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // 送るまでの残り時間。押せばすぐ送る
-                    ListenableBuilder(
-                      listenable: _delayed,
-                      builder: (context, _) => !_delayed.isPending
-                          ? const SizedBox.shrink()
-                          : SizedBox(
-                              width: 44,
-                              height: 44,
-                              child: TweenAnimationBuilder<double>(
-                                key: ValueKey(_delayed.startedAt),
-                                tween: Tween<double>(begin: 1.0, end: 0.0),
-                                duration: _delayed.delay,
-                                builder: (context, value, _) =>
-                                    CircularProgressIndicator(
-                                  value: value,
-                                  strokeWidth: 3,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.send,
-                        color: Colors.white,
-                      ),
-                      onPressed: _sendMessage,
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
-}
+
 //選択した画像を送信前にプレビュー表示し、不要な画像を削除
 class _SelectedImagePreview extends StatelessWidget {
   const _SelectedImagePreview();
@@ -400,10 +401,7 @@ class _SelectedImagePreview extends StatelessWidget {
                         height: 70,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.white30,
-                            width: 1.5,
-                          ),
+                          border: Border.all(color: Colors.white30, width: 1.5),
                           image: DecorationImage(
                             image: FileImage(File(imagePath)),
                             fit: BoxFit.cover,
@@ -441,10 +439,10 @@ class _SelectedImagePreview extends StatelessWidget {
   }
 }
 
-
 /// ハンバーガーメニューボタン
 //class ChatMenuButton extends StatelessWidget {
-class ChatMenuButton extends StatefulWidget {//開発検証用
+class ChatMenuButton extends StatefulWidget {
+  //開発検証用
   const ChatMenuButton({
     super.key,
     required this.onSettings,
@@ -463,12 +461,57 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
   @override
   State<ChatMenuButton> createState() => _ChatMenuButtonState();
 }
-  class _ChatMenuButtonState extends State<ChatMenuButton> {
+
+class _ChatMenuButtonState extends State<ChatMenuButton> {
   bool _isSwitching = false;
+  bool _passkeyRegistered = false;
   // 接続先は RaimConfig に集約した（3箇所に散っていたのをやめる）
   static const String awsUrl = RaimConfig.serverUrl;
   static const String localUrl = RaimConfig.localServerUrl;
   //-----------------------------------------------------------
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPasskeyRegistrationState();
+  }
+
+  Future<void> _loadPasskeyRegistrationState() async {
+    final registered = await context
+        .read<AuthProvider>()
+        .hasRegisteredPasskey();
+    if (mounted) setState(() => _passkeyRegistered = registered);
+  }
+
+  Future<void> _registerPasskey() async {
+    final mascot = MascotWindowService.instance;
+    final auth = context.read<AuthProvider>();
+    final restoreMascot = mascot.isMascotMode;
+    if (restoreMascot) {
+      await mascot.prepareForExternalAuthentication();
+    }
+
+    PasskeyRegistrationResult result;
+    try {
+      result = await auth.startPasskeyRegistration();
+    } catch (e) {
+      // 認証情報や callback URL はログへ出さない。
+      RaimLog.e('[Passkey] 登録処理に失敗', e.runtimeType);
+      result = PasskeyRegistrationResult.failed;
+    } finally {
+      if (restoreMascot) {
+        await mascot.restoreAfterExternalAuthentication();
+      }
+    }
+    if (!mounted) return;
+    if (result == PasskeyRegistrationResult.registered) {
+      setState(() => _passkeyRegistered = true);
+    }
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(result.userMessage)));
+  }
+
   @override
   Widget build(BuildContext context) {
     // --現在の RaimServerService から接続先URLを取得(開発検証用)
@@ -482,7 +525,8 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
       offset: const Offset(0, 56),
       onOpened: _removeFocus,
       onCanceled: _removeFocus,
-      onSelected: (value) async{ //asyncは開発検証を消すときに消す
+      onSelected: (value) async {
+        //asyncは開発検証を消すときに消す
         _removeFocus();
 
         switch (value) {
@@ -519,7 +563,9 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
                 ScaffoldMessenger.of(context).clearSnackBars();
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(isAws ? 'Tailscale に切り替えました' : 'AWS に切り替えました'),
+                    content: Text(
+                      isAws ? 'Tailscale に切り替えました' : 'AWS に切り替えました',
+                    ),
                   ),
                 );
               }
@@ -529,11 +575,14 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
             }
             break;
           case 'credits':
-          _showCreditsDialog(context);
-          break;
+            _showCreditsDialog(context);
+            break;
           //widgetは検証が終わったら消す
           case 'settings':
             widget.onSettings();
+            break;
+          case 'passkey':
+            await _registerPasskey();
             break;
           case 'station_alarm':
             widget.onStationAlarm?.call();
@@ -547,40 +596,41 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
         // 接続先切り替えメニュー項目(開発検証用)
         // 【追加】有効なビルドだけ、項目をリストへ入れる。
         if (RaimConfig.enableServerSwitch)
-        PopupMenuItem(
-          value: 'switch_server',
-          child: Row(
-            children: [
-              Icon(
-                Icons.swap_horiz_rounded,
-                color: isAws ? const Color(0xFFB7F35A) : Colors.orangeAccent,
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    '接続先切り替え',
-                    style: TextStyle(color: Colors.white, fontSize: 13),
-                  ),
-                  Text(
-                    isAws ? '現在: AWS (CloudFront)' : '現在: Tailscale / Local',
-                    style: TextStyle(
-                      color: isAws ? const Color(0xFFB7F35A) : Colors.orangeAccent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+          PopupMenuItem(
+            value: 'switch_server',
+            child: Row(
+              children: [
+                Icon(
+                  Icons.swap_horiz_rounded,
+                  color: isAws ? const Color(0xFFB7F35A) : Colors.orangeAccent,
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      '接続先切り替え',
+                      style: TextStyle(color: Colors.white, fontSize: 13),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    Text(
+                      isAws ? '現在: AWS (CloudFront)' : '現在: Tailscale / Local',
+                      style: TextStyle(
+                        color: isAws
+                            ? const Color(0xFFB7F35A)
+                            : Colors.orangeAccent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
         //------------------------------------
         // 【追加】項目を隠したら、この区切り線も隠す。
-        if (RaimConfig.enableServerSwitch)
-          const PopupMenuDivider(),
+        if (RaimConfig.enableServerSwitch) const PopupMenuDivider(),
         // メニューに「クレジット表記」ボタンを追加
         PopupMenuItem<String>(
           value: 'credits',
@@ -617,13 +667,21 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
           value: 'settings',
           child: Row(
             children: [
-              Icon(
-                Icons.settings_rounded,
-                color: Colors.white70,
-              ),
+              Icon(Icons.settings_rounded, color: Colors.white70),
+              SizedBox(width: 12),
+              Text('設定', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
+        PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'passkey',
+          child: Row(
+            children: [
+              Icon(Icons.key_rounded, color: Colors.white70),
               SizedBox(width: 12),
               Text(
-                '設定',
+                _passkeyRegistered ? 'パスキーを登録する（登録済み）' : 'パスキーを登録する',
                 style: TextStyle(color: Colors.white),
               ),
             ],
@@ -634,15 +692,9 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
           value: 'logout',
           child: Row(
             children: [
-              Icon(
-                Icons.logout_rounded,
-                color: Colors.white70,
-              ),
+              Icon(Icons.logout_rounded, color: Colors.white70),
               SizedBox(width: 12),
-              Text(
-                'ログアウトして終了',
-                style: TextStyle(color: Colors.white),
-              ),
+              Text('ログアウトして終了', style: TextStyle(color: Colors.white)),
             ],
           ),
         ),
@@ -650,20 +702,15 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: 1.4,
-            sigmaY: 1.4,
-          ),
+          filter: ImageFilter.blur(sigmaX: 1.4, sigmaY: 1.4),
           child: Container(
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: const Color(0xFF172433)
-                  .withValues(alpha: 0.72),
+              color: const Color(0xFF172433).withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color:const Color(0xFFB7F35A)
-                        .withValues(alpha: 0.42),
+                color: const Color(0xFFB7F35A).withValues(alpha: 0.42),
                 width: 2,
               ),
             ),
@@ -677,9 +724,10 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
       ),
     );
   }
-// =============================================================================
-// クレジット表記
-// =============================================================================
+
+  // =============================================================================
+  // クレジット表記
+  // =============================================================================
   void _showCreditsDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -690,7 +738,10 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
             children: [
               Icon(Icons.record_voice_over, color: Colors.blue),
               SizedBox(width: 8),
-              Text('クレジット表記',style: TextStyle(color: Colors.white, fontSize: 18)),
+              Text(
+                'クレジット表記',
+                style: TextStyle(color: Colors.white, fontSize: 18),
+              ),
             ],
           ),
           content: const SingleChildScrollView(
@@ -698,29 +749,50 @@ class ChatMenuButton extends StatefulWidget {//開発検証用
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-              //クレジット表記を増やしたい場合はここに追加
+                //クレジット表記を増やしたい場合はここに追加
                 Text(
                   '音声合成',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white,),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
                 ),
                 SizedBox(height: 4),
                 // 必要に応じて使用している音声モデルを追加
-                Text('・VOICEVOX: 春日部つむぎ',style: TextStyle(color: Colors.white70)),
-                
-                Divider(height: 24, color: Colors.white24),//区切り線
+                Text(
+                  '・VOICEVOX: 春日部つむぎ',
+                  style: TextStyle(color: Colors.white70),
+                ),
+
+                Divider(height: 24, color: Colors.white24), //区切り線
                 Text(
                   '音声認識',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white,),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
                 ),
                 SizedBox(height: 4),
-                Text('・Vosk（Alpha Cephei、Apache License 2.0）',style: TextStyle(color: Colors.white70)),
+                Text(
+                  '・Vosk（Alpha Cephei、Apache License 2.0）',
+                  style: TextStyle(color: Colors.white70),
+                ),
                 Divider(height: 24, color: Colors.white24),
                 Text(
                   '駅データ',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white,),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
                 ),
                 SizedBox(height: 4),
-                Text('・station_database（Seo-4d696b75、CC BY 4.0）',style: TextStyle(color: Colors.white70)),
+                Text(
+                  '・station_database（Seo-4d696b75、CC BY 4.0）',
+                  style: TextStyle(color: Colors.white70),
+                ),
                 Divider(height: 24, color: Colors.white24),
               ],
             ),
@@ -763,36 +835,36 @@ class ChatNewConversationButton extends StatelessWidget {
     // 外側の context のままだと画面全体の RenderBox になってしまう。
     return Builder(
       builder: (buttonContext) => _ChatGlassButton(
-      width: isWide ? 390 : null,
-      height: isWide ? 44 : 48,
-      isAccent: isWide,
-      onTap: () => onTap(buttonContext),
-      child: Row(
-        children: [
-          Icon(
-            Icons.chat_bubble_outline_rounded,
-            color: Colors.white,
-            size: isWide ? 20 : 18,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '新しい会話',
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: isWide ? 15 : 14,
-                fontWeight: FontWeight.w700,
+        width: isWide ? 390 : null,
+        height: isWide ? 44 : 48,
+        isAccent: isWide,
+        onTap: () => onTap(buttonContext),
+        child: Row(
+          children: [
+            Icon(
+              Icons.chat_bubble_outline_rounded,
+              color: Colors.white,
+              size: isWide ? 20 : 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '新しい会話',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isWide ? 15 : 14,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-          ),
-          Icon(
-            Icons.keyboard_arrow_down_rounded,
-            color: Colors.white70,
-            size: isWide ? 24 : 22,
-          ),
-        ],
-      ),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: Colors.white70,
+              size: isWide ? 24 : 22,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -809,10 +881,7 @@ class _AttachImageButton extends StatelessWidget {
     return Material(
       color: Colors.white.withValues(alpha: 0.15),
       shape: CircleBorder(
-        side: BorderSide(
-          color: Colors.white.withValues(alpha: 0.3),
-          width: 1,
-        ),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.3), width: 1),
       ),
       clipBehavior: Clip.antiAlias,
       child: IconButton(
@@ -832,10 +901,7 @@ class _AttachImageButton extends StatelessWidget {
 /// 状態は VoiceSettingsProvider に保存するので、アプリを閉じても残る。
 /// 消したときに喋っている途中なら、その場で止める。
 class ChatVolumeButton extends StatelessWidget {
-  const ChatVolumeButton({
-    super.key,
-    this.isWide = false,
-  });
+  const ChatVolumeButton({super.key, this.isWide = false});
 
   final bool isWide;
 
@@ -874,8 +940,7 @@ class _ChatGlassButton extends StatelessWidget {
     required this.onTap,
     required this.child,
     this.width,
-    this.padding =
-        const EdgeInsets.symmetric(horizontal: 14),
+    this.padding = const EdgeInsets.symmetric(horizontal: 14),
     this.borderRadius = 18,
     this.isAccent = false,
   });
@@ -897,18 +962,13 @@ class _ChatGlassButton extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: 1.6,
-          sigmaY: 1.6,
-        ),
+        filter: ImageFilter.blur(sigmaX: 1.6, sigmaY: 1.6),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius:
-                BorderRadius.circular(borderRadius),
+            borderRadius: BorderRadius.circular(borderRadius),
             splashColor: Colors.white.withValues(alpha: 0.18),
-            highlightColor:
-                Colors.white.withValues(alpha: 0.10),
+            highlightColor: Colors.white.withValues(alpha: 0.10),
             onTap: onTap,
             child: Container(
               width: width,
@@ -916,17 +976,14 @@ class _ChatGlassButton extends StatelessWidget {
               padding: padding,
               decoration: BoxDecoration(
                 color: backgroundColor,
-                borderRadius:
-                    BorderRadius.circular(borderRadius),
-                border: Border.all(
-                  color: borderColor,
-                  width: 2,
-                ),
+                borderRadius: BorderRadius.circular(borderRadius),
+                border: Border.all(color: borderColor, width: 2),
                 boxShadow: isAccent
                     ? [
                         BoxShadow(
-                          color: const Color(0xFFB7F35A)
-                              .withValues(alpha: 0.12),
+                          color: const Color(
+                            0xFFB7F35A,
+                          ).withValues(alpha: 0.12),
                           blurRadius: 14,
                           spreadRadius: 1,
                         ),
@@ -943,64 +1000,81 @@ class _ChatGlassButton extends StatelessWidget {
 }
 
 // 修正: 選択後も画面が有効な場合に、上限超過の件数をSnackBarで通知する。
-Future<void> _pickImageAndNotify(BuildContext context, ImageSource source) async {
+Future<void> _pickImageAndNotify(
+  BuildContext context,
+  ImageSource source,
+) async {
   final messenger = ScaffoldMessenger.of(context);
   final camera = context.read<CameraProvider>();
   final rejected = await camera.pickAndStoreImage(source);
   if (!context.mounted || rejected == 0) return;
-  messenger.showSnackBar(SnackBar(
-    content: Text('画像は${RaimConfig.maxImageCount}枚までです。$rejected枚は追加しませんでした。'),
-  ));
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text(
+        '画像は${RaimConfig.maxImageCount}枚までです。$rejected枚は追加しませんでした。',
+      ),
+    ),
+  );
 }
 
-Future<void> showImageSourceSelector(
-  BuildContext context,
-) async {
+Future<void> showImageSourceSelector(BuildContext context) async {
   // 現在のshowModalBottomSheet処理
   showModalBottomSheet(
-      context: context,
-      // 背景を少し暗くしつつ、上の角を丸くする
-      backgroundColor: const Color(0xFF1A1A2E), 
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (BuildContext bc) {
-        return SafeArea(
-          child: Wrap(
-            children: <Widget>[
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
-                child: Text(
-                  '画像の追加方法を選択',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+    context: context,
+    // 背景を少し暗くしつつ、上の角を丸くする
+    backgroundColor: const Color(0xFF1A1A2E),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (BuildContext bc) {
+      return SafeArea(
+        child: Wrap(
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
+              child: Text(
+                '画像の追加方法を選択',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.photo_camera_rounded, color: Colors.white70),
-                title: const Text('カメラで撮影', style: TextStyle(color: Colors.white)),
-                onTap: () async {
-                  Navigator.of(bc).pop(); // シートを閉じる
-                  // 修正: 上限を超えて受け入れなかった枚数も選択元画面で知らせる。
-                  await _pickImageAndNotify(context, ImageSource.camera);
-                },
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.photo_camera_rounded,
+                color: Colors.white70,
               ),
-              ListTile(
-                leading: const Icon(Icons.photo_library_rounded, color: Colors.white70),
-                title: const Text('ギャラリーから選択', style: TextStyle(color: Colors.white)),
-                onTap: () async {
-                  Navigator.of(bc).pop(); // シートを閉じる
-                  // 修正: ギャラリーの複数選択でも超過を黙って切り捨てない。
-                  await _pickImageAndNotify(context, ImageSource.gallery);
-                },
+              title: const Text(
+                'カメラで撮影',
+                style: TextStyle(color: Colors.white),
               ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        );
-      },
-    );
-  }
+              onTap: () async {
+                Navigator.of(bc).pop(); // シートを閉じる
+                // 修正: 上限を超えて受け入れなかった枚数も選択元画面で知らせる。
+                await _pickImageAndNotify(context, ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.photo_library_rounded,
+                color: Colors.white70,
+              ),
+              title: const Text(
+                'ギャラリーから選択',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () async {
+                Navigator.of(bc).pop(); // シートを閉じる
+                // 修正: ギャラリーの複数選択でも超過を黙って切り捨てない。
+                await _pickImageAndNotify(context, ImageSource.gallery);
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      );
+    },
+  );
+}

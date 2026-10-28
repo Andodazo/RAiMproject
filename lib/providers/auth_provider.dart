@@ -3,6 +3,7 @@ import 'package:raim_prototype/models/auth_tokens.dart';
 import 'package:raim_prototype/services/app_window_service.dart';
 import 'package:raim_prototype/services/auth_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/passkey_registration.dart';
 
 enum AuthStatus {
   checking,
@@ -19,6 +20,7 @@ class AuthProvider extends ChangeNotifier {
   AuthStatus _status = AuthStatus.checking;
   AuthTokens? _tokens;
   String? _errorMessage;
+  PasskeyRegistrationResult? _passkeyNotice;
 
   AuthProvider(this._authService);
 
@@ -26,6 +28,7 @@ class AuthProvider extends ChangeNotifier {
   AuthTokens? get tokens => _tokens;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _status == AuthStatus.authenticated;
+  PasskeyRegistrationResult? get passkeyNotice => _passkeyNotice;
 
   Future<void> initialize() async {
     _setStatus(AuthStatus.checking);
@@ -88,6 +91,18 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> handleCallback(Uri uri) async {
+    final wasPending = _authService.isPasskeyRegistrationPending;
+    if (await _authService.shouldHandlePasskeyCallback(uri)) {
+      final result = await _authService.handlePasskeyCallback(uri);
+      // 同じプロセスの登録は、登録開始側が結果を表示する。アプリ再起動後
+      // の callback だけここで通知を保持し、ChatScreen に表示させる。
+      if (!wasPending) {
+        _passkeyNotice = result;
+        notifyListeners();
+      }
+      return;
+    }
+
     try {
       _errorMessage = null;
       _setStatus(AuthStatus.checking);
@@ -99,6 +114,24 @@ class AuthProvider extends ChangeNotifier {
       _errorMessage = e.toString();
       _setStatus(AuthStatus.error);
     }
+  }
+
+  void clearPasskeyNotice() {
+    _passkeyNotice = null;
+  }
+
+  /// 認証済みユーザーのパスキー登録ページを開きます。
+  Future<PasskeyRegistrationResult> startPasskeyRegistration() {
+    if (!isAuthenticated) {
+      return Future<PasskeyRegistrationResult>.value(
+        PasskeyRegistrationResult.failed,
+      );
+    }
+    return _authService.startPasskeyRegistration();
+  }
+
+  Future<bool> hasRegisteredPasskey() {
+    return _authService.hasRegisteredPasskey();
   }
 
   Future<String?> getValidAccessToken() {

@@ -34,26 +34,44 @@ class RaimConfig {
   static const int maxImageCount = 4;
 
   /// Cognito Managed Login のドメイン。
-  static const String cognitoDomain =
-      'https://ap-northeast-1omfv9fgsg.auth.ap-northeast-1.amazoncognito.com';
+  ///
+  /// 環境ごとの値は `--dart-define=RAIM_COGNITO_DOMAIN=...` で渡します。
+  static const String cognitoDomain = String.fromEnvironment(
+    'RAIM_COGNITO_DOMAIN',
+    defaultValue:
+        'https://ap-northeast-1omfv9fgsg.auth.ap-northeast-1.amazoncognito.com',
+  );
 
   /// Cognito App Client ID。
   ///
   /// Flutter は公開クライアントなので、この App Client は Client Secret なしで
   /// 作成されている必要があります。
-  static const String clientId = '3s1n1qe8vlsihh2j2dlcs4ecf5';
+  static const String clientId = String.fromEnvironment(
+    'RAIM_COGNITO_CLIENT_ID',
+    defaultValue: '3s1n1qe8vlsihh2j2dlcs4ecf5',
+  );
 
   /// Cognito ログイン後にアプリへ戻るための Deep Link。
-  static const String redirectUri = 'raim://callback';
+  static const String redirectUri = String.fromEnvironment(
+    'RAIM_COGNITO_REDIRECT_URI',
+    defaultValue: 'raim://callback',
+  );
 
-  /// Windows デスクトップ検証で使うローカルcallback URL。
+  /// Web 開発と Windows デスクトップ検証で使うローカルcallback URL。
   ///
   /// Google OAuth は埋め込み WebView で完走できないことがあるため、Windows では既定ブラウザで
   /// 認証し、このURLをアプリ内の一時HTTPサーバーで受け取ります。
-  static const String windowsRedirectUri = 'http://localhost:3000/callback';
+  static const String webRedirectUri = String.fromEnvironment(
+    'RAIM_COGNITO_WEB_REDIRECT_URI',
+    defaultValue: 'http://localhost:3000/callback',
+  );
+
+  /// 既存コード向けの別名。
+  static const String windowsRedirectUri = webRedirectUri;
 
   /// Cognito へ要求する scope。
-  static const String scope = 'openid email phone';
+  static const String scope =
+      'openid email phone aws.cognito.signin.user.admin';
 
   // ------------------------------------------------------------
   // RAiM サーバーの接続先
@@ -91,17 +109,13 @@ class RaimConfig {
   // 修正: 廃止した展示機能のビルドフラグ・グループ・無操作時間設定を削除した。
 
   // 【追加】トークンを送ってよい、確認済みのホスト。
-  static const _allowedAwsHosts = <String>{
-    'd1403ont6098ah.cloudfront.net',
-  };
+  static const _allowedAwsHosts = <String>{'d1403ont6098ah.cloudfront.net'};
 
   /// 接続先にAuthorizationヘッダーを付けてよいか。
   static bool isAwsUrl(String url) {
     // 【変更】URL全体の部分一致ではなく、解析したホスト名を使う。
     final uri = Uri.tryParse(url);
-    if (uri == null ||
-        uri.scheme != 'wss' ||
-        uri.userInfo.isNotEmpty) {
+    if (uri == null || uri.scheme != 'wss' || uri.userInfo.isNotEmpty) {
       return false;
     }
 

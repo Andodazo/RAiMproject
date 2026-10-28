@@ -22,6 +22,7 @@ import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/providers/station_alarm_controller.dart';
 import 'package:raim_prototype/screens/station_alarm_screen.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/services/passkey_registration.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/unity_ready_signal.dart';
 import 'package:raim_prototype/services/mobile_layout.dart';
@@ -48,6 +49,16 @@ class ChatScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final isWideScreen = screenSize.width >= 600;
+    final passkeyNotice = context.watch<AuthProvider>().passkeyNotice;
+    if (passkeyNotice != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(content: Text(passkeyNotice.userMessage)));
+        context.read<AuthProvider>().clearPasskeyNotice();
+      });
+    }
 
     // ライムに頼まれた操作（「新宿で起こして」→ 駅アラーム）を実行する
     return ClientActionListener(
@@ -111,7 +122,6 @@ class ChatScreen extends StatelessWidget {
     if (!_isMobile) return const Positioned.fill(child: SizedBox.shrink());
     return const Positioned.fill(child: RaimCallingOverlay());
   }
-
 
   /// Unity からのメッセージハンドラ
   ///
@@ -534,9 +544,7 @@ class _HeadLayoutReporterState extends State<_HeadLayoutReporter> {
     final barBottom = box.localToGlobal(Offset(0, box.size.height)).dy;
     final headTop = ((barBottom + gap) / screenHeight).clamp(0.05, 0.6);
 
-    if (!force &&
-        _lastSent != null &&
-        (headTop - _lastSent!).abs() < 0.002) {
+    if (!force && _lastSent != null && (headTop - _lastSent!).abs() < 0.002) {
       return;
     }
     _lastSent = headTop;
