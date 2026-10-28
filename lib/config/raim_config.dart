@@ -70,8 +70,12 @@ class RaimConfig {
   static const String windowsRedirectUri = webRedirectUri;
 
   /// Cognito へ要求する scope。
-  static const String scope =
-      'openid email phone aws.cognito.signin.user.admin';
+  // 修正: #74 で aws.cognito.signin.user.admin を足していたが、App Client で
+  // 許可されていないため、ログイン画面が「不明なリクエスト」になりログインできな
+  // かった。パスキー登録（/passkeys/add）にはこの scope は要らないので元に戻す。
+  // 登録済みかどうかの確認（ListWebAuthnCredentials）は失敗し、この端末で
+  // 登録した記録を使う。
+  static const String scope = 'openid email phone';
 
   // ------------------------------------------------------------
   // RAiM サーバーの接続先
