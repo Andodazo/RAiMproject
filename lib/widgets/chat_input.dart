@@ -483,7 +483,32 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
     if (mounted) setState(() => _passkeyRegistered = registered);
   }
 
+  /// 登録済みのとき、もう一度登録するか聞く。
+  // 修正: 以前は登録済みでも、押すとすぐブラウザが開いていた。
+  Future<bool> _confirmReRegister() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('パスキーは登録済みです'),
+        content: const Text('もう一度登録しますか？ブラウザが開きます。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('やめる'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('登録する'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
   Future<void> _registerPasskey() async {
+    if (_passkeyRegistered && !await _confirmReRegister()) return;
+    if (!mounted) return;
     final mascot = MascotWindowService.instance;
     final auth = context.read<AuthProvider>();
     final restoreMascot = mascot.isMascotMode;
@@ -680,9 +705,18 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
             children: [
               Icon(Icons.key_rounded, color: Colors.white70),
               SizedBox(width: 12),
-              Text(
-                _passkeyRegistered ? 'パスキーを登録する（登録済み）' : 'パスキーを登録する',
-                style: TextStyle(color: Colors.white),
+              // 修正: 以前は「（登録済み）」を項目名の後ろに付けていた。下の行に出す。
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('パスキーを登録する', style: TextStyle(color: Colors.white)),
+                  if (_passkeyRegistered)
+                    Text(
+                      '登録済み',
+                      style: TextStyle(color: Color(0xFFB7F35A), fontSize: 12),
+                    ),
+                ],
               ),
             ],
           ),

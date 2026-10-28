@@ -3,6 +3,7 @@
 //   flutter test test/passkey_registration_test.dart
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,7 +42,7 @@ class _MemoryTokenStorage implements TokenStorage {
 /// パスキーの状態の保存領域の代わり。broken にすると保存領域が壊れた端末になる。
 class _MemoryPasskeyState implements PasskeyRegistrationStateStorage {
   bool pending = false;
-  bool registered = false;
+  final registered = <String>{};
   bool broken = false;
 
   void _check() {
@@ -67,27 +68,15 @@ class _MemoryPasskeyState implements PasskeyRegistrationStateStorage {
   }
 
   @override
-  Future<void> markRegistered() async {
+  Future<void> markRegistered(String userSub) async {
     _check();
-    registered = true;
+    registered.add(userSub);
   }
 
   @override
-  Future<bool> isRegistered() async {
+  Future<bool> isRegistered(String userSub) async {
     _check();
-    return registered;
-  }
-
-  @override
-  Future<void> clearRegistered() async {
-    _check();
-    registered = false;
-  }
-
-  @override
-  Future<void> clearAll() async {
-    await clear();
-    await clearRegistered();
+    return registered.contains(userSub);
   }
 }
 
@@ -120,9 +109,16 @@ class _FakeAppLinks implements AppLinks {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-AuthTokens _tokens() => AuthTokens(
+/// sub だけ入った ID Token（署名は見ないので中身だけ作る）
+String _idToken(String sub) {
+  String part(Map<String, Object> m) =>
+      base64Url.encode(utf8.encode(jsonEncode(m))).replaceAll('=', '');
+  return '${part({'alg': 'none'})}.${part({'sub': sub})}.sig';
+}
+
+AuthTokens _tokens([String sub = 'user-a']) => AuthTokens(
   accessToken: 'access',
-  idToken: 'id',
+  idToken: _idToken(sub),
   refreshToken: 'refresh',
   expiresAt: DateTime.now().add(const Duration(hours: 1)),
 );
@@ -167,6 +163,37 @@ void main() {
     await auth.clearStoredTokens();
 
     expect(storage.tokens, isNull);
+  });
+
+  test('登録済みの記録は、ログアウトしてまた同じ人がログインしても残る', () async {
+    final client = MockClient((_) async => http.Response('', 200));
+    await http.runWithClient(() async {
+      storage.tokens = _tokens('user-a');
+      await auth.handlePasskeyCallback(Uri.parse('raim://callback'));
+      expect(await auth.hasRegisteredPasskey(), isTrue);
+
+      await auth.logout();
+      expect(await auth.hasRegisteredPasskey(), isFalse, reason: 'ログアウト中');
+
+      storage.tokens = _tokens('user-a');
+      expect(await auth.hasRegisteredPasskey(), isTrue);
+    }, () => client);
+  });
+
+  test('別の人がログインしたら、登録済みと出さない', () async {
+    storage.tokens = _tokens('user-a');
+    await auth.handlePasskeyCallback(Uri.parse('raim://callback'));
+
+    storage.tokens = _tokens('user-b');
+    expect(await auth.hasRegisteredPasskey(), isFalse);
+  });
+
+  test('キャンセルで戻ったときは、登録済みにしない', () async {
+    storage.tokens = _tokens('user-a');
+    await auth.handlePasskeyCallback(
+      Uri.parse('raim://callback?error=access_denied&error_description=cancel'),
+    );
+    expect(await auth.hasRegisteredPasskey(), isFalse);
   });
 
   test('2回目のパスキー登録の callback も受け取る', () async {
