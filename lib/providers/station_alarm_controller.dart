@@ -408,9 +408,16 @@ class StationAlarmController extends ChangeNotifier {
       p.longitude,
       accuracy: p.accuracy,
       at: DateTime.now(),
+      // 速く走っているときは、着くまでの時間で早めに知らせる
+      speed: p.speed,
     );
     // 【確認用・後で消す】
-    StationRecorder.note('GPS ${proximity.distance?.round()}m（精度${p.accuracy.round()}m）');
+    final v = proximity.speed;
+    StationRecorder.note(
+      'GPS ${proximity.distance?.round()}m（精度${p.accuracy.round()}m）'
+      '${v == null ? '' : ' 近づく速さ${(v * 3.6).round()}km/h '
+          '知らせる距離${proximity.arriveDistance.round()}m'}',
+    );
     if (stage != null && _state != StationAlarmState.arrived) {
       StationRecorder.note('GPS で知らせた: ${stage.name}'); // 【確認用・後で消す】
       RaimLog.i('[StationAlarm] GPS で知らせます: ${stage.name}');

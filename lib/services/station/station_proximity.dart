@@ -9,6 +9,8 @@
 //      （または別の路線の話）として無視する。
 //   2. アナウンスを聞き逃したときの保険
 //      降りる駅に十分近づいたら、音声が無くても知らせる。
+//      速く走っているときは、距離ではなく「このままだと着くまで [arriveLead]」の
+//      時点で知らせる。500m は時速 80km だと 20 秒ちょっとで、寝ていると間に合わない。
 //   3. 地下など GPS が取れないとき
 //      位置が古い・精度が悪いときは絞らない（音声だけで判定する）。
 //
@@ -24,6 +26,9 @@ class StationProximity {
   StationProximity(
     this.plan, {
     this.arriveRadius = 500,
+    this.arriveLead = const Duration(seconds: 60),
+    this.maxArriveLeadDistance = 2500,
+    this.minLeadSpeed = 5,
     this.maxFixAge = const Duration(seconds: 90),
     this.maxAccuracy = 300,
   }) {
@@ -48,6 +53,20 @@ class StationProximity {
   /// ここまで近づいたら、音声が無くても「着く」と知らせる（m）。
   final double arriveRadius;
 
+  /// 速く走っているときは、着くまでこれだけ前に「着く」と知らせる。
+  final Duration arriveLead;
+
+  /// [arriveLead] で知らせる距離の上限（m）。GPS の速さが飛んだときに、
+  /// 遠くで鳴らないようにするため。
+  final double maxArriveLeadDistance;
+
+  /// これより遅ければ [arriveLead] は使わず、[arriveRadius] で知らせる（m/秒）。
+  /// 18km/h。駅に止まりかけているときや、歩いているとき。
+  final double minLeadSpeed;
+
+  /// これより速い値は GPS の誤りとみなす（m/秒、360km/h）。
+  static const double maxPlausibleSpeed = 100;
+
   /// これより古い位置は使わない。地下では位置が更新されなくなるため。
   final Duration maxFixAge;
 
@@ -63,6 +82,9 @@ class StationProximity {
   double? _distance;
   DateTime? _fixAt;
 
+  /// 最後に分かった、降りる駅に近づく速さ（m/秒）。分からなければ null。
+  double? _speed;
+
   /// 一度でも「外」にいたか。乗車モードを始めた場所がもう駅の近くだった
   /// ときに、始めた瞬間に鳴らないようにするため。
   bool _wasOutsideApproach = false;
@@ -74,6 +96,19 @@ class StationProximity {
   /// 最後に分かった降りる駅までの距離（m）。分からなければ null。
   double? get distance => _distance;
 
+  /// 最後に分かった、降りる駅に近づく速さ（m/秒）。離れているときや、
+  /// 分からなければ null。
+  double? get speed => _speed;
+
+  /// 今「着く」と知らせる距離（m）。速く近づいていれば、着くまで
+  /// [arriveLead] の距離（[maxArriveLeadDistance] まで）。
+  double get arriveDistance {
+    final v = _speed;
+    if (v == null || v < minLeadSpeed) return arriveRadius;
+    final lead = v * arriveLead.inMilliseconds / 1000;
+    return lead.clamp(arriveRadius, maxArriveLeadDistance).toDouble();
+  }
+
   /// 位置が今使えるか（新しくて精度が十分）。
   bool hasFreshFix(DateTime now) {
     final at = _fixAt;
@@ -81,23 +116,27 @@ class StationProximity {
   }
 
   /// 現在地を渡す。知らせるべきことがあれば返す。
+  ///
+  /// [speed] は GPS の速さ（m/秒）。分からなければ null か負の値。
   StationAlarmStage? onPosition(
     double lat,
     double lng, {
     required double accuracy,
     required DateTime at,
+    double? speed,
   }) {
     if (accuracy > maxAccuracy) return null;
 
     final dest = plan.destination;
     final d = distanceMeters(lat, lng, dest.lat, dest.lng);
+    _speed = _approachSpeed(d, at, speed);
     _distance = d;
     _fixAt = at;
 
     if (d > approachRadius) _wasOutsideApproach = true;
     if (d > arriveRadius) _wasOutsideArrive = true;
 
-    if (!_arriveFired && _wasOutsideArrive && d <= arriveRadius) {
+    if (!_arriveFired && _wasOutsideArrive && d <= arriveDistance) {
       _arriveFired = true;
       _approachFired = true;
       return StationAlarmStage.arriving;
@@ -107,6 +146,27 @@ class StationProximity {
       return StationAlarmStage.approaching;
     }
     return null;
+  }
+
+  /// 降りる駅に近づく速さ（m/秒）。離れている・止まっている・分からなければ null。
+  ///
+  /// 前の位置より近づいているときだけ求める。GPS の速さがあればそれを使い、
+  /// 無ければ前の位置からの距離の変化で求める。
+  double? _approachSpeed(double d, DateTime at, double? reported) {
+    final prevD = _distance;
+    final prevAt = _fixAt;
+    if (prevD == null || prevAt == null) return null;
+    if (d >= prevD) return null; // 近づいていない
+
+    double? v;
+    if (reported != null && reported > 0) {
+      v = reported;
+    } else {
+      final dt = at.difference(prevAt).inMilliseconds / 1000;
+      if (dt >= 1 && dt <= 120) v = (prevD - d) / dt;
+    }
+    if (v == null || v > maxPlausibleSpeed) return null;
+    return v;
   }
 
   /// 音声で聞こえた知らせを受け入れてよいか。

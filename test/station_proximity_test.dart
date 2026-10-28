@@ -17,9 +17,19 @@ void main() {
       .search(name)
       .firstWhere((s) => s.name == name || s.name.startsWith('$name('));
 
-  StationAlarmStage? move(String name, {Duration after = Duration.zero}) {
+  StationAlarmStage? move(
+    String name, {
+    Duration after = Duration.zero,
+    double? speed,
+  }) {
     final s = at(name);
-    return p.onPosition(s.lat, s.lng, accuracy: 20, at: t0.add(after));
+    return p.onPosition(
+      s.lat,
+      s.lng,
+      accuracy: 20,
+      at: t0.add(after),
+      speed: speed,
+    );
   }
 
   setUp(() {
@@ -97,6 +107,50 @@ void main() {
       p.markNotified(StationAlarmStage.approaching);
       expect(move('大久保'), isNull);
       expect(move('新宿'), StationAlarmStage.arriving);
+    });
+  });
+
+  group('速く走っているときは、着くまでの時間で知らせる', () {
+    const minute = Duration(minutes: 1);
+
+    test('時速 90km で近づいていれば、着く 60 秒前（1.5km）に「着く」', () {
+      expect(move('中野'), isNull);
+      // 大久保は新宿から 1.3km。25m/秒 × 60 秒 = 1.5km の内側
+      expect(move('大久保', after: minute, speed: 25), StationAlarmStage.arriving);
+      expect(p.arriveDistance, closeTo(1500, 1));
+    });
+
+    test('ゆっくりなら今までどおり 500m で', () {
+      expect(move('中野'), isNull);
+      expect(move('大久保', after: minute, speed: 3), StationAlarmStage.approaching);
+      expect(move('新宿', after: minute * 2, speed: 3), StationAlarmStage.arriving);
+    });
+
+    test('離れているときは早めない', () {
+      expect(move('代々木'), isNull);
+      // 代々木 755m → 大久保 1.3km（離れている）
+      expect(move('大久保', after: minute, speed: 25), isNull);
+      expect(p.speed, isNull);
+      expect(p.arriveDistance, 500);
+    });
+
+    test('GPS の速さが無ければ、前の位置からの距離の変化で求める', () {
+      // 四ツ谷 2.8km → 大久保 1.3km を 60 秒で（25m/秒）
+      expect(move('四ツ谷'), isNull);
+      expect(move('大久保', after: minute), StationAlarmStage.arriving);
+      expect(p.speed, closeTo(25, 3));
+    });
+
+    test('速さがおかしな値なら使わない', () {
+      expect(move('中野'), isNull);
+      expect(move('大久保', after: minute, speed: 300), StationAlarmStage.approaching);
+    });
+
+    test('知らせる距離には上限がある', () {
+      expect(move('高円寺'), isNull);
+      // 80m/秒 × 60 秒 = 4.8km だが、上限 2.5km
+      expect(move('中野', after: minute, speed: 80), isNull);
+      expect(p.arriveDistance, 2500);
     });
   });
 }
