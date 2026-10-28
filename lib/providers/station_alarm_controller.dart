@@ -32,7 +32,10 @@
 //   - 通知（音とバイブ）… Android はサービスの通知を書き換えて鳴らす。
 //                         iOS（とサービスが無い Android）は StationNotifications
 //   - ライムの声      … assets/sounds の wav（VOICEVOX で作ったもの）。無ければ鳴らさない
-//   - バイブ          … 画面を点けているときの補助（裏では鳴らない）
+//   - バイブ          … Android は画面を消していても震える。iPhone は画面を
+//                         点けているときの補助（裏では通知のバイブだけ）
+//   - 繰り返し        … 「着く」は止めるまで 15 秒ごとに知らせ直す（最長 2 分）。
+//                         アプリを開くか、止めるボタンで止まる（StationAlarmRepeater）
 
 import 'dart:async';
 import 'dart:io' show Platform;
@@ -46,6 +49,7 @@ import 'package:raim_prototype/services/haptics.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/station/ride_foreground_service.dart';
 import 'package:raim_prototype/services/station/station_alarm.dart';
+import 'package:raim_prototype/services/station/station_alarm_repeater.dart';
 import 'package:raim_prototype/services/station/station_database.dart';
 import 'package:raim_prototype/services/station/station_listener.dart';
 import 'package:raim_prototype/services/station/station_lookup.dart';
@@ -107,6 +111,16 @@ class StationAlarmController extends ChangeNotifier {
   StreamSubscription<String>? _heardSub;
   Timer? _endTimer;
   bool _disposed = false;
+
+  /// 「着く」を止めるまで知らせ直す。以前は1回だけで、寝ていると気づけなかった。
+  /// 打ち切りは乗車モードが自動で終わるのと同じ [afterArrival]。
+  late final StationAlarmRepeater _repeater = StationAlarmRepeater(
+    onRing: _ringAgain,
+    maxDuration: afterArrival,
+  );
+
+  /// 「着く」を知らせ直している途中か（止めるボタンを出す）。
+  bool get isRinging => _repeater.isRinging;
 
   StationAlarmState get state => _state;
   Station? get destination => _destination;
@@ -328,6 +342,7 @@ class StationAlarmController extends ChangeNotifier {
 
   Future<void> _teardown() async {
     unawaited(StationNotifications.cancel(StationNotifications.openAppId));
+    _repeater.stop();
     _endTimer?.cancel();
     _endTimer = null;
     await _gpsSub?.cancel();
@@ -469,16 +484,46 @@ class StationAlarmController extends ChangeNotifier {
         unawaited(_speakLine('station_approaching'));
         _notify();
       case StationAlarmStage.arriving:
-        unawaited(_buzz());
-        unawaited(_notifyUser(
-          title: _isDowner ? 'まもなく $dest' : 'まもなく $dest！',
-          text: _isDowner ? '着くよ。降りる準備して' : '降りる準備をして！',
-        ));
-        unawaited(_speakLine('station_arriving'));
+        _announceArrival();
         _setState(StationAlarmState.arrived);
         _endTimer?.cancel();
         _endTimer = Timer(afterArrival, () => unawaited(stop()));
+        // 寝ていると1回では気づかないので、止めるまで知らせ直す
+        _repeater.start();
     }
+  }
+
+  /// 「着く」を知らせる（バイブ・通知・ライムの声）。
+  void _announceArrival() {
+    final dest = _destination?.name ?? '';
+    unawaited(_buzz());
+    unawaited(_notifyUser(
+      title: _isDowner ? 'まもなく $dest' : 'まもなく $dest！',
+      text: _isDowner ? '着くよ。降りる準備して' : '降りる準備をして！',
+    ));
+    unawaited(_speakLine('station_arriving'));
+  }
+
+  /// [StationAlarmRepeater] から呼ばれる。まだ着いた状態なら知らせ直す。
+  void _ringAgain() {
+    if (_state != StationAlarmState.arrived) {
+      _repeater.stop();
+      return;
+    }
+    StationRecorder.note('着いたことを知らせ直した'); // 【確認用・後で消す】
+    RaimLog.i('[StationAlarm] 止められていないので、知らせ直します');
+    _announceArrival();
+  }
+
+  /// 知らせ直すのを止める（乗車モードは続ける）。
+  ///
+  /// アプリが画面に出たとき（通知を押した・画面を開いた）に呼ぶ。
+  /// 開いたなら起きているので、それ以上鳴らさない。
+  void silence() {
+    if (!_repeater.isRinging) return;
+    _repeater.stop();
+    RaimLog.i('[StationAlarm] 知らせ直すのを止めました');
+    _notify();
   }
 
   /// 通知で知らせる。

@@ -401,7 +401,12 @@ class _Riding extends StatelessWidget {
                 ),
               ),
               icon: const Icon(Icons.stop_circle_outlined),
-              label: Text(arrived ? '降りた・終わる' : '乗車モードを終える'),
+              // 知らせ直している間は、止めるためのボタンだと分かる言い方にする
+              label: Text(alarm.isRinging
+                  ? '起きた！止める'
+                  : arrived
+                      ? '降りた・終わる'
+                      : '乗車モードを終える'),
               onPressed: () => unawaited(alarm.stop()),
             ),
           ),
