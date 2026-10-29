@@ -14,7 +14,8 @@ import 'review/support/fakes.dart';
 
 /// 話しかけに対応した偽の会話サービス。
 class GreetingLlm extends ScriptedLlm implements GreetingService {
-  GreetingLlm(this.greeting) : super(const []);
+  GreetingLlm(this.greeting, {List<Map<String, dynamic>> chat = const []})
+      : super(chat);
 
   final List<Map<String, dynamic>> greeting;
   int greetings = 0;
@@ -33,8 +34,8 @@ class GreetingLlm extends ScriptedLlm implements GreetingService {
 
 void main() {
   const reply = [
-    {'type': 'text_chunk', 'text': 'おはよ、ご主人様。'},
-    {'type': 'chat_end', 'full_text': 'おはよ、ご主人様。', 'emotion': 'happy'},
+    {'type': 'text_chunk', 'text': 'おはよ。'},
+    {'type': 'chat_end', 'full_text': 'おはよ。', 'emotion': 'happy'},
   ];
 
   test('ライムの返事だけを出し、利用者の吹き出しは出さない', () async {
@@ -147,5 +148,76 @@ void main() {
     await chat.greetOnLaunch();
 
     expect(chat.messages, isEmpty);
+  });
+
+  group('毎回は話しかけない', () {
+    const chatReply = [
+      {'type': 'text_chunk', 'text': 'うん。'},
+      {'type': 'chat_end', 'full_text': 'うん。', 'emotion': 'neutral'},
+    ];
+
+    /// 少し前に話した会話を開いている状態を作る。
+    Future<(GreetingLlm, ChatProvider)> afterChat({
+      required Duration elapsed,
+      required double dice,
+    }) async {
+      final llm = GreetingLlm(reply, chat: chatReply);
+      final chat = ChatProvider(
+        llm,
+        FakeUnity(),
+        audioQueue: FakeAudioQueue(),
+        greetOnLaunchEnabled: () => true,
+        greetDice: () => dice,
+        clock: () => DateTime.now().add(elapsed),
+      );
+      addTearDown(chat.dispose);
+      await chat.sendUserMessage('ただいま');
+      return (llm, chat);
+    }
+
+    test('前回から間が空いていたら、くじに関係なく話しかける', () async {
+      final (llm, chat) = await afterChat(
+        elapsed: ChatProvider.greetAlwaysAfter + const Duration(minutes: 1),
+        dice: 0.99,
+      );
+      await chat.greetOnLaunch();
+      expect(llm.greetings, 1);
+    });
+
+    test('間が空いていないときは、くじに当たったら話しかける', () async {
+      final (llm, chat) = await afterChat(
+        elapsed: const Duration(minutes: 30),
+        dice: ChatProvider.greetChance - 0.01,
+      );
+      await chat.greetOnLaunch();
+      expect(llm.greetings, 1);
+    });
+
+    test('くじに外れたら話しかけず、つなぎ直しても引き直さない', () async {
+      final (llm, chat) = await afterChat(
+        elapsed: const Duration(minutes: 30),
+        dice: ChatProvider.greetChance,
+      );
+      final before = chat.messages.length;
+      await chat.greetOnLaunch();
+      await chat.greetOnLaunch();
+      expect(llm.greetings, 0);
+      expect(chat.messages, hasLength(before));
+      expect(chat.isLoading, isFalse);
+    });
+
+    test('会話が無いとき（初めて）は、くじに関係なく話しかける', () async {
+      final llm = GreetingLlm(reply);
+      final chat = ChatProvider(
+        llm,
+        FakeUnity(),
+        audioQueue: FakeAudioQueue(),
+        greetOnLaunchEnabled: () => true,
+        greetDice: () => 0.99,
+      );
+      addTearDown(chat.dispose);
+      await chat.greetOnLaunch();
+      expect(llm.greetings, 1);
+    });
   });
 }

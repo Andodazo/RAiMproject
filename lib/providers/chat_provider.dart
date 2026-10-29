@@ -8,6 +8,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:raim_prototype/models/client_action.dart';
 import 'package:raim_prototype/models/message.dart';
@@ -131,6 +132,9 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     Future<String?> Function()? idTokenGetter,
     bool Function()? isSpeechMuted,
     bool Function()? greetOnLaunchEnabled,
+    // テストでは、話しかけるかのくじと今の時刻を決め打ちにできる。
+    double Function()? greetDice,
+    DateTime Function()? clock,
     // 【追加】テストでは、音声プラグインを使わない偽物のキューを渡せる。
     AudioPlayQueue? audioQueue,
   })  : _audioQueue = audioQueue ?? AudioPlayQueue(),
@@ -138,7 +142,9 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
         _idTokenGetter = idTokenGetter ?? (() async => null),
         _imageService = imageService ?? AwsImageService(),
         _isSpeechMuted = isSpeechMuted ?? (() => false),
-        _greetOnLaunchEnabled = greetOnLaunchEnabled ?? (() => false) {
+        _greetOnLaunchEnabled = greetOnLaunchEnabled ?? (() => false),
+        _greetDice = greetDice ?? Random().nextDouble,
+        _clock = clock ?? DateTime.now {
     _audioAssembler = AudioChunkAssembler(
       onAudioReady: (audio) {
         // ユーザーが話し始めて止めた返答の、残りの音声は鳴らさない
@@ -214,6 +220,17 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   /// 接続が切れてつなぎ直したときにも「つながった」が来るので、
   /// これが無いと、電波が戻るたびに話しかけてしまう。
   int? _greetedGeneration;
+
+  /// 前回からこれだけ空いていたら、必ず話しかける。
+  /// 朝に話して夕方に開く、のように生活の区切りをまたいだら話しかける（安藤さんと決めた）。
+  static const greetAlwaysAfter = Duration(hours: 3);
+
+  /// 間が空いていないときに話しかける確率。毎回だと機械っぽいので、たまにする。
+  static const greetChance = 0.3;
+
+  /// 0以上1未満を返すくじ。
+  final double Function() _greetDice;
+  final DateTime Function() _clock;
 
   /// [stopSpeaking] で止めたか。次に送信するまで音声を鳴らさない。
   bool _voiceMuted = false;
@@ -814,6 +831,8 @@ _toolStatus = null;
   /// 以前はライムから話すことが無く、利用者が話しかけるまで黙っていた。
   /// 同じログインの間は1回だけ。設定で切っているとき、返事の途中のとき、
   /// 対応していないサービスのときは何もしない。
+  /// 前回の会話から [greetAlwaysAfter] 以上空いていたら（初めてのときも）必ず話しかけ、
+  /// それ以外は [greetChance] の確率で話しかける（[_shouldGreet]）。
   /// 利用者の吹き出しは出さず、ライムの返事だけを出す（サーバーも返事だけを残す）。
   Future<void> greetOnLaunch() async {
     // LLMService と GreetingService は別の型なので、Object で受けてから確かめる
@@ -822,7 +841,12 @@ _toolStatus = null;
     if (!_greetOnLaunchEnabled()) return;
     if (_greetedGeneration == _accountGeneration) return;
     if (_isLoading) return;
+    // くじを外れたときも引き直さない（つなぎ直すたびに引くと、結局話しかけてしまう）
     _greetedGeneration = _accountGeneration;
+    if (!_shouldGreet()) {
+      RaimLog.d('[ChatProvider] 今回は話しかけない');
+      return;
+    }
 
     final generation = _conversationGeneration;
     _prepareForReply();
@@ -851,6 +875,17 @@ _toolStatus = null;
         notifyListeners();
       }
     }
+  }
+
+  /// 話しかけるか。開いている会話の最後のメッセージから、どれだけ空いたかで決める。
+  ///
+  /// 起動時は一番新しい会話を開くので、その最後が前回話したとき。
+  /// 会話が無ければ初めてなので話しかける。
+  bool _shouldGreet() {
+    if (_messages.isEmpty) return true;
+    final gap = _clock().difference(_messages.last.timestamp);
+    if (gap >= greetAlwaysAfter) return true;
+    return _greetDice() < greetChance;
   }
 
   /// さらに古いメッセージを読み込む
