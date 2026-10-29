@@ -448,6 +448,7 @@ class ChatMenuButton extends StatefulWidget {
     required this.onSettings,
     required this.onLogout,
     this.onStationAlarm,
+    this.onMemory,
     this.isWide = false,
   });
 
@@ -456,6 +457,9 @@ class ChatMenuButton extends StatefulWidget {
 
   /// 駅アラームを開く。null ならメニューに出さない（対応していない端末）
   final VoidCallback? onStationAlarm;
+
+  /// ライムが覚えていることを開く。null ならメニューに出さない
+  final VoidCallback? onMemory;
   final bool isWide;
   //開発検証用---------------------------------------------------
   @override
@@ -612,6 +616,9 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
           case 'station_alarm':
             widget.onStationAlarm?.call();
             break;
+          case 'memory':
+            widget.onMemory?.call();
+            break;
           case 'logout':
             widget.onLogout();
             break;
@@ -698,6 +705,17 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
             ],
           ),
         ),
+        if (widget.onMemory != null)
+          const PopupMenuItem(
+            value: 'memory',
+            child: Row(
+              children: [
+                Icon(Icons.psychology_outlined, color: Colors.white70),
+                SizedBox(width: 12),
+                Text('ライムが覚えていること', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+          ),
         PopupMenuDivider(),
         PopupMenuItem(
           value: 'passkey',

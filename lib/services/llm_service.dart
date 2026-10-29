@@ -22,6 +22,14 @@ abstract class LLMService {
   });
 }
 
+/// アプリを開いたときに、ライムから話しかけてもらえるサービス。
+///
+/// LLMService とは分けている。LLMService を実装しているテスト用の偽物に
+/// 手を入れずに済むようにするため。対応していないサービスでは話しかけない。
+abstract class GreetingService {
+  Stream<LLMResponse> sendGreeting({String? threadId});
+}
+
 // ─────────────────────────────────────────────
 // MockLLMService（テスト用、Stream対応）
 // ─────────────────────────────────────────────

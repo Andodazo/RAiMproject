@@ -8,6 +8,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:raim_prototype/models/client_action.dart';
 import 'package:raim_prototype/models/message.dart';
@@ -130,13 +131,20 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     AwsImageService? imageService,
     Future<String?> Function()? idTokenGetter,
     bool Function()? isSpeechMuted,
+    bool Function()? greetOnLaunchEnabled,
+    // テストでは、話しかけるかのくじと今の時刻を決め打ちにできる。
+    double Function()? greetDice,
+    DateTime Function()? clock,
     // 【追加】テストでは、音声プラグインを使わない偽物のキューを渡せる。
     AudioPlayQueue? audioQueue,
   })  : _audioQueue = audioQueue ?? AudioPlayQueue(),
         // 【変更】省略された通常起動では、上の行で本物を作る。
         _idTokenGetter = idTokenGetter ?? (() async => null),
         _imageService = imageService ?? AwsImageService(),
-        _isSpeechMuted = isSpeechMuted ?? (() => false) {
+        _isSpeechMuted = isSpeechMuted ?? (() => false),
+        _greetOnLaunchEnabled = greetOnLaunchEnabled ?? (() => false),
+        _greetDice = greetDice ?? Random().nextDouble,
+        _clock = clock ?? DateTime.now {
     _audioAssembler = AudioChunkAssembler(
       onAudioReady: (audio) {
         // ユーザーが話し始めて止めた返答の、残りの音声は鳴らさない
@@ -204,6 +212,26 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   /// 音量ボタンで声を消しているか（VoiceSettingsProvider.speechMuted を見る）。
   final bool Function() _isSpeechMuted;
 
+  /// アプリを開いたときにライムから話しかけるか（VoiceSettingsProvider.greetOnLaunch を見る）。
+  final bool Function() _greetOnLaunchEnabled;
+
+  /// 話しかけたときのユーザーの世代。同じログインの間は1回だけ話しかける。
+  ///
+  /// 接続が切れてつなぎ直したときにも「つながった」が来るので、
+  /// これが無いと、電波が戻るたびに話しかけてしまう。
+  int? _greetedGeneration;
+
+  /// 前回からこれだけ空いていたら、必ず話しかける。
+  /// 朝に話して夕方に開く、のように生活の区切りをまたいだら話しかける（安藤さんと決めた）。
+  static const greetAlwaysAfter = Duration(hours: 3);
+
+  /// 間が空いていないときに話しかける確率。毎回だと機械っぽいので、たまにする。
+  static const greetChance = 0.3;
+
+  /// 0以上1未満を返すくじ。
+  final double Function() _greetDice;
+  final DateTime Function() _clock;
+
   /// [stopSpeaking] で止めたか。次に送信するまで音声を鳴らさない。
   bool _voiceMuted = false;
 
@@ -250,7 +278,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
         // ユーザーからは「忘れられた」ように見える。
         // そこで最後に使ったスレッドの履歴を読み込んで表示する。
         if (!wasConnected && newState == RaimConnectionState.connected) {
-          _restoreLastThread();
+          unawaited(_restoreLastThreadAndGreet());
         }
       });
     }
@@ -529,6 +557,20 @@ _toolStatus = null;
   }
 
   // 【追加】今回の途中の返答を取り消し、エラーだけを残す。
+  /// 今回の返答を、エラーを出さずに取り消す（話しかけに失敗したとき）。
+  void _discardCurrentResponse() {
+    _bubbleSync.reset();
+    stopSpeaking();
+    _messages.removeWhere(_pendingResponseMessages.contains);
+    _pendingResponseMessages.clear();
+    _currentStreamingMessage = null;
+    _isThinking = false;
+    _isUsingTool = false;
+    _toolStatus = null;
+    _unityBridge.sendToolState(isUsingTool: false);
+    notifyListeners();
+  }
+
   void _failCurrentResponse(String message) {
     // 出していない文は捨てる（吹き出しはエラーに置き換えるため）。
     // stopSpeaking より先に捨てないと、止めた拍子に全部出てしまう
@@ -774,6 +816,78 @@ _toolStatus = null;
     }
   }
 
+  /// 前回の会話を開いてから、ライムに話しかけてもらう。
+  ///
+  /// 話しかけは開いた会話に入るので、先に会話を開いておく。
+  Future<void> _restoreLastThreadAndGreet() async {
+    final generation = _accountGeneration;
+    await _restoreLastThread();
+    if (generation != _accountGeneration) return;
+    await greetOnLaunch();
+  }
+
+  /// アプリを開いたときに、ライムから一言話しかけてもらう。
+  ///
+  /// 以前はライムから話すことが無く、利用者が話しかけるまで黙っていた。
+  /// 同じログインの間は1回だけ。設定で切っているとき、返事の途中のとき、
+  /// 対応していないサービスのときは何もしない。
+  /// 前回の会話から [greetAlwaysAfter] 以上空いていたら（初めてのときも）必ず話しかけ、
+  /// それ以外は [greetChance] の確率で話しかける（[_shouldGreet]）。
+  /// 利用者の吹き出しは出さず、ライムの返事だけを出す（サーバーも返事だけを残す）。
+  Future<void> greetOnLaunch() async {
+    // LLMService と GreetingService は別の型なので、Object で受けてから確かめる
+    final Object service = _llmService;
+    if (service is! GreetingService) return;
+    if (!_greetOnLaunchEnabled()) return;
+    if (_greetedGeneration == _accountGeneration) return;
+    if (_isLoading) return;
+    // くじを外れたときも引き直さない（つなぎ直すたびに引くと、結局話しかけてしまう）
+    _greetedGeneration = _accountGeneration;
+    if (!_shouldGreet()) {
+      RaimLog.d('[ChatProvider] 今回は話しかけない');
+      return;
+    }
+
+    final generation = _conversationGeneration;
+    _prepareForReply();
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final ended = await _receiveReply(
+        service.sendGreeting(threadId: _currentThreadId),
+        generation,
+        // 古いサーバーは話しかけを知らず、本文が無いので入力不正で断る。
+        // 利用者は何も頼んでいないので、そのときもエラーは出さない
+        quietErrors: true,
+      );
+      // 話しかけに失敗しても、利用者は何も頼んでいないのでエラーの吹き出しは出さない。
+      // 途中まで出た文だけ消す
+      if (generation == _conversationGeneration && !ended) {
+        _discardCurrentResponse();
+      }
+    } catch (e) {
+      RaimLog.d('[ChatProvider] 話しかけに失敗: $e');
+      if (generation == _conversationGeneration) _discardCurrentResponse();
+    } finally {
+      if (generation == _conversationGeneration) {
+        _endUnityThinking();
+        _isLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// 話しかけるか。開いている会話の最後のメッセージから、どれだけ空いたかで決める。
+  ///
+  /// 起動時は一番新しい会話を開くので、その最後が前回話したとき。
+  /// 会話が無ければ初めてなので話しかける。
+  bool _shouldGreet() {
+    if (_messages.isEmpty) return true;
+    final gap = _clock().difference(_messages.last.timestamp);
+    if (gap >= greetAlwaysAfter) return true;
+    return _greetDice() < greetChance;
+  }
+
   /// さらに古いメッセージを読み込む
   ///
   /// 画面を上へスクロールしきったときに呼ぶ。
@@ -1015,19 +1129,7 @@ _toolStatus = null;
     // 今喋っている1文だけ言い切らせて、待機中のぶんを捨てる。
     // 生成に数秒かかるため、その1文は新しい音声が届く前に鳴り終わる。
     // 万一残っていてもキューは直列なので、重ならず後ろに並ぶだけ。
-    _audioAssembler.reset();
-    // 前の返事の、まだ出していない文は捨てる（新しい考え中の点に置き換わる）
-    _bubbleSync.reset();
-    _audioQueue.stopAfterCurrent();
-    // 新しい返答の音声は鳴らす
-    _voiceMuted = false;
-    _currentStreamingMessage = null;
-    // 【追加】今回の返答の記録を新しく始める。
-    _pendingResponseMessages.clear();
-    _toolStatus = null;
-    // ここに追加
-    _isThinking = false;
-    _isUsingTool = false;
+    _prepareForReply();
     // ─── 履歴への追加処理を追加 ───
     final userMessage = Message(
       text: text,
@@ -1106,34 +1208,16 @@ _toolStatus = null;
       final recentHistory = _messages.length > 21
           ? _messages.sublist(_messages.length - 21, _messages.length - 1)
           : _messages.sublist(0, _messages.length - 1);
-      // 【変更】本文が届いただけでは成功にしない。
-      // chat_end / 旧形式chat / error のいずれかで終了を確認する。
-      bool responseEnded = false;
-
-      await for (final response in _llmService.sendMessage(
-        text,
-        history: recentHistory,
-        images: targetImages,
-        requestId: requestId,
-        threadId: requestThreadId,
-      )) {
-        // 【変更】切り替え前の受信処理を終了する。
-        if (generation != _conversationGeneration) break;
-
-        _handleResponse(response);
-
-        // 【追加】エラー表示後に、別の失敗文を追加しない。
-        if (response.isError) {
-          responseEnded = true;
-          break;
-        }
-
-        if (response.isChatEnd || response.isChat) {
-          responseEnded = true;
-          _pendingResponseMessages.clear();
-          break;
-        }
-      }
+      final responseEnded = await _receiveReply(
+        _llmService.sendMessage(
+          text,
+          history: recentHistory,
+          images: targetImages,
+          requestId: requestId,
+          threadId: requestThreadId,
+        ),
+        generation,
+      );
 
       // 【変更】確定前に通信が終わった場合も、途中の本文を消す。
       if (generation == _conversationGeneration && !responseEnded) {
@@ -1155,6 +1239,56 @@ _toolStatus = null;
         notifyListeners();
       }
     }
+  }
+
+  /// 新しい返事を受け取る前に、前の返事の途中の状態を片付ける。
+  void _prepareForReply() {
+    _audioAssembler.reset();
+    // 前の返事の、まだ出していない文は捨てる（新しい考え中の点に置き換わる）
+    _bubbleSync.reset();
+    _audioQueue.stopAfterCurrent();
+    // 新しい返答の音声は鳴らす
+    _voiceMuted = false;
+    _currentStreamingMessage = null;
+    // 【追加】今回の返答の記録を新しく始める。
+    _pendingResponseMessages.clear();
+    _toolStatus = null;
+    // ここに追加
+    _isThinking = false;
+    _isUsingTool = false;
+  }
+
+  /// 返事を最後まで受け取り、画面へ流す。
+  ///
+  /// 【変更】本文が届いただけでは成功にしない。
+  /// chat_end / 旧形式chat / error のいずれかで終了を確認する。
+  /// 終わりまで届いたら true。
+  /// [quietErrors] が true なら、エラーは画面に出さずに false を返す。
+  Future<bool> _receiveReply(
+    Stream<LLMResponse> replies,
+    int generation, {
+    bool quietErrors = false,
+  }) async {
+    await for (final response in replies) {
+      // 【変更】切り替え前の受信処理を終了する。
+      if (generation != _conversationGeneration) return false;
+
+      if (quietErrors && response.isError) {
+        RaimLog.d('[ChatProvider] 返事を作れませんでした: ${response.raw['code']}');
+        return false;
+      }
+
+      _handleResponse(response);
+
+      // 【追加】エラー表示後に、別の失敗文を追加しない。
+      if (response.isError) return true;
+
+      if (response.isChatEnd || response.isChat) {
+        _pendingResponseMessages.clear();
+        return true;
+      }
+    }
+    return false;
   }
 
   String _subFromIdToken(String idToken) {

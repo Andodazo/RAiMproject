@@ -46,6 +46,7 @@ import 'dart:math' as math;
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
+import 'package:raim_prototype/models/raim_memory.dart';
 import 'package:raim_prototype/models/llm_response.dart';
 import 'package:raim_prototype/models/conversation_thread.dart';
 import 'package:raim_prototype/models/message.dart';
@@ -72,7 +73,7 @@ enum RaimConnectionState {
   offline,
 }
 
-class RaimServerService implements LLMService {
+class RaimServerService implements LLMService, GreetingService, MemoryService {
   // ─── 設定値（コンストラクタで受け取る） ───
   
   /// サーバーの URL
@@ -749,7 +750,8 @@ class RaimServerService implements LLMService {
   bool _isThreadResponse(LLMResponse response) {
     return response.isThreadList ||
         response.isThreadHistory ||
-        response.isThreadDeleted;
+        response.isThreadDeleted ||
+        response.isMemory;
   }
 
   /// 要求に付ける ID を作る。サーバーの形式（英数字・-・_、64文字まで）に合う。
@@ -770,6 +772,30 @@ class RaimServerService implements LLMService {
     List<Map<String, dynamic>>? images,
     String? requestId,
     String? threadId,
+  }) {
+    return _send(
+      userInput,
+      images: images,
+      requestId: requestId,
+      threadId: threadId,
+    );
+  }
+
+  /// アプリを開いたときに、ライムから一言話しかけてもらう。
+  ///
+  /// 本文は送らない。サーバーは「アプリが開かれた」ことだけを受け取り、
+  /// 時間帯や前回からの間に合わせた一言を返す（返り方は sendMessage と同じ）。
+  @override
+  Stream<LLMResponse> sendGreeting({String? threadId}) {
+    return _send('', threadId: threadId, greeting: true);
+  }
+
+  Stream<LLMResponse> _send(
+    String userInput, {
+    List<Map<String, dynamic>>? images,
+    String? requestId,
+    String? threadId,
+    bool greeting = false,
   }) async* {
     // オフラインまたは切断中なら、送信前に再接続を試す
     if (_state == RaimConnectionState.offline ||
@@ -792,8 +818,12 @@ class RaimServerService implements LLMService {
     final myRequestId =
         (requestId == null || requestId.isEmpty) ? newRequestId() : requestId;
     payload['requestId'] = myRequestId;
+    // ライムから話しかけてもらう要求。本文は持たない
+    if (greeting) {
+      payload['type'] = 'greeting';
+    }
     // 画像がある場合は、S3参照形式を追加する。
-    if (images != null && images.isNotEmpty) {
+    if (!greeting && images != null && images.isNotEmpty) {
       payload['type'] = 'user_message';
       payload['images'] = images;
     }
@@ -1001,6 +1031,36 @@ class RaimServerService implements LLMService {
   ///
   /// sendMessage と違い、ストリーミングではなく単発の応答を返す。
   /// 一覧・履歴のような読み取り要求で使う。
+  /// ライムが覚えていることを読む。
+  @override
+  Future<RaimMemory> fetchMemory() async {
+    final response = await _requestOnce(
+      payload: {'type': 'memory.get'},
+      matches: (r) => r.isMemory,
+      label: 'memory.get',
+    );
+    return RaimMemory.fromJson(response);
+  }
+
+  /// 覚えていることから項目を消す。消したあとの内容を返す。
+  ///
+  /// サーバーは消した項目を控えておき、記憶を作り直すときにも書かない。
+  @override
+  Future<RaimMemory> forgetMemory({
+    List<String> items = const [],
+    bool all = false,
+  }) async {
+    final response = await _requestOnce(
+      payload: {
+        'type': 'memory.forget',
+        if (all) 'all': true else 'items': items,
+      },
+      matches: (r) => r.isMemory,
+      label: 'memory.forget',
+    );
+    return RaimMemory.fromJson(response);
+  }
+
   Future<Map<String, dynamic>> _requestOnce({
     required Map<String, dynamic> payload,
     required bool Function(LLMResponse) matches,

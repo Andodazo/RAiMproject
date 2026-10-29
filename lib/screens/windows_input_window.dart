@@ -23,6 +23,7 @@ import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/passkey_registration.dart';
 import 'package:raim_prototype/services/voice/delayed_send.dart';
+import 'package:raim_prototype/widgets/memory_panel.dart';
 import 'package:raim_prototype/widgets/raim_calling_overlay.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/config/raim_config.dart';
@@ -43,7 +44,7 @@ class WindowsInputWindow extends StatefulWidget {
   State<WindowsInputWindow> createState() => _WindowsInputWindowState();
 }
 
-enum _PanelMode { none, menu, log, credits, settings }
+enum _PanelMode { none, menu, log, credits, settings, memory }
 
 class _WindowsInputWindowState extends State<WindowsInputWindow>
         // 修正: 展示専用のライフサイクル監視を廃止した。
@@ -418,6 +419,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         case _PanelMode.menu:
         case _PanelMode.credits:
         case _PanelMode.settings:
+        case _PanelMode.memory:
         case _PanelMode.none:
           await _mascot.expandPanel();
       }
@@ -744,6 +746,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                       _PanelMode.log => _buildLog(),
                       _PanelMode.credits => _buildCredits(),
                       _PanelMode.settings => _buildSettings(),
+                      _PanelMode.memory => _buildMemory(),
                       _PanelMode.none => const SizedBox.shrink(),
                     },
                   ),
@@ -1079,6 +1082,11 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
           Icons.settings_outlined,
           '設定',
           () => _setMode(_PanelMode.settings),
+        ),
+        _menuRow(
+          Icons.psychology_outlined,
+          'ライムが覚えていること',
+          () => _setMode(_PanelMode.memory),
         ),
         _menuRow(
           Icons.record_voice_over,
@@ -1436,6 +1444,39 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   }
 
   // ---------- 設定 ----------
+
+  Widget _buildMemory() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _sectionLabel('ライムが覚えていること')),
+            IconButton(
+              icon: const Icon(Icons.close, size: 15),
+              color: _mut,
+              splashRadius: 15,
+              onPressed: () => _setMode(_PanelMode.menu),
+            ),
+          ],
+        ),
+        Expanded(
+          child: MemoryPanel(
+            service: context.read<RaimServerService>(),
+            palette: const VoiceSettingsPalette(
+              text: _text,
+              muted: _mut,
+              accent: _lime,
+              error: Color(0xFFE06C6C),
+              line: _line,
+              surface: _bg2,
+            ),
+            fontScale: 0.95,
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildSettings() {
     return Column(
