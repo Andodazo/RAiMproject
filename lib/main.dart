@@ -37,6 +37,7 @@ import 'package:raim_prototype/services/transcribe_stt_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/aws_image_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
+import 'package:raim_prototype/services/unity_ready_signal.dart';
 import 'package:raim_prototype/services/noop_unity_bridge.dart';
 import 'package:raim_prototype/services/windows_unity_bridge.dart';
 import 'package:raim_prototype/services/embed_unity_bridge.dart';
@@ -104,6 +105,13 @@ void main() async {
   final voiceSettings = VoiceSettingsProvider();
   await voiceSettings.load();
   await _configureIosAudio();
+  // Unity は読み込みのときに、自分の音声の設定（マナーモードで鳴らない）で上書きする。
+  // 以前は起動時に設定するだけで、マイクを使って record が設定し直すまで
+  // ライムの声がマナーモードで消えていた（起動直後の話しかけが無音だった）。
+  // 準備ができたら、もう一度かけ直す
+  if (!kIsWeb && Platform.isIOS) {
+    UnityReadySignal.whenReady(() => unawaited(_configureIosAudio()));
+  }
 
   final authProvider = AuthProvider(AuthService());
   final raimService = RaimServerService(serverUrl: RaimConfig.serverUrl, accessTokenGetter: () => authProvider.getValidAccessToken(),);
