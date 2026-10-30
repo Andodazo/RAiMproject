@@ -60,6 +60,14 @@ class FakeUnity implements UnityCommunicator {
     errors.add(message);
   }
 
+  /// 吹き出しへ返事の終わりを送った回数
+  int chatEnds = 0;
+
+  @override
+  void sendChatEnd({String? fullText}) {
+    chatEnds++;
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) {
     // void のメソッド（sendEmotions など）は何もしない

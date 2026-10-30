@@ -20,6 +20,8 @@ import 'dart:async';
 ///   → 前の声が鳴り終わってから [audioWait] 待っても声が来なければ出す
 /// - 音量ボタンで声を消している、話しかけて声を止めた、chunk_id が無い
 ///   → 待たずにすぐ出す（[isImmediate]）
+/// - 声が鳴り終わったという知らせが来ない
+///   → [audioStallLimit] 待っても進まなければ、鳴り終わったことにする
 class SpeechBubbleSync {
   SpeechBubbleSync({
     required this.onShow,
@@ -29,6 +31,7 @@ class SpeechBubbleSync {
     Timer Function(Duration, void Function())? scheduler,
     this.audioWait = const Duration(milliseconds: 2500),
     this.audioStartLimit = const Duration(seconds: 6),
+    this.audioStallLimit = const Duration(seconds: 20),
     this.pageChars = 50,
     this.commaPageChars = 70,
     this.maxPageChars = 90,
@@ -52,6 +55,12 @@ class SpeechBubbleSync {
 
   /// 声は届いたのに鳴り始めないときに、あきらめて出すまでの時間
   final Duration audioStartLimit;
+
+  /// 声が鳴り始めたのに鳴り終わりが来ないときに、鳴り終わったことにするまでの時間。
+  ///
+  /// 鳴り終わりを待ったままだと、残りの文も chat_end も吹き出しへ伝わらず、
+  /// 吹き出しが消えなくなる。1つの文の声は長くても十数秒なので、それより長く取る。
+  final Duration audioStallLimit;
 
   /// 1ページに入れる文字数の目安。超えそうなら、文の終わりで次のページにする。
   ///
@@ -180,7 +189,10 @@ class SpeechBubbleSync {
         _pageLength = 0;
         _lastShown = '';
         onEnd(fullText);
+        return;
       }
+      // 返事は終わったのに、最後の声の鳴り終わりが来ない
+      if (_endPending) _watchStall();
       return;
     }
 
@@ -193,7 +205,10 @@ class SpeechBubbleSync {
 
     // 前の声が鳴っている間は待つ。その間にこの文の声が届くことが多い。
     // 鳴り終わると audioFinished からまたここへ来る
-    if (_playingId != null) return;
+    if (_playingId != null) {
+      _watchStall();
+      return;
+    }
 
     // 声が届いていれば鳴り始めるのを待つ（鳴らないときの保険だけ掛ける）。
     // 届いていなければ、少し待っても来ないときに文字だけ出す
@@ -201,6 +216,17 @@ class SpeechBubbleSync {
       head.audioQueued ? audioStartLimit : audioWait,
       _releaseHead,
     );
+  }
+
+  /// 鳴り終わりが来ないまま止まったときの保険を掛ける
+  void _watchStall() {
+    _timer = _scheduler(audioStallLimit, _onAudioStalled);
+  }
+
+  void _onAudioStalled() {
+    _timer = null;
+    _playingId = null;
+    _schedule();
   }
 
   void _releaseHead() {

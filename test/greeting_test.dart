@@ -112,6 +112,8 @@ void main() {
     // 利用者は何も頼んでいないので、途中の文を消すだけにする
     expect(chat.messages, isEmpty);
     expect(unity.errors, isEmpty);
+    // 途中まで出た吹き出しは閉じる（以前は消えずに残っていた）
+    expect(unity.chatEnds, 1);
     expect(chat.isLoading, isFalse);
   });
 

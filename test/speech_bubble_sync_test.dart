@@ -194,8 +194,8 @@ void main() {
     sync.audioStarted('c1');
     expect(events, ['show:えっと。']);
 
-    // 鳴っている間は待つ
-    expect(timers.active, isEmpty);
+    // 鳴っている間は待つ（鳴り終わりが来ないときの保険だけ掛かる）
+    expect(timers.active.map((t) => t.duration), [sync.audioStallLimit]);
 
     sync.audioFinished('c1');
     expect(events, ['show:えっと。']);
@@ -226,6 +226,45 @@ void main() {
     timers.fireLatest();
     expect(events, ['show:あ。']);
     expect(timers.timers.last.duration, sync.audioStartLimit);
+  });
+
+  test('最後の声の鳴り終わりが来なくても、少し待って chat_end を伝える', () {
+    sync.addText('c1', 'こんにちは。');
+    sync.end('こんにちは。');
+    sync.audioQueued('c1');
+    sync.audioStarted('c1');
+    expect(events, ['show:こんにちは。']);
+
+    // audioFinished が来ないまま止まった
+    expect(timers.active.single.duration, sync.audioStallLimit);
+    timers.fireLatest();
+    expect(events, ['show:こんにちは。', 'end']);
+
+    // 遅れて鳴り終わりが来ても、二重には伝えない
+    sync.audioFinished('c1');
+    expect(events, ['show:こんにちは。', 'end']);
+  });
+
+  test('途中の声の鳴り終わりが来なくても、残りの文を出して終わる', () {
+    sync.addText('c1', 'あ。');
+    sync.addText('c2', 'い。');
+    sync.end(null);
+    sync.audioQueued('c1');
+    sync.audioStarted('c1');
+    expect(events, ['show:あ。']);
+
+    timers.fireLatest(); // 鳴り終わりをあきらめる
+    timers.fireLatest(); // 声の来ない「い。」を出す
+    expect(events, ['show:あ。', 'show:い。', 'end']);
+  });
+
+  test('声が鳴り終わっていれば、保険のタイマーは残らない', () {
+    sync.addText('c1', 'あ。');
+    sync.end(null);
+    sync.audioStarted('c1');
+    sync.audioFinished('c1');
+    expect(events, ['show:あ。', 'end']);
+    expect(timers.active, isEmpty);
   });
 
   test('音量を切っているときは、待たずに届いた順に出す', () {
