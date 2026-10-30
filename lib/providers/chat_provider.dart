@@ -561,6 +561,10 @@ _toolStatus = null;
   void _discardCurrentResponse() {
     _bubbleSync.reset();
     stopSpeaking();
+    // Windows の吹き出しを閉じる。以前は文を捨てるだけで終わりを送っておらず、
+    // 途中まで出た話しかけの吹き出しが消えずに残っていた
+    _unityThinking = false;
+    _unityBridge.sendChatEnd();
     _messages.removeWhere(_pendingResponseMessages.contains);
     _pendingResponseMessages.clear();
     _currentStreamingMessage = null;
