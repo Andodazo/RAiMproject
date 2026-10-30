@@ -32,6 +32,21 @@ class UnityReadySignal {
     });
   }
 
+  /// 準備ができたときに1回だけ [callback] を呼ぶ。もう準備ができていればすぐ呼ぶ。
+  static void whenReady(void Function() callback) {
+    if (ready.value) {
+      callback();
+      return;
+    }
+    void onChange() {
+      if (!ready.value) return;
+      ready.removeListener(onChange);
+      callback();
+    }
+
+    ready.addListener(onChange);
+  }
+
   /// Unity から届いたメッセージを見て、準備完了の合図なら [ready] を立てる。
   static void handleMessage(String message) {
     if (ready.value) return;

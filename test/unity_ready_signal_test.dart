@@ -30,6 +30,27 @@ void main() {
     expect(UnityReadySignal.ready.value, isTrue);
   });
 
+  test('whenReady は、準備ができたときに1回だけ呼ぶ', () {
+    var calls = 0;
+    UnityReadySignal.whenReady(() => calls++);
+    expect(calls, 0);
+
+    UnityReadySignal.handleMessage('{"type":"unity.ready"}');
+    expect(calls, 1);
+
+    // 一度立ったら戻さないが、念のため立て直しても二重には呼ばない
+    UnityReadySignal.ready.value = false;
+    UnityReadySignal.ready.value = true;
+    expect(calls, 1);
+  });
+
+  test('whenReady は、もう準備ができていればすぐ呼ぶ', () {
+    UnityReadySignal.handleMessage('{"type":"unity.ready"}');
+    var calls = 0;
+    UnityReadySignal.whenReady(() => calls++);
+    expect(calls, 1);
+  });
+
   testWidgets('準備完了のあとに待ち始めても、何もしない', (tester) async {
     UnityReadySignal.handleMessage('{"type":"unity.ready"}');
     UnityReadySignal.startWaiting();
