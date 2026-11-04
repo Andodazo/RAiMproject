@@ -60,6 +60,10 @@ public class SpeechBubbleController : MonoBehaviour
     [Tooltip("カーソルが乗っていてもこの秒数を超えたら消す。無限に残るのを防ぐ保険")]
     [SerializeField] private float pointerHoldLimit = 15f;
 
+    [Tooltip("最後に文字が変わってからこの秒数たったら、chat_end が来ていなくても消す。" +
+             "chat_end が届かなかったときに吹き出しが残り続けるのを防ぐ保険")]
+    [SerializeField] private float staleHideSeconds = 30f;
+
     [Header("フェード")]
     [SerializeField] private float fadeInSeconds = 0.15f;
     [SerializeField] private float fadeOutSeconds = 0.4f;
@@ -97,6 +101,9 @@ public class SpeechBubbleController : MonoBehaviour
 
     /// 考え中の点を動かすコルーチン
     private Coroutine thinkingRoutine;
+
+    /// 最後に本文を変えた時刻（Time.realtimeSinceStartup）。staleHideSeconds の保険に使う
+    private float lastTextTime;
 
     private void Awake()
     {
@@ -173,7 +180,26 @@ public class SpeechBubbleController : MonoBehaviour
     private void LateUpdate()
     {
         if (canvasGroup.alpha <= 0f) return;
+        HideIfStale();
         UpdatePosition();
+    }
+
+    /// <summary>
+    /// 文字が出たまま、消去タイマーも動いていない状態が続いたら消す。
+    ///
+    /// 以前は chat_end が来ない限り吹き出しが消えなかった。
+    /// chat_end が届かない（接続が切れた瞬間に送られた、会話を切り替えて捨てられた など）、
+    /// または chat_end の後に文字が届いてタイマーが止まると、吹き出しがずっと残っていた。
+    /// 考え中の点は本文ではないので数えない（返事を待っている間は消さない）。
+    /// </summary>
+    private void HideIfStale()
+    {
+        if (hideRoutine != null || thinking) return;
+        if (string.IsNullOrEmpty(currentText)) return;
+        if (Time.realtimeSinceStartup - lastTextTime < staleHideSeconds) return;
+
+        Debug.LogWarning($"[Bubble] 文字が変わらないまま {staleHideSeconds} 秒たったので消します（chat_end が届いていない）");
+        hideRoutine = StartCoroutine(HideAfter(0f));
     }
 
     // ============================================================
@@ -201,6 +227,7 @@ public class SpeechBubbleController : MonoBehaviour
         }
 
         ApplyText();
+        lastTextTime = Time.realtimeSinceStartup;
         Show();
 
         // 発話中は消さない。chat_end が来てからタイマーを開始する。

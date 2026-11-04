@@ -222,4 +222,68 @@ void main() {
       expect(llm.greetings, 1);
     });
   });
+
+  group('返事の途中で会話を変えたとき、Windows の吹き出しを閉じる', () {
+    /// 本文を1つ送ったあと、テストが閉じるまで続きを送らない話しかけ
+    Future<(FakeUnity, ChatProvider, StreamController<LLMResponse>)>
+        midGreeting() async {
+      final replies = StreamController<LLMResponse>();
+      final llm = _GatedGreetingLlm(replies.stream);
+      final unity = FakeUnity();
+      final chat = ChatProvider(
+        llm,
+        unity,
+        audioQueue: FakeAudioQueue(),
+        greetOnLaunchEnabled: () => true,
+      );
+      addTearDown(chat.dispose);
+      addTearDown(replies.close);
+
+      unawaited(chat.greetOnLaunch());
+      replies.add(LLMResponse.fromJson(const {
+        'type': 'text_chunk',
+        'chunk_id': 'c1',
+        'text': 'おはよ。',
+      }));
+      await pumpEventQueue();
+      expect(chat.isLoading, isTrue);
+      expect(unity.chatEnds, 0);
+      return (unity, chat, replies);
+    }
+
+    test('新しい会話にしたら chat_end を送る', () async {
+      final (unity, chat, _) = await midGreeting();
+      chat.startNewThread();
+      // 以前は考え中の点のときしか送らず、文が出たあとだと吹き出しが残っていた
+      expect(unity.chatEnds, 1);
+    });
+
+    test('ログアウトしたら chat_end を送る', () async {
+      final (unity, chat, _) = await midGreeting();
+      chat.resetForSignOut();
+      expect(unity.chatEnds, 1);
+    });
+
+    test('返事の途中でなければ、新しい会話にしても送らない', () async {
+      final unity = FakeUnity();
+      final chat = ChatProvider(
+        GreetingLlm(reply),
+        unity,
+        audioQueue: FakeAudioQueue(),
+      );
+      addTearDown(chat.dispose);
+      chat.startNewThread();
+      expect(unity.chatEnds, 0);
+    });
+  });
+}
+
+/// 渡されたストリームをそのまま話しかけの返事にする偽の会話サービス
+class _GatedGreetingLlm extends ScriptedLlm implements GreetingService {
+  _GatedGreetingLlm(this.replies) : super(const []);
+
+  final Stream<LLMResponse> replies;
+
+  @override
+  Stream<LLMResponse> sendGreeting({String? threadId}) => replies;
 }

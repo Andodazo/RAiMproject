@@ -267,6 +267,21 @@ void main() {
     expect(timers.active, isEmpty);
   });
 
+  test('出していない文や伝えていない終わりがあるかを返す', () {
+    expect(sync.hasUnfinished, isFalse);
+    sync.addText('c1', 'あ。');
+    expect(sync.hasUnfinished, isTrue);
+    sync.audioStarted('c1');
+    // 声が鳴っている間は、まだ終わっていない
+    expect(sync.hasUnfinished, isTrue);
+    sync.audioFinished('c1');
+    expect(sync.hasUnfinished, isFalse);
+    sync.addText('c2', 'い。');
+    sync.end(null);
+    sync.reset();
+    expect(sync.hasUnfinished, isFalse);
+  });
+
   test('音量を切っているときは、待たずに届いた順に出す', () {
     immediate = true;
     sync.addText('c1', 'あ。');
