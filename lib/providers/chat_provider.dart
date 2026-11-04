@@ -108,6 +108,18 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     _unityThinking = false;
     _unityBridge.sendChatEnd();
   }
+
+  /// 返事の途中なら、残りの文を捨てて Unity の吹き出しを閉じる
+  /// （会話の切り替え・新しい会話・ログアウト）。
+  ///
+  /// 以前は考え中の点のときしか終わりを送っていなかった。文が出たあとに
+  /// 切り替えると、残りの文と一緒に chat_end も捨てられ、吹き出しが消えずに残っていた。
+  void _closeUnityBubble() {
+    final open = _unityThinking || _isLoading || _bubbleSync.hasUnfinished;
+    _bubbleSync.reset();
+    _unityThinking = false;
+    if (open) _unityBridge.sendChatEnd();
+  }
   // 追加: 画面側で「考え中」状態を取得するためのGetter
   bool get isThinking => _isThinking;
   /// 接続状態（RaimServerService 使用時のみ意味を持つ）
@@ -693,8 +705,8 @@ _toolStatus = null;
     if (service is! RaimServerService) return;
     if (threadId.isEmpty || threadId == _currentThreadId) return;
 
-    // 返事の途中で別の会話に切り替えたとき、古い返事の考え中の点を残さない
-    _endUnityThinking();
+    // 返事の途中で別の会話に切り替えたとき、古い返事の吹き出しを残さない
+    _closeUnityBubble();
     final generation = ++_conversationGeneration;
 
     // 【追加】前の会話の履歴取得状態を引き継がない。
@@ -977,8 +989,8 @@ _toolStatus = null;
   /// クライアント側で識別子を採番して送る。サーバーは未知の threadId を
   /// 受け取るとその ID でスレッドを新規作成するため、専用の API は要らない。
   void startNewThread() {
-    // 返事の途中で新しい会話にしたとき、古い返事の考え中の点を残さない
-    _endUnityThinking();
+    // 返事の途中で新しい会話にしたとき、古い返事の吹き出しを残さない
+    _closeUnityBubble();
     _conversationGeneration++;
     // 【追加】前の会話の履歴読み込み状態を解除する。
     _isLoadingOlder = false;
@@ -1008,8 +1020,9 @@ _toolStatus = null;
     _accountGeneration++;
     _conversationGeneration++;
 
-    // Unityの「考え中」表示と、再生中・待機中の音声を止める。
-    _endUnityThinking();
+    // Unityの吹き出し（考え中の点・返事の途中の文）を閉じ、再生中・待機中の音声を止める。
+    // 先に残りの文を捨てておかないと、stopSpeaking で全部出てしまう
+    _closeUnityBubble();
     stopSpeaking();
 
     // 会話本文・会話ID・会話一覧を消す。

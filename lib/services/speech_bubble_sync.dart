@@ -161,6 +161,12 @@ class SpeechBubbleSync {
     _schedule();
   }
 
+  /// まだ吹き出しへ出していない文や、伝えていない返事の終わりがあるか。
+  ///
+  /// true のまま [reset] で捨てると、吹き出しへ chat_end が伝わらない。
+  bool get hasUnfinished =>
+      _pending.isNotEmpty || _endPending || _playingId != null;
+
   /// 捨てる（新しい送信、会話の切り替え、エラー）
   void reset() {
     _timer?.cancel();
