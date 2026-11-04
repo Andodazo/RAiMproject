@@ -2,6 +2,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// ライムの吹き出し（Windows デスクトップマスコット用）。
@@ -105,6 +106,9 @@ public class SpeechBubbleController : MonoBehaviour
     /// 最後に本文を変えた時刻（Time.realtimeSinceStartup）。staleHideSeconds の保険に使う
     private float lastTextTime;
 
+    /// 消去タイマーを始めた時刻（Time.realtimeSinceStartup）。タイマーが止まったときの保険に使う
+    private float hideStartTime;
+
     private void Awake()
     {
         canvasGroup = GetComponent<CanvasGroup>();
@@ -194,12 +198,29 @@ public class SpeechBubbleController : MonoBehaviour
     /// </summary>
     private void HideIfStale()
     {
-        if (hideRoutine != null || thinking) return;
+        if (thinking) return;
         if (string.IsNullOrEmpty(currentText)) return;
-        if (Time.realtimeSinceStartup - lastTextTime < staleHideSeconds) return;
+        float now = Time.realtimeSinceStartup;
+
+        if (hideRoutine != null)
+        {
+            // 消去タイマーは動いているはずなのに、上限を過ぎても消えていない。
+            // コルーチンが例外で止まると hideRoutine が残ったままになり、
+            // 上の保険も効かずに吹き出しがずっと残る。
+            float limit = maxDuration + pointerHoldLimit + fadeOutSeconds + 5f;
+            if (now - hideStartTime < limit) return;
+            Debug.LogWarning("[Bubble] 消去タイマーが止まっていたので消します");
+            CancelHideTimer();
+            hideRoutine = StartCoroutine(HideAfter(0f));
+            hideStartTime = now;
+            return;
+        }
+
+        if (now - lastTextTime < staleHideSeconds) return;
 
         Debug.LogWarning($"[Bubble] 文字が変わらないまま {staleHideSeconds} 秒たったので消します（chat_end が届いていない）");
         hideRoutine = StartCoroutine(HideAfter(0f));
+        hideStartTime = now;
     }
 
     // ============================================================
@@ -530,6 +551,7 @@ public class SpeechBubbleController : MonoBehaviour
         float duration = baseDuration + charCount * secondsPerChar;
         duration = Mathf.Clamp(duration, minDuration, maxDuration);
 
+        hideStartTime = Time.realtimeSinceStartup;
         hideRoutine = StartCoroutine(HideAfter(duration));
     }
 
@@ -586,10 +608,17 @@ public class SpeechBubbleController : MonoBehaviour
         // 信用できないので、非フォーカス時は乗っていない扱いにする。
         if (!Application.isFocused) return false;
 
+        // 以前は Input.mousePosition を読んでいた。このプロジェクトは入力を
+        // Input System だけにしている（Active Input Handling = Input System Package）ので、
+        // 旧 Input クラスを読むと例外になる。消去タイマーのコルーチンがそこで止まり、
+        // ライムをクリックしてフォーカスがある間に返事が終わると、吹き出しが消えなかった。
+        var mouse = Mouse.current;
+        if (mouse == null) return false;
+
         // Canvas は Screen Space - Overlay なので camera は null でよい。
         return RectTransformUtility.RectangleContainsScreenPoint(
             rectTransform,
-            Input.mousePosition,
+            mouse.position.ReadValue(),
             null
         );
     }
