@@ -1,0 +1,71 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 88684271e27adb843b6570957c9e7637, type: 3}
+  m_Name: N Character Runtime
+  m_EditorClassIdentifier: 
+  m_prefab: {fileID: 0}
+  Meta:
+    Name: N Character
+    Version: 
+    Authors: []
+    CopyrightInformation: 
+    ContactInformation: 
+    References: []
+    ThirdPartyLicenses: 
+    Thumbnail: {fileID: 0}
+    AvatarPermission: 0
+    ViolentUsage: 0
+    SexualUsage: 0
+    CommercialUsage: 0
+    PoliticalOrReligiousUsage: 0
+    AntisocialOrHateUsage: 0
+    CreditNotation: 0
+    Redistribution: 0
+    Modification: 0
+    OtherLicenseUrl: 
+  Expression:
+    Happy: {fileID: 0}
+    Angry: {fileID: 0}
+    Sad: {fileID: 0}
+    Relaxed: {fileID: 0}
+    Surprised: {fileID: 0}
+    Aa: {fileID: 0}
+    Ih: {fileID: 0}
+    Ou: {fileID: 0}
+    Ee: {fileID: 0}
+    Oh: {fileID: 0}
+    Blink: {fileID: 0}
+    BlinkLeft: {fileID: 0}
+    BlinkRight: {fileID: 0}
+    LookUp: {fileID: 0}
+    LookDown: {fileID: 0}
+    LookLeft: {fileID: 0}
+    LookRight: {fileID: 0}
+    Neutral: {fileID: 0}
+    CustomClips: []
+  LookAt:
+    OffsetFromHead: {x: 0, y: 0.06, z: 0}
+    LookAtType: 0
+    HorizontalOuter:
+      CurveXRangeDegree: 90
+      CurveYRangeDegree: 10
+    HorizontalInner:
+      CurveXRangeDegree: 90
+      CurveYRangeDegree: 10
+    VerticalDown:
+      CurveXRangeDegree: 90
+      CurveYRangeDegree: 10
+    VerticalUp:
+      CurveXRangeDegree: 90
+      CurveYRangeDegree: 10
+  FirstPerson:
+    Renderers: []

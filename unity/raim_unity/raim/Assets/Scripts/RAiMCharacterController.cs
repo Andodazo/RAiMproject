@@ -8,6 +8,8 @@ using NativeWebSocket;
 
 public class RAiMCharacterController : MonoBehaviour
 {
+    [SerializeField] private RAiM.Companion.CompanionActor companion;
+    public RAiM.Companion.CompanionActor Companion => companion;
     // ============================================================
     // Inspector設定
     // ============================================================
@@ -97,7 +99,7 @@ public class RAiMCharacterController : MonoBehaviour
         // SpriteRendererを取得
         spriteRenderer = GetComponent<SpriteRenderer>();
 
-        if (spriteRenderer == null)
+        if (spriteRenderer == null && companion == null)
         {
             Debug.LogError("SpriteRendererが見つかりません。");
             return;
@@ -125,9 +127,11 @@ public class RAiMCharacterController : MonoBehaviour
         };
 
         // 初期表情（起動より先に「寝ている」が届いていたら寝ている絵）
-        spriteRenderer.sprite = isSleeping && sleepingSprite != null
-            ? sleepingSprite
-            : defaultSprite;
+        if (spriteRenderer != null)
+            spriteRenderer.sprite = isSleeping && sleepingSprite != null
+                ? sleepingSprite
+                : defaultSprite;
+        if (companion != null) companion.SetSleeping(isSleeping);
         currentEmotion = "neutral";
 
         // ========================================================
@@ -222,6 +226,12 @@ public class RAiMCharacterController : MonoBehaviour
     {
         // 修正: 会話本文や認証情報を含む受信データは出力せず、文字数のみ記録する。
         Debug.Log($"[Unity] 複数感情受信 chars={json?.Length ?? 0}");
+
+        if (companion != null)
+        {
+            if (!companion.ReceiveEmotions(json)) Debug.LogWarning("[Unity] 3D表情データを受信できませんでした");
+            return;
+        }
 
         try
         {
@@ -323,6 +333,12 @@ public class RAiMCharacterController : MonoBehaviour
     {
        // 修正: 会話本文や認証情報を含む受信データは出力せず、文字数のみ記録する。
        Debug.Log($"[Unity] Tool状態受信 chars={json?.Length ?? 0}");
+
+        if (companion != null)
+        {
+            companion.ReceiveToolState(json);
+            return;
+        }
 
         try
         {
@@ -813,6 +829,12 @@ public class RAiMCharacterController : MonoBehaviour
         // スマホは Flutter 側で出すので、ここでは出さない
         if (useWebSocket) ShowZzz(value);
 
+        if (companion != null)
+        {
+            companion.SetSleeping(value);
+            return;
+        }
+
         if (spriteRenderer == null)
         {
             Debug.LogWarning("SpriteRendererが初期化されていません。");
@@ -845,6 +867,13 @@ public class RAiMCharacterController : MonoBehaviour
         if (sleepZzz == null)
         {
             if (!visible) return;
+            if (companion != null)
+            {
+                sleepZzz = gameObject.AddComponent<SleepZzzEffect>();
+                sleepZzz.Init(companion);
+                sleepZzz.SetVisible(true);
+                return;
+            }
             var renderer = spriteRenderer != null ? spriteRenderer : GetComponent<SpriteRenderer>();
             if (renderer == null) return;
             sleepZzz = gameObject.AddComponent<SleepZzzEffect>();
@@ -859,6 +888,11 @@ public class RAiMCharacterController : MonoBehaviour
 
     private void ChangeEmotion(string emotion)
     {
+        if (companion != null)
+        {
+            if (!string.IsNullOrEmpty(emotion)) companion.ReceiveLegacyEmotion(emotion);
+            return;
+        }
         if (spriteRenderer == null)
         {
             Debug.LogWarning("SpriteRendererが初期化されていません。");

@@ -122,6 +122,34 @@ public class WindowsOverlayController : MonoBehaviour
 
     private Camera Cam => _cam != null ? _cam : (_cam = Camera.main);
 
+    // 3D は奥行きがあるため、バウンディングボックスの8頂点を画面へ投影する。
+    private bool TryGetCharacterScreenBounds(Camera cam, out Vector3 min, out Vector3 max)
+    {
+        min = max = default;
+        if (cam == null) return false;
+        var companion = characterController != null ? characterController.Companion : null;
+        if (companion == null)
+        {
+            var sprite = Sprite;
+            if (sprite == null) return false;
+            min = cam.WorldToScreenPoint(sprite.bounds.min);
+            max = cam.WorldToScreenPoint(sprite.bounds.max);
+            return true;
+        }
+        if (!companion.Ready) return false;
+        var bounds = companion.ModelBounds;
+        min = Vector3.one * float.PositiveInfinity;
+        max = Vector3.one * float.NegativeInfinity;
+        for (int x = 0; x < 2; x++) for (int y = 0; y < 2; y++) for (int z = 0; z < 2; z++)
+        {
+            var p = cam.WorldToScreenPoint(new Vector3(x == 0 ? bounds.min.x : bounds.max.x,
+                y == 0 ? bounds.min.y : bounds.max.y, z == 0 ? bounds.min.z : bounds.max.z));
+            min = Vector3.Min(min, p);
+            max = Vector3.Max(max, p);
+        }
+        return true;
+    }
+
     private SpriteRenderer Sprite
     {
         get
@@ -723,11 +751,7 @@ public class WindowsOverlayController : MonoBehaviour
     {
         foot = default;
         var cam = Cam;
-        var sr = Sprite;
-        if (cam == null || sr == null || Screen.height <= 0) return false;
-
-        Vector3 bMin = cam.WorldToScreenPoint(sr.bounds.min);
-        Vector3 bMax = cam.WorldToScreenPoint(sr.bounds.max);
+        if (Screen.height <= 0 || !TryGetCharacterScreenBounds(cam, out var bMin, out var bMax)) return false;
         foot = new Vector2((bMin.x + bMax.x) * 0.5f, Screen.height - bMin.y);
         return true;
     }
@@ -931,11 +955,7 @@ public class WindowsOverlayController : MonoBehaviour
         float localY = Screen.height - (p.Y - r.Top);
 
         var cam = Cam;
-        var sr = Sprite;
-        if (cam == null || sr == null) return false;
-
-        Vector3 bMin = cam.WorldToScreenPoint(sr.bounds.min);
-        Vector3 bMax = cam.WorldToScreenPoint(sr.bounds.max);
+        if (!TryGetCharacterScreenBounds(cam, out var bMin, out var bMax)) return false;
 
         return localX >= bMin.x && localX <= bMax.x
             && localY >= bMin.y && localY <= bMax.y;
@@ -968,8 +988,7 @@ public class WindowsOverlayController : MonoBehaviour
         if (!clampToScreen) return;
 
         var cam = Cam;
-        var sr = Sprite;
-        if (cam == null || sr == null) return;
+        if (!TryGetCharacterScreenBounds(cam, out var bMin, out var bMax)) return;
 
         if (!TryGetWindowRect(out RECT r)) return;
 
@@ -978,9 +997,6 @@ public class WindowsOverlayController : MonoBehaviour
         if (w <= 0 || h <= 0) return;
 
         // ウィンドウ内でのキャラの位置（Unityのスクリーン座標＝左下原点）
-        Vector3 bMin = cam.WorldToScreenPoint(sr.bounds.min);
-        Vector3 bMax = cam.WorldToScreenPoint(sr.bounds.max);
-
         // 画面座標（左上原点）へ直す
         float charLeft = r.Left + bMin.x;
         float charRight = r.Left + bMax.x;
@@ -1076,13 +1092,9 @@ public class WindowsOverlayController : MonoBehaviour
         int cy = y + h;
 
         var cam = Cam;
-        var sr = Sprite;
-        if (cam != null && sr != null)
+        if (TryGetCharacterScreenBounds(cam, out var bMin, out var bMax))
         {
             // Unity のスクリーン座標は左下原点・Y上向き
-            Vector3 bMin = cam.WorldToScreenPoint(sr.bounds.min);
-            Vector3 bMax = cam.WorldToScreenPoint(sr.bounds.max);
-
             cx = x + Mathf.RoundToInt((bMin.x + bMax.x) * 0.5f);
             cy = y + Mathf.RoundToInt(Screen.height - bMin.y);
         }
@@ -1173,11 +1185,7 @@ public class WindowsOverlayController : MonoBehaviour
         var cam = Cam;
         if (cam == null) return;
 
-        var sr = Sprite;
-        if (sr == null) return;
-
-        Vector3 min = cam.WorldToScreenPoint(sr.bounds.min);
-        Vector3 max = cam.WorldToScreenPoint(sr.bounds.max);
+        if (!TryGetCharacterScreenBounds(cam, out var min, out var max)) return;
 
         Debug.Log(
             $"[Overlay] character screen bounds: " +

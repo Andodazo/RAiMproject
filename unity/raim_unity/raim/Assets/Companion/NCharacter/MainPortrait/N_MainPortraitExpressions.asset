@@ -1,0 +1,450 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7954c419ef5caa14aa13f484513776de, type: 3}
+  m_Name: N Main Portrait Expressions
+  m_EditorClassIdentifier: 
+  sourceSha256: 67cd4689c2ed85f514db97c7b0e56b550c03eee063c2f172d45d346741e9298c
+  emotions:
+  - key: neutral
+    shapes: []
+    headDegrees: {x: 0, y: 0, z: 0}
+    chestDegrees: {x: 0, y: 0, z: 0}
+    gaze: {x: 0, y: 0}
+    leftHandOffset: {x: 0, y: 0, z: 0}
+    rightHandOffset: {x: 0, y: 0, z: 0}
+    fingerCurl: 0
+    approximation: Pose reconstructed from main ef72f8301b9245bd76e58bd992686e5c16770467;
+      N facial keys retain continuous mixing.
+  - key: happy
+    shapes:
+    - shape: MouthSmileLeft
+      region: 2
+      amount: 0.9
+    - shape: MouthSmileRight
+      region: 2
+      amount: 0.9
+    - shape: JawOpen
+      region: 2
+      amount: 0.36
+    - shape: CheekRaiseLeft
+      region: 2
+      amount: 0.65
+    - shape: CheekRaiseRight
+      region: 2
+      amount: 0.65
+    - shape: EyeSquintLeft
+      region: 1
+      amount: 0.58
+    - shape: EyeSquintRight
+      region: 1
+      amount: 0.58
+    - shape: BrowOuterUpLeft
+      region: 0
+      amount: 0.15
+    - shape: BrowOuterUpRight
+      region: 0
+      amount: 0.15
+    - shape: EyeBlinkLeft
+      region: 1
+      amount: 1
+    - shape: EyeBlinkRight
+      region: 1
+      amount: 1
+    headDegrees: {x: -8, y: -4, z: -5}
+    chestDegrees: {x: 0, y: 0, z: 0}
+    gaze: {x: 0, y: 0}
+    leftHandOffset: {x: -0.07, y: 0.18, z: 0.1}
+    rightHandOffset: {x: 0.1, y: 0.17, z: 0.12}
+    fingerCurl: 0
+    approximation: Pose reconstructed from main ef72f8301b9245bd76e58bd992686e5c16770467;
+      N facial keys retain continuous mixing.
+  - key: sad
+    shapes:
+    - shape: BrowInnerUpLeft
+      region: 0
+      amount: 0.9
+    - shape: BrowInnerUpRight
+      region: 0
+      amount: 0.9
+    - shape: BrowDownLeft
+      region: 0
+      amount: 0.08
+    - shape: BrowDownRight
+      region: 0
+      amount: 0.08
+    - shape: MouthFrownLeft
+      region: 2
+      amount: 0.6
+    - shape: MouthFrownRight
+      region: 2
+      amount: 0.6
+    - shape: EyeSquintLeft
+      region: 1
+      amount: 0.33
+    - shape: EyeSquintRight
+      region: 1
+      amount: 0.33
+    - shape: EyeLookDown
+      region: 1
+      amount: 0.25
+    headDegrees: {x: 15, y: 7, z: 7}
+    chestDegrees: {x: 10, y: 0, z: 3}
+    gaze: {x: 0, y: 0}
+    leftHandOffset: {x: 0.05, y: 0.01, z: 0.08}
+    rightHandOffset: {x: -0.06, y: -0.03, z: 0.08}
+    fingerCurl: 0
+    approximation: Pose reconstructed from main ef72f8301b9245bd76e58bd992686e5c16770467;
+      N facial keys retain continuous mixing.
+  - key: angry
+    shapes:
+    - shape: BrowDownLeft
+      region: 0
+      amount: 1
+    - shape: BrowDownRight
+      region: 0
+      amount: 1
+    - shape: EyeSquintLeft
+      region: 1
+      amount: 0.6
+    - shape: EyeSquintRight
+      region: 1
+      amount: 0.6
+    - shape: MouthPress
+      region: 2
+      amount: 0.65
+    - shape: MouthFrownLeft
+      region: 2
+      amount: 0.35
+    - shape: MouthFrownRight
+      region: 2
+      amount: 0.35
+    headDegrees: {x: 5, y: -7, z: -4}
+    chestDegrees: {x: 0, y: 0, z: 0}
+    gaze: {x: 0, y: 0}
+    leftHandOffset: {x: -0.06, y: 0.08, z: 0}
+    rightHandOffset: {x: 0.05, y: 0.08, z: 0}
+    fingerCurl: 0.5
+    approximation: Pose reconstructed from main ef72f8301b9245bd76e58bd992686e5c16770467;
+      N facial keys retain continuous mixing.
+  - key: surprised
+    shapes:
+    - shape: BrowInnerUpLeft
+      region: 0
+      amount: 0.7
+    - shape: BrowInnerUpRight
+      region: 0
+      amount: 0.7
+    - shape: BrowOuterUpLeft
+      region: 0
+      amount: 0.75
+    - shape: BrowOuterUpRight
+      region: 0
+      amount: 0.75
+    - shape: EyeWideLeft
+      region: 1
+      amount: 0.8
+    - shape: EyeWideRight
+      region: 1
+      amount: 0.8
+    - shape: JawOpen
+      region: 2
+      amount: 0.26
+    - shape: MouthPucker
+      region: 2
+      amount: 0.95
+    - shape: MouthRound
+      region: 2
+      amount: 0.35
+    headDegrees: {x: -15, y: 0, z: 0}
+    chestDegrees: {x: 0, y: 0, z: 0}
+    gaze: {x: 0, y: 0}
+    leftHandOffset: {x: -0.12, y: 0.37, z: 0.16}
+    rightHandOffset: {x: 0.1, y: 0.3, z: 0.16}
+    fingerCurl: 0
+    approximation: Pose reconstructed from main ef72f8301b9245bd76e58bd992686e5c16770467;
+      N facial keys retain continuous mixing.
+  - key: caring
+    shapes:
+    - shape: BrowInnerUpLeft
+      region: 0
+      amount: 0.48
+    - shape: BrowInnerUpRight
+      region: 0
+      amount: 0.48
+    - shape: MouthSmileLeft
+      region: 2
+      amount: 0.28
+    - shape: MouthSmileRight
+      region: 2
+      amount: 0.28
+    - shape: EyeSquintLeft
+      region: 1
+      amount: 0.35
+    - shape: EyeSquintRight
+      region: 1
+      amount: 0.35
+    - shape: CheekRaiseLeft
+      region: 2
+      amount: 0.28
+    - shape: CheekRaiseRight
+      region: 2
+      amount: 0.28
+    headDegrees: {x: 9, y: -6, z: -10}
+    chestDegrees: {x: 9, y: 0, z: 0}
+    gaze: {x: 0, y: 0}
+    leftHandOffset: {x: 0.07, y: 0.22, z: 0.14}
+    rightHandOffset: {x: -0.07, y: 0.1, z: 0.17}
+    fingerCurl: 0
+    approximation: Pose reconstructed from main ef72f8301b9245bd76e58bd992686e5c16770467;
+      N facial keys retain continuous mixing.
+  - key: embarrassed
+    shapes:
+    - shape: BrowInnerUpLeft
+      region: 0
+      amount: 0.68
+    - shape: BrowInnerUpRight
+      region: 0
+      amount: 0.52
+    - shape: EyeSquintLeft
+      region: 1
+      amount: 0.58
+    - shape: EyeSquintRight
+      region: 1
+      amount: 0.58
+    - shape: MouthSmileLeft
+      region: 2
+      amount: 0.22
+    - shape: MouthSmileRight
+      region: 2
+      amount: 0.34
+    - shape: MouthPress
+      region: 2
+      amount: 0.38
+    - shape: EyeLookDown
+      region: 1
+      amount: 0.55
+    - shape: CheekRaiseLeft
+      region: 2
+      amount: 0.4
+    - shape: CheekRaiseRight
+      region: 2
+      amount: 0.4
+    headDegrees: {x: 16, y: 20, z: 11}
+    chestDegrees: {x: 6, y: 0, z: -4}
+    gaze: {x: 0, y: 0}
+    leftHandOffset: {x: 0.025, y: 0.28, z: 0.15}
+    rightHandOffset: {x: -0.015, y: 0.27, z: 0.14}
+    fingerCurl: 0.7
+    approximation: Pose reconstructed from main ef72f8301b9245bd76e58bd992686e5c16770467;
+      N facial keys retain continuous mixing.
+  - key: excited
+    shapes:
+    - shape: BrowOuterUpLeft
+      region: 0
+      amount: 0.75
+    - shape: BrowOuterUpRight
+      region: 0
+      amount: 0.75
+    - shape: BrowInnerUpLeft
+      region: 0
+      amount: 0.4
+    - shape: BrowInnerUpRight
+      region: 0
+      amount: 0.4
+    - shape: EyeWideLeft
+      region: 1
+      amount: 0.62
+    - shape: EyeWideRight
+      region: 1
+      amount: 0.62
+    - shape: MouthSmileLeft
+      region: 2
+      amount: 0.95
+    - shape: MouthSmileRight
+      region: 2
+      amount: 0.95
+    - shape: JawOpen
+      region: 2
+      amount: 0.48
+    - shape: CheekRaiseLeft
+      region: 2
+      amount: 0.6
+    - shape: CheekRaiseRight
+      region: 2
+      amount: 0.6
+    headDegrees: {x: -10, y: -7, z: -6}
+    chestDegrees: {x: -6, y: 0, z: 0}
+    gaze: {x: 0, y: 0}
+    leftHandOffset: {x: -0.15, y: 0.34, z: 0.16}
+    rightHandOffset: {x: 0.13, y: 0.3, z: 0.14}
+    fingerCurl: 0
+    approximation: Pose reconstructed from main ef72f8301b9245bd76e58bd992686e5c16770467;
+      N facial keys retain continuous mixing.
+  - key: curious
+    shapes:
+    - shape: BrowOuterUpLeft
+      region: 0
+      amount: 1
+    - shape: BrowInnerUpLeft
+      region: 0
+      amount: 0.55
+    - shape: BrowDownRight
+      region: 0
+      amount: 0.25
+    - shape: EyeWideLeft
+      region: 1
+      amount: 0.55
+    - shape: EyeWideRight
+      region: 1
+      amount: 0.3
+    - shape: JawOpen
+      region: 2
+      amount: 0.12
+    - shape: MouthPucker
+      region: 2
+      amount: 0.27
+    - shape: MouthShiftRight
+      region: 2
+      amount: 0.3
+    headDegrees: {x: 3, y: -10, z: -16}
+    chestDegrees: {x: 6, y: 0, z: 0}
+    gaze: {x: 0, y: 0}
+    leftHandOffset: {x: 0.06, y: 0.06, z: 0.11}
+    rightHandOffset: {x: -0.04, y: 0.27, z: 0.12}
+    fingerCurl: 0
+    approximation: Pose reconstructed from main ef72f8301b9245bd76e58bd992686e5c16770467;
+      N facial keys retain continuous mixing.
+  - key: amused
+    shapes:
+    - shape: BrowOuterUpRight
+      region: 0
+      amount: 0.58
+    - shape: BrowDownLeft
+      region: 0
+      amount: 0.22
+    - shape: EyeSquintLeft
+      region: 1
+      amount: 0.66
+    - shape: EyeSquintRight
+      region: 1
+      amount: 0.4
+    - shape: MouthSmileLeft
+      region: 2
+      amount: 0.75
+    - shape: MouthSmileRight
+      region: 2
+      amount: 0.23
+    - shape: MouthDimpleLeft
+      region: 2
+      amount: 0.3
+    - shape: CheekRaiseLeft
+      region: 2
+      amount: 0.6
+    headDegrees: {x: -7, y: 7, z: 10}
+    chestDegrees: {x: 0, y: 0, z: 0}
+    gaze: {x: 0, y: 0}
+    leftHandOffset: {x: 0.06, y: 0.25, z: 0.12}
+    rightHandOffset: {x: -0.06, y: 0.26, z: 0.12}
+    fingerCurl: 0
+    approximation: Pose reconstructed from main ef72f8301b9245bd76e58bd992686e5c16770467;
+      N facial keys retain continuous mixing.
+  - key: thoughtful
+    shapes:
+    - shape: BrowDownLeft
+      region: 0
+      amount: 0.65
+    - shape: BrowInnerUpRight
+      region: 0
+      amount: 0.38
+    - shape: EyeSquintLeft
+      region: 1
+      amount: 0.36
+    - shape: EyeSquintRight
+      region: 1
+      amount: 0.13
+    - shape: MouthPucker
+      region: 2
+      amount: 0.32
+    - shape: MouthPress
+      region: 2
+      amount: 0.35
+    - shape: MouthShiftLeft
+      region: 2
+      amount: 0.35
+    - shape: EyeLookLeft
+      region: 1
+      amount: 0.3
+    headDegrees: {x: 8, y: 15, z: 9}
+    chestDegrees: {x: 0, y: 0, z: 0}
+    gaze: {x: 0, y: 0}
+    leftHandOffset: {x: 0.07, y: 0.08, z: 0.12}
+    rightHandOffset: {x: -0.07, y: 0.3, z: 0.13}
+    fingerCurl: 0
+    approximation: Pose reconstructed from main ef72f8301b9245bd76e58bd992686e5c16770467;
+      N facial keys retain continuous mixing.
+  - key: playful
+    shapes:
+    - shape: EyeBlinkRight
+      region: 1
+      amount: 1
+    - shape: BrowOuterUpLeft
+      region: 0
+      amount: 0.65
+    - shape: BrowInnerUpLeft
+      region: 0
+      amount: 0.25
+    - shape: MouthSmileLeft
+      region: 2
+      amount: 0.9
+    - shape: MouthSmileRight
+      region: 2
+      amount: 0.85
+    - shape: JawOpen
+      region: 2
+      amount: 0.36
+    - shape: CheekRaiseLeft
+      region: 2
+      amount: 0.4
+    - shape: CheekRaiseRight
+      region: 2
+      amount: 0.5
+    - shape: EyeWideLeft
+      region: 1
+      amount: 0.35
+    headDegrees: {x: -8, y: -13, z: 16}
+    chestDegrees: {x: 0, y: -6, z: 0}
+    gaze: {x: 0, y: 0}
+    leftHandOffset: {x: -0.07, y: 0.3, z: 0.1}
+    rightHandOffset: {x: 0.08, y: 0.18, z: 0.12}
+    fingerCurl: 0
+    approximation: Pose reconstructed from main ef72f8301b9245bd76e58bd992686e5c16770467;
+      N facial keys retain continuous mixing.
+  smoothing: 5
+  browBudget: 1
+  eyeBudget: 0.98
+  mouthBudget: 0.95
+  blinkInterval: 5.2
+  blinkIntervalMin: 3
+  blinkIntervalMax: 8
+  blinkDuration: 0.32
+  neutralTimeout: 0
+  gestureInterval: 8
+  gestureStrength: 1
+  faceGain: 1
+  bodyGain: 1
+  comicMarks: 1
+  comicSize: 0.23
+  comicDuration: 1.8
+  fullBodyActing: 1
+  stepGain: 1
+  fingerActivity: 1
+  chinContactLocal: {x: 0.012, y: -0.034, z: 0.083}

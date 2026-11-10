@@ -13,6 +13,8 @@ namespace RAiM.NightOffice.Compatible {
         public Camera mainCamera;
         [Tooltip("Existing character SpriteRenderer. Its object name, sprites and receiver scripts are unchanged.")]
         public SpriteRenderer character;
+        [Tooltip("Optional 3D character; when assigned it is placed instead of the sprite.")]
+        public RAiM.Companion.CompanionActor character3D;
         public GameObject roomContent;
         public Transform avatarAnchor;
         public TextAsset placementProfile;
@@ -67,6 +69,9 @@ namespace RAiM.NightOffice.Compatible {
         CameraState savedCamera;
         SpriteRenderer savedCharacter;
         Pose savedCharacterPose;
+        RAiM.Companion.CompanionActor savedCharacter3D;
+        Pose savedCharacter3DPose;
+        bool placedCharacter3D;
         GameObject[] savedHidden=Array.Empty<GameObject>();
         bool[] savedActive=Array.Empty<bool>();
         Profile profile;
@@ -78,16 +83,17 @@ namespace RAiM.NightOffice.Compatible {
         void LateUpdate() {
             if(!Application.isPlaying)return;
             if(mode!=lastMode)ApplyMode();
-            if(roomApplied && savedCharacter && savedCharacter.sprite!=lastSprite)PlaceSprite();
+            if(roomApplied && savedCharacter3D && !placedCharacter3D && savedCharacter3D.Ready)PlaceCharacter();
+            else if(roomApplied && savedCharacter && savedCharacter.sprite!=lastSprite)PlaceCharacter();
             // 画面の大きさが変わったら（回転・分割表示など）頭の位置を合わせ直す
-            else if(roomApplied && (Screen.width!=lastScreenWidth || Screen.height!=lastScreenHeight))PlaceSprite();
+            else if(roomApplied && (Screen.width!=lastScreenWidth || Screen.height!=lastScreenHeight))PlaceCharacter();
         }
         /// <summary>
         /// 頭のてっぺんの位置（画面の上からの割合）を変える。Flutter から呼ばれる。
         /// </summary>
         public void SetHeadTopFromScreenTop(float value) {
             headTopFromScreenTop=Mathf.Clamp(value,0f,.6f);
-            if(roomApplied)PlaceSprite();
+            if(roomApplied)PlaceCharacter();
         }
         public void SetMode(DisplayMode value) {mode=value;if(Application.isPlaying && isActiveAndEnabled)ApplyMode();}
         public void ApplyMode() {
@@ -96,19 +102,20 @@ namespace RAiM.NightOffice.Compatible {
             bool show=mode==DisplayMode.Room || mode==DisplayMode.Automatic && !AutomaticUsesDesktopOverlay;
             if(show)EnterRoom();else LeaveRoom();
         }
-        bool ValidateReferences(Camera camera,SpriteRenderer sprite) {
+        bool ValidateReferences(Camera camera,SpriteRenderer sprite,Transform model) {
             if(!roomContent || roomContent==gameObject || !roomContent.transform.IsChildOf(transform) || !avatarAnchor || !camera) {
                 Debug.LogWarning("NightOffice: assign the existing camera and room references. Room stays hidden.",this);return false;
             }
-            if(camera.transform.IsChildOf(roomContent.transform) || sprite && sprite.transform.IsChildOf(roomContent.transform)) {
+            if(camera.transform.IsChildOf(roomContent.transform) || sprite && sprite.transform.IsChildOf(roomContent.transform) || model && model.IsChildOf(roomContent.transform)) {
                 Debug.LogWarning("NightOffice: camera and character must stay outside RoomContent.",this);return false;
             }
-            var parentScale=sprite && sprite.transform.parent?sprite.transform.parent.lossyScale:Vector3.one;
+            var characterTransform=model?model:(sprite?sprite.transform:null);
+            var parentScale=characterTransform && characterTransform.parent?characterTransform.parent.lossyScale:Vector3.one;
             if(parentScale.x<=0 || Mathf.Abs(parentScale.x-parentScale.y)>.0001f || Mathf.Abs(parentScale.x-parentScale.z)>.0001f) {
                 Debug.LogWarning("NightOffice: character parent must have a positive uniform scale.",this);return false;
             }
             foreach(var target in hideWhileRoomVisible) if(target && (transform.IsChildOf(target.transform) ||
-                camera.transform.IsChildOf(target.transform) || sprite && sprite.transform.IsChildOf(target.transform))) {
+                camera.transform.IsChildOf(target.transform) || sprite && sprite.transform.IsChildOf(target.transform) || model && model.IsChildOf(target.transform))) {
                 Debug.LogWarning("NightOffice: a hide target contains the camera, character or mode controller.",this);return false;
             }
             return true;
@@ -116,10 +123,12 @@ namespace RAiM.NightOffice.Compatible {
         void EnterRoom() {
             if(roomApplied)return;
             var camera=mainCamera?mainCamera:Camera.main;
-            var sprite=character;
-            if(!sprite) {var existing=GameObject.Find("character");if(existing)sprite=existing.GetComponent<SpriteRenderer>();}
-            if(!ValidateReferences(camera,sprite)) {if(roomContent)roomContent.SetActive(false);return;}
+            var model=character3D;
+            var sprite=model?null:character;
+            if(!model && !sprite) {var existing=GameObject.Find("character");if(existing)sprite=existing.GetComponent<SpriteRenderer>();}
+            if(!ValidateReferences(camera,sprite,model?model.transform:null)) {if(roomContent)roomContent.SetActive(false);return;}
             savedCamera=new CameraState(camera);savedCharacter=sprite;if(sprite)savedCharacterPose=Pose.Read(sprite.transform);
+            savedCharacter3D=model;if(model)savedCharacter3DPose=Pose.Read(model.transform);placedCharacter3D=false;
             savedHidden=(GameObject[])hideWhileRoomVisible.Clone();savedActive=new bool[savedHidden.Length];
             for(int i=0;i<savedHidden.Length;i++)if(savedHidden[i]) {savedActive[i]=savedHidden[i].activeSelf;savedHidden[i].SetActive(false);}
             roomApplied=true;
@@ -133,7 +142,24 @@ namespace RAiM.NightOffice.Compatible {
                 savedCamera.additional.volumeTrigger=camera.transform;
             }
             if(profile==null && placementProfile)profile=JsonUtility.FromJson<Profile>(placementProfile.text);
-            PlaceSprite();roomContent.SetActive(true);
+            PlaceCharacter();roomContent.SetActive(true);
+        }
+        void PlaceCharacter() {
+            if(savedCharacter3D)Place3D();else PlaceSprite();
+        }
+        void Place3D() {
+            if(!savedCharacter3D || !savedCharacter3D.Ready || !avatarAnchor)return;
+            var t=savedCharacter3D.transform;
+            // Start from the saved desktop pose every time: resize/layout events
+            // must never multiply the previous room scale.
+            savedCharacter3DPose.Restore(t);
+            t.rotation=avatarAnchor.rotation*Quaternion.Euler(0,180,0);
+            var bounds=savedCharacter3D.ModelBounds;
+            if(bounds.size.y<=.0001f || visibleHeight<=0)return;
+            t.localScale*=visibleHeight*HeadFitFactor()/bounds.size.y;
+            bounds=savedCharacter3D.ModelBounds;
+            t.position+=avatarAnchor.position-new Vector3(bounds.center.x,bounds.min.y,bounds.center.z);
+            placedCharacter3D=true;lastScreenWidth=Screen.width;lastScreenHeight=Screen.height;
         }
         void PlaceSprite() {
             if(!savedCharacter || !savedCharacter.sprite || !avatarAnchor)return;
@@ -180,8 +206,9 @@ namespace RAiM.NightOffice.Compatible {
             if(!roomApplied)return; // Windows Automatic startup never touches an existing camera or sprite.
             roomApplied=false;savedCamera?.Restore();
             if(savedCharacter)savedCharacterPose.Restore(savedCharacter.transform);
+            if(savedCharacter3D)savedCharacter3DPose.Restore(savedCharacter3D.transform);
             for(int i=0;i<savedHidden.Length;i++)if(savedHidden[i])savedHidden[i].SetActive(savedActive[i]);
-            savedCamera=null;savedCharacter=null;lastSprite=null;savedHidden=Array.Empty<GameObject>();savedActive=Array.Empty<bool>();
+            savedCamera=null;savedCharacter=null;savedCharacter3D=null;placedCharacter3D=false;lastSprite=null;savedHidden=Array.Empty<GameObject>();savedActive=Array.Empty<bool>();
         }
     }
 }
