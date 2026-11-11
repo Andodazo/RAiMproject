@@ -11,6 +11,7 @@ import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
+import 'package:raim_prototype/providers/planner_controller.dart';
 import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/services/lime_size.dart';
@@ -22,7 +23,10 @@ import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/passkey_registration.dart';
 import 'package:raim_prototype/services/voice/delayed_send.dart';
+import 'package:raim_prototype/models/planner_card.dart';
 import 'package:raim_prototype/widgets/memory_panel.dart';
+import 'package:raim_prototype/widgets/planner_card_view.dart';
+import 'package:raim_prototype/widgets/planner_panel.dart';
 import 'package:raim_prototype/widgets/raim_calling_overlay.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/config/raim_config.dart';
@@ -43,7 +47,7 @@ class WindowsInputWindow extends StatefulWidget {
   State<WindowsInputWindow> createState() => _WindowsInputWindowState();
 }
 
-enum _PanelMode { none, menu, log, credits, settings, memory }
+enum _PanelMode { none, menu, log, credits, settings, memory, planner }
 
 class _WindowsInputWindowState extends State<WindowsInputWindow>
         // 修正: 展示専用のライフサイクル監視を廃止した。
@@ -409,6 +413,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         case _PanelMode.credits:
         case _PanelMode.settings:
         case _PanelMode.memory:
+        case _PanelMode.planner:
         case _PanelMode.none:
           await _mascot.expandPanel();
       }
@@ -611,7 +616,12 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   @override
   Widget build(BuildContext context) {
     // 修正: 展示用の表示分岐を削除し、選択した画像に合わせて小窓の高さを変える。
-    _syncImageStripHeight(context.watch<CameraProvider>().hasImage);
+    // 予定のカード（入れたよ・予定に入れる？）も、画像の列と同じ場所に出す
+    final hasImages = context.watch<CameraProvider>().hasImage;
+    final plannerCard = context.select<ChatProvider, PlannerCard?>(
+      (chat) => chat.activePlannerCard,
+    );
+    _syncImageStripHeight(hasImages || plannerCard != null);
 
     // Unity の起動待ちの間は「発信中」を出す
     return ValueListenableBuilder<bool>(
@@ -672,11 +682,27 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                       _PanelMode.credits => _buildCredits(),
                       _PanelMode.settings => _buildSettings(),
                       _PanelMode.memory => _buildMemory(),
+                      _PanelMode.planner => _buildPlanner(),
                       _PanelMode.none => const SizedBox.shrink(),
                     },
                   ),
                 // 修正: 入力中の文字があっても上限通知が見えるよう、プレースホルダに頼らず表示する。
-                if (_showImageStrip)
+                if (_showImageStrip &&
+                    !context.read<CameraProvider>().hasImage &&
+                    context.read<ChatProvider>().activePlannerCard != null)
+                  SizedBox(
+                    height: MascotWindowService.imageStripHeight,
+                    child: Center(
+                      child: PlannerCardView(
+                        card: context.read<ChatProvider>().activePlannerCard!,
+                        compact: true,
+                        textColor: _text,
+                        mutedColor: _mut,
+                        accentColor: _lime,
+                      ),
+                    ),
+                  )
+                else if (_showImageStrip)
                   _imageLimitNote == null
                       ? const _SelectedImageStrip()
                       : SizedBox(
@@ -1000,6 +1026,11 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
           () => _setMode(_PanelMode.settings),
         ),
         _menuRow(
+          Icons.event_note_outlined,
+          '予定とメモ',
+          () => _setMode(_PanelMode.planner),
+        ),
+        _menuRow(
           Icons.psychology_outlined,
           'ライムが覚えていること',
           () => _setMode(_PanelMode.memory),
@@ -1150,6 +1181,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
     // 【追加】ウィンドウ操作や通信を待つ前に、状態を消す。
     context.read<ChatProvider>().resetForSignOut();
+    unawaited(context.read<PlannerController>().resetForSignOut());
     context.read<CameraProvider>().clearImage();
 
     await _closeWindow();
@@ -1345,6 +1377,39 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     );
   }
 
+  Widget _buildPlanner() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _sectionLabel('予定とメモ')),
+            IconButton(
+              icon: const Icon(Icons.close, size: 15),
+              color: _mut,
+              splashRadius: 15,
+              onPressed: () => _setMode(_PanelMode.menu),
+            ),
+          ],
+        ),
+        const Expanded(
+          child: PlannerPanel(
+            palette: VoiceSettingsPalette(
+              text: _text,
+              muted: _mut,
+              accent: _lime,
+              error: Color(0xFFE06C6C),
+              line: _line,
+              surface: _bg2,
+            ),
+            fontScale: 0.95,
+            swipeToDelete: false,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSettings() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1428,7 +1493,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            m.text,
+                            // 予定のカードは本文が無いので、何を入れたかを出す
+                            m.plannerCard == null
+                                ? m.text
+                                : '📅 ${m.plannerCard!.whenLabel} ${m.plannerCard!.title}',
                             style: const TextStyle(
                               color: _text,
                               fontSize: 12.5,

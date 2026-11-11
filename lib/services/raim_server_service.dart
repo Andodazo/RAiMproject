@@ -50,6 +50,7 @@ import 'package:raim_prototype/models/raim_memory.dart';
 import 'package:raim_prototype/models/llm_response.dart';
 import 'package:raim_prototype/models/conversation_thread.dart';
 import 'package:raim_prototype/models/message.dart';
+import 'package:raim_prototype/models/planner_item.dart';
 import 'package:raim_prototype/services/llm_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/config/raim_config.dart';
@@ -73,7 +74,13 @@ enum RaimConnectionState {
   offline,
 }
 
-class RaimServerService implements LLMService, GreetingService, MemoryService {
+class RaimServerService
+    implements
+        LLMService,
+        GreetingService,
+        ReminderService,
+        MemoryService,
+        PlannerService {
   // ─── 設定値（コンストラクタで受け取る） ───
   
   /// サーバーの URL
@@ -712,7 +719,9 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
     return response.isThreadList ||
         response.isThreadHistory ||
         response.isThreadDeleted ||
-        response.isMemory;
+        response.isMemory ||
+        response.isPlanner ||
+        response.isPlannerChanged;
   }
 
   /// 要求に付ける ID を作る。サーバーの形式（英数字・-・_、64文字まで）に合う。
@@ -751,12 +760,31 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
     return _send('', threadId: threadId, greeting: true);
   }
 
+  /// 予定を知らせる時刻に、ライムからその予定の一言を話してもらう。
+  ///
+  /// 話しかけ（greeting）と同じ流れで、どの予定のどの時刻かを付けて送る。
+  /// Windows で知らせる時刻が来たときと、スマホで予定の通知を押して開いたときに使う。
+  @override
+  Stream<LLMResponse> sendReminder({
+    required String itemId,
+    required String slot,
+    String? threadId,
+  }) {
+    return _send(
+      '',
+      threadId: threadId,
+      greeting: true,
+      reminder: {'itemId': itemId, 'slot': slot},
+    );
+  }
+
   Stream<LLMResponse> _send(
     String userInput, {
     List<Map<String, dynamic>>? images,
     String? requestId,
     String? threadId,
     bool greeting = false,
+    Map<String, String>? reminder,
   }) async* {
     // オフラインまたは切断中なら、送信前に再接続を試す
     if (_state == RaimConnectionState.offline ||
@@ -782,6 +810,7 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
     // ライムから話しかけてもらう要求。本文は持たない
     if (greeting) {
       payload['type'] = 'greeting';
+      if (reminder != null) payload['reminder'] = reminder;
     }
     // 画像がある場合は、S3参照形式を追加する。
     if (!greeting && images != null && images.isNotEmpty) {
@@ -1020,6 +1049,78 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
       label: 'memory.forget',
     );
     return RaimMemory.fromJson(response);
+  }
+
+  // ==========================================================================
+  // 予定とメモ
+  // ==========================================================================
+  //
+  // 一覧・手で足す・直す・消すは、Edge Lambda が DynamoDB を読み書きしてすぐ返す
+  // （覚えていることと同じ）。どれも、変えたあとの一覧が丸ごと返る。
+
+  @override
+  Future<List<PlannerItem>> fetchPlanner() async {
+    final response = await _requestOnce(
+      payload: {'type': 'planner.list'},
+      matches: (r) => r.isPlanner,
+      label: 'planner.list',
+    );
+    return _plannerItems(response);
+  }
+
+  /// 予定を手で足す。[source] は 'manual' か 'suggest'（「予定に入れる？」で入れた）
+  @override
+  Future<List<PlannerItem>> addPlannerEvent({
+    required String title,
+    required String date,
+    String time = '',
+    String note = '',
+    String source = 'manual',
+  }) async {
+    final response = await _requestOnce(
+      payload: {
+        'type': 'planner.add',
+        'source': source,
+        'item': {'title': title, 'date': date, 'time': time, 'note': note},
+      },
+      matches: (r) => r.isPlanner,
+      label: 'planner.add',
+    );
+    return _plannerItems(response);
+  }
+
+  /// 予定を直す。[changes] は直すところだけ（title / date / time / note）
+  @override
+  Future<List<PlannerItem>> updatePlannerEvent(
+    String itemId,
+    Map<String, String> changes,
+  ) async {
+    final response = await _requestOnce(
+      payload: {'type': 'planner.update', 'itemId': itemId, 'changes': changes},
+      matches: (r) => r.isPlanner,
+      label: 'planner.update',
+    );
+    return _plannerItems(response);
+  }
+
+  @override
+  Future<List<PlannerItem>> deletePlannerItem(String itemId) async {
+    final response = await _requestOnce(
+      payload: {'type': 'planner.delete', 'itemId': itemId},
+      matches: (r) => r.isPlanner,
+      label: 'planner.delete',
+    );
+    return _plannerItems(response);
+  }
+
+  static List<PlannerItem> _plannerItems(Map<String, dynamic> response) {
+    final raw = response['items'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((m) => PlannerItem.fromJson(m.map((k, v) => MapEntry(k.toString(), v))))
+        .where((item) => item.itemId.isNotEmpty)
+        .toList();
   }
 
   Future<Map<String, dynamic>> _requestOnce({

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/widgets/message_bubble.dart';
+import 'package:raim_prototype/widgets/planner_card_view.dart';
 import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
@@ -173,6 +174,12 @@ class _MessageListState extends State<MessageList> {
             }
 
             final message = messages[index];
+
+            // 予定のカード（入れたよ・予定に入れる？）
+            final plannerCard = message.plannerCard;
+            if (plannerCard != null) {
+              return PlannerCardView(card: plannerCard);
+            }
 
             // MessageBubble と同じ判定方法に変更
             final isUser = message.role == MessageRole.user;

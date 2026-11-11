@@ -447,6 +447,7 @@ class ChatMenuButton extends StatefulWidget {
     required this.onLogout,
     this.onStationAlarm,
     this.onMemory,
+    this.onPlanner,
     this.isWide = false,
   });
 
@@ -458,6 +459,9 @@ class ChatMenuButton extends StatefulWidget {
 
   /// ライムが覚えていることを開く。null ならメニューに出さない
   final VoidCallback? onMemory;
+
+  /// 予定とメモを開く。null ならメニューに出さない
+  final VoidCallback? onPlanner;
   final bool isWide;
   @override
   State<ChatMenuButton> createState() => _ChatMenuButtonState();
@@ -560,6 +564,9 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
           case 'memory':
             widget.onMemory?.call();
             break;
+          case 'planner':
+            widget.onPlanner?.call();
+            break;
           case 'logout':
             widget.onLogout();
             break;
@@ -608,6 +615,17 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
             ],
           ),
         ),
+        if (widget.onPlanner != null)
+          const PopupMenuItem(
+            value: 'planner',
+            child: Row(
+              children: [
+                Icon(Icons.event_note_outlined, color: Colors.white70),
+                SizedBox(width: 12),
+                Text('予定とメモ', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+          ),
         if (widget.onMemory != null)
           const PopupMenuItem(
             value: 'memory',

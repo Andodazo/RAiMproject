@@ -1,0 +1,174 @@
+// lib/widgets/planner_card_view.dart
+//
+// チャットに出す予定のカード（入れたよ・予定に入れる？）。
+//
+// スマホはチャットの中に、Windows は入力欄の上に（compact）出す。
+// 押したときの処理（取り消す・入れる）はここで PlannerController を呼び、
+// カードの見た目の状態は ChatProvider が持つ。
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import 'package:raim_prototype/models/planner_card.dart';
+import 'package:raim_prototype/providers/chat_provider.dart';
+import 'package:raim_prototype/providers/planner_controller.dart';
+import 'package:raim_prototype/services/raim_log.dart';
+
+class PlannerCardView extends StatelessWidget {
+  const PlannerCardView({
+    super.key,
+    required this.card,
+    this.compact = false,
+    this.textColor = const Color(0xFF1F2328),
+    this.mutedColor = const Color(0xFF5B6570),
+    this.accentColor = const Color(0xFF4D7C0F),
+    this.background = const Color(0xFFF1F6E8),
+    this.borderColor = const Color(0xFFCFE3A8),
+  });
+
+  final PlannerCard card;
+
+  /// Windows の入力欄の上に出す、1行の形
+  final bool compact;
+
+  final Color textColor;
+  final Color mutedColor;
+  final Color accentColor;
+  final Color background;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = _message();
+    final actions = _actions(context);
+    final content = Row(
+      children: [
+        Icon(Icons.event_note_outlined, size: compact ? 16 : 18, color: accentColor),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            message,
+            maxLines: compact ? 2 : 3,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: textColor, fontSize: compact ? 12 : 13.5, height: 1.3),
+          ),
+        ),
+        ...actions,
+      ],
+    );
+    if (compact) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: content,
+      );
+    }
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 340),
+        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+        decoration: BoxDecoration(
+          color: background,
+          border: Border.all(color: borderColor),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: content,
+      ),
+    );
+  }
+
+  String _message() {
+    final what = '${card.whenLabel} ${card.title}';
+    return switch ((card.type, card.state)) {
+      (PlannerCardType.added, PlannerCardState.undone) => '$what を取り消したよ',
+      (PlannerCardType.added, PlannerCardState.failed) => '取り消せなかった。もう一度押してね',
+      (PlannerCardType.added, _) => '$what を入れたよ',
+      (PlannerCardType.suggest, PlannerCardState.accepted) => '$what を入れたよ',
+      (PlannerCardType.suggest, PlannerCardState.failed) => '入れられなかった。もう一度押してね',
+      (PlannerCardType.suggest, _) => '予定に入れる？ $what',
+    };
+  }
+
+  List<Widget> _actions(BuildContext context) {
+    if (card.state == PlannerCardState.busy) {
+      return [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2, color: accentColor),
+          ),
+        ),
+      ];
+    }
+    if (!card.isActionable) {
+      // Windows の入力欄の上のカードは、押し終わったら × で閉じる
+      return compact ? [_close(context)] : const [];
+    }
+    if (card.type == PlannerCardType.added) {
+      return [_button('取り消す', () => _undo(context)), if (compact) _close(context)];
+    }
+    return [_button('入れる', () => _accept(context)), _close(context)];
+  }
+
+  Widget _button(String label, VoidCallback onPressed) => TextButton(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          minimumSize: const Size(0, 32),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(color: accentColor, fontSize: compact ? 12 : 13, fontWeight: FontWeight.w600),
+        ),
+      );
+
+  Widget _close(BuildContext context) => IconButton(
+        tooltip: '閉じる',
+        icon: const Icon(Icons.close, size: 15),
+        color: mutedColor,
+        splashRadius: 15,
+        visualDensity: VisualDensity.compact,
+        onPressed: () => context
+            .read<ChatProvider>()
+            .updatePlannerCard(card, PlannerCardState.dismissed),
+      );
+
+  Future<void> _undo(BuildContext context) async {
+    final chat = context.read<ChatProvider>();
+    final planner = context.read<PlannerController>();
+    final itemId = card.item?.itemId;
+    if (itemId == null) return;
+    final busy = chat.updatePlannerCard(card, PlannerCardState.busy);
+    try {
+      await planner.deleteItem(itemId);
+      if (busy != null) chat.updatePlannerCard(busy, PlannerCardState.undone);
+    } catch (e) {
+      RaimLog.d('[PlannerCard] 取り消せませんでした: ${e.runtimeType}');
+      if (busy != null) chat.updatePlannerCard(busy, PlannerCardState.failed);
+    }
+  }
+
+  Future<void> _accept(BuildContext context) async {
+    final chat = context.read<ChatProvider>();
+    final planner = context.read<PlannerController>();
+    final candidate = card.candidate;
+    if (candidate == null) return;
+    final busy = chat.updatePlannerCard(card, PlannerCardState.busy);
+    try {
+      await planner.addEvent(
+        title: candidate.title,
+        date: candidate.date,
+        time: candidate.time,
+        source: 'suggest',
+      );
+      if (busy != null) chat.updatePlannerCard(busy, PlannerCardState.accepted);
+    } catch (e) {
+      RaimLog.d('[PlannerCard] 入れられませんでした: ${e.runtimeType}');
+      if (busy != null) chat.updatePlannerCard(busy, PlannerCardState.failed);
+    }
+  }
+}

@@ -21,13 +21,13 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import 'package:raim_prototype/services/app_notifications.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
 class StationNotifications {
   StationNotifications._();
 
-  static final FlutterLocalNotificationsPlugin _plugin =
-      FlutterLocalNotificationsPlugin();
+  static FlutterLocalNotificationsPlugin get _plugin => AppNotifications.plugin;
 
   static bool _initialized = false;
 
@@ -60,42 +60,16 @@ class StationNotifications {
   static bool get isSupported =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
+  /// 準備は予定の知らせと共通（app_notifications.dart）。
+  /// プラグインの initialize を別々に呼ぶと、通知を押したときの受け取りが消えるため。
   static Future<void> _init() async {
-    if (_initialized) return;
-    _initialized = true;
-    await _plugin.initialize(
-      settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        // 許可は乗車モードを始めるときに聞く（requestPermission）。
-        // 起動直後にいきなり聞かないようにするため。
-        iOS: DarwinInitializationSettings(
-          requestAlertPermission: false,
-          requestSoundPermission: false,
-          requestBadgePermission: false,
-        ),
-      ),
-    );
+    _initialized = await AppNotifications.ensureInitialized();
   }
 
   /// 通知の許可を求める。画面に出ている間（乗車モードを始めるとき）に呼ぶ。
   static Future<void> requestPermission() async {
     if (!isSupported) return;
-    try {
-      await _init();
-      if (Platform.isIOS) {
-        await _plugin
-            .resolvePlatformSpecificImplementation<
-                IOSFlutterLocalNotificationsPlugin>()
-            ?.requestPermissions(alert: true, sound: true);
-      } else {
-        await _plugin
-            .resolvePlatformSpecificImplementation<
-                AndroidFlutterLocalNotificationsPlugin>()
-            ?.requestNotificationsPermission();
-      }
-    } catch (e) {
-      RaimLog.w('[StationNotify] 通知の許可を確認できませんでした: ${e.runtimeType}');
-    }
+    await AppNotifications.requestPermission();
   }
 
   /// 駅に近づいた・着いたことを知らせる。
