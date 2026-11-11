@@ -42,7 +42,6 @@ flutter test test/review/item3_older_history_test.dart
 | 1 | `ChatProvider.resetForSignOut()` | ログアウトしたときに呼ぶ |
 | 4 | `UnityCommunicator.sendError({required String message})` | Unity（Windows の吹き出し）に失敗を知らせる |
 | 5 | `RaimConfig.isAwsUrl(String url)` | トークンを付ける相手なら true |
-| 5 | `RaimConfig.enableServerSwitch` | 接続先の切り替えを出すか |
 | 6 | `RaimConfig.maxImageCount` | 1回に送れる画像の枚数 |
 
 `audioQueue` は、テストで音を鳴らさないためのものです。本物の `AudioPlayQueue` は、作っただけで音のプラグインを呼ぶので、テストの中では作れません。
@@ -90,15 +89,12 @@ flutter test test/review/item3_older_history_test.dart
 
 **ヒント**: `_currentStreamingMessage` は、いちばん最後の吹き出ししか指していません。
 
-## 課題5: 配布版でも接続先の切り替えが出る・トークンを付ける相手の決め方が甘い
+## 課題5: トークンを付ける接続先をホスト名で決める
 
 **起きていること**
-- 配布用に `RAIM_ENABLE_SERVER_SWITCH=false` を付けても、スマホと Windows のメニューに、開発用サーバーへの切り替えが出ます
 - AWS かどうか（トークンを付けるか）を、URL に `cloudfront.net` が含まれるかで決めています。`wss://cloudfront.net.example.com` のような別のサーバーにもトークンを送ってしまいます
 
 **どうなればいいか**
-- フラグが false ならメニューに出さない。`switchServer` もフラグを見て止める
-- フラグを付けずに release ビルドしたときも出さない（`tools/release.ps1` を通さずに `flutter build apk` で作った場合など）
 - トークンを付けるかは、URL のホスト名で決める
 
 ## 課題6: 画像を5枚以上選べるが、サーバーは4枚まで
@@ -133,5 +129,4 @@ flutter test test/review/item3_older_history_test.dart
 - 展示モードのコードを全部消す（`DemoAccountPolicy` とそのテストも）
 - 録音機能のコードを全部消す（Android の書き出し、iOS の Info.plist で「ファイル」アプリに見せる設定も）
 
-**2026-10-23 追記**: 駅アラームがまだ声で反応しないので、原因を調べるための録音は当面残す。
-録音のテスト2つは skip にしてある。消すときは `item9_removed_features_test.dart` の `recordingKept` の skip を外す。
+**録音機能の削除後**: `item9_removed_features_test.dart` の録音関連テスト2つの skip を外して確認する。

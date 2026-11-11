@@ -16,7 +16,6 @@
 // 判定（StationAnnouncementDetector）も別々に持ち、どちらかが見つけたら知らせる。
 // 判定を共有しないのは、同じアナウンスを2つが聞いて「駅名を2回聞いた」と
 // 数えてしまわないため。雑音除去が使えなければ、そのままの音だけを聞く。
-// 録音（StationRecorder）には消す前の音を残す。
 //
 // 【ライムの声を拾わない】
 // ライムが「次は新宿だよ」と喋ると、その声で自分が反応してしまう。
@@ -33,7 +32,6 @@ import 'package:raim_prototype/services/mic_stream_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/station/station_alarm.dart';
 import 'package:raim_prototype/services/station/station_denoiser.dart';
-import 'package:raim_prototype/services/station/station_recorder.dart';
 import 'package:raim_prototype/services/vosk/vosk_engine.dart';
 import 'package:raim_prototype/services/wake_word_service.dart';
 
@@ -134,8 +132,6 @@ class StationListener {
     }
 
     _speaking?.addListener(_onSpeakingChanged);
-    // 【確認用・後で消す】設定が ON なら、聞いている音を wav に残す
-    await StationRecorder.startIfEnabled(destination: plan.destination.name);
     RaimLog.i(
       '[Station] 聞き取り開始 ${plan.destination.name} '
       '(文法 ${plan.grammar.length}語 / '
@@ -145,7 +141,6 @@ class StationListener {
 
   Future<void> stop() async {
     _speaking?.removeListener(_onSpeakingChanged);
-    await StationRecorder.stop(); // 【確認用・後で消す】
 
     final sub = _micSub;
     _micSub = null;
@@ -157,7 +152,7 @@ class StationListener {
     final mic = MicStreamService.instance;
     mic.unhold(this);
     // 他に誰も使っていなければマイクを閉じる
-    if (!mic.isHeld && !mic.hasListeners && !mic.isDumping) {
+    if (!mic.isHeld && !mic.hasListeners) {
       await mic.stop();
     }
     RaimLog.i('[Station] 聞き取り終了');
@@ -183,7 +178,6 @@ class StationListener {
 
   void _onSpeakingChanged() {
     final speaking = _speaking?.value ?? false;
-    StationRecorder.note(speaking ? 'ライムが喋り始めた（聞かない）' : 'ライムが喋り終えた'); // 【確認用・後で消す】
     if (speaking) {
       _mutedUntil = null;
       for (final lane in _lanes) {
@@ -196,7 +190,6 @@ class StationListener {
 
   /// しばらく聞かない。ライムの声（知らせのセリフ）を鳴らすときに使う。
   void muteFor(Duration duration) {
-    StationRecorder.note('ライムの声を鳴らすので ${duration.inSeconds}秒 聞かない'); // 【確認用・後で消す】
     final until = DateTime.now().add(duration);
     final current = _mutedUntil;
     if (current == null || until.isAfter(current)) _mutedUntil = until;
@@ -212,7 +205,6 @@ class StationListener {
   }
 
   void _onChunk(Uint8List chunk) {
-    StationRecorder.add(chunk); // 【確認用・後で消す】聞かない間の音も残す
     // 雑音を消す。聞かない間も渡し続ける（途中で途切れると消し方が乱れる）
     final clean = _denoiser?.process(chunk);
     if (_muted) return;
@@ -254,10 +246,6 @@ class StationListener {
       if (!_heard.isClosed) _heard.add(text);
 
       final allowRepeated = _allowRepeated?.call() ?? false;
-      // 【確認用・後で消す】
-      StationRecorder.note(
-        '聞こえた（${lane.label}）: $text${allowRepeated ? '（GPSで駅の近く）' : ''}',
-      );
       final event = lane.detector.onResult(
         text,
         allowRepeated: allowRepeated,
@@ -277,7 +265,6 @@ class StationListener {
       return;
     }
     _emitted[key] = event.at;
-    StationRecorder.note('検知（${lane.label}）: $event'); // 【確認用・後で消す】
     RaimLog.i('[Station] $event（${lane.label}）');
     if (!_events.isClosed) _events.add(event);
   }

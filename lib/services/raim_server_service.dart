@@ -77,13 +77,8 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
   // ─── 設定値（コンストラクタで受け取る） ───
   
   /// サーバーの URL
-  /// 例: "ws://127.0.0.1:8080"（同一PC）
-  /// 例: "ws://100.x.y.z:8080"（Tailscale経由）
-  /// final String serverUrl;
-  //-------------開発検証用---------------------
-  String _serverUrl;
+  final String _serverUrl;
   String get serverUrl => _serverUrl;
-  //-------------------------------------------
 
   /// 「寝てる」表示に切り替えるまでの試行回数
   ///
@@ -221,39 +216,6 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
   /// Cognito 認証済みになってから SplashScreen 側で呼ぶ
   /// 既に接続中なら何もしない
   /// 繋がってる時にやりたくない処理(つながってたらreturnで終わる)
-  // ★ 連打防止用のフラグを追加-----------------------------------------------
-  bool _isSwitching = false;
-
-  /// 接続先サーバーの切り替え処理
-  Future<void> switchServer(String targetUrl, {String? accessToken}) async {
-    // 【追加】表示だけでなく、実際の切り替えも制限する。
-    if (!RaimConfig.enableServerSwitch) return;
-    // 1. すでに切り替え処理中なら連打を無視して終了
-    if (_isSwitching) {
-      RaimLog.d('[RaimServerService] 切り替え処理中のため連打を無視しました');
-      return;
-    }
-
-    _isSwitching = true; // 処理中フラグをON
-
-    try {
-      RaimLog.d('[RaimServerService] 接続先を切り替えます: $_serverUrl -> $targetUrl');
-      
-      // 既存の接続を切断
-      await disconnect();
-
-      // 新しい接続先に切り替えて再接続
-      _serverUrl = targetUrl;
-      await connect(accessToken: accessToken);
-
-    } catch (e) {
-      RaimLog.e('[RaimServerService] 切り替えエラー: $e');
-    } finally {
-      // 成功・失敗にかかわらず、終わったら必ずフラグをOFFに戻す
-      _isSwitching = false;
-    }
-  }
-  //------------------------------------------------------------------------------
   /// [silent] が true のときは connecting 状態へ遷移しない。
   ///
   /// offline（寝てる）中の裏での再接続に使う。ここで connecting にすると
@@ -284,7 +246,6 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
         final token = accessToken ?? await accessTokenGetter?.call();
         if (token != null && token.isNotEmpty) {
           headers['Authorization'] = 'Bearer $token';
-          // Tailscale の場合は isAws が false になるため、Authorization ヘッダーは付与されない
           tokenExpiresAt = tokenExpiry(token);
         }
       }
@@ -627,7 +588,7 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
   /// 再接続の待ち（寝てる間の最大60秒）もやめて、すぐに試す。
   /// ログアウトなどで意図して切っているときは何もしない。
   Future<void> reconnectNow() async {
-    if (_disposed || _intentionalClose || _isSwitching) return;
+    if (_disposed || _intentionalClose) return;
     if (_state == RaimConnectionState.connecting) return;
 
     RaimLog.d('[RaimServerService] 接続を張り直します（state=$_state）');

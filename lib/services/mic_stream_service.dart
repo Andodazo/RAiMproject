@@ -12,20 +12,15 @@
 // 直近の音を常に保持しておく。ウェイクワードを検知した時点では
 // 発話はもう始まっているので、検知の「前」から録れていないと頭が欠ける。
 //
-// 【デバッグ】
-// startDump/stopDump で生の PCM を wav に落とせる。
-// 音声は失敗してもエラーが出ないので、耳で確認する手段は必須。
 
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import 'package:raim_prototype/services/raim_log.dart';
-import 'package:raim_prototype/services/wav_writer.dart';
 
 class MicStreamService {
   MicStreamService._();
@@ -51,8 +46,6 @@ class MicStreamService {
   final BytesBuilder _preroll = BytesBuilder(copy: false);
   int _prerollBytes = 0;
 
-  /// デバッグ用の録音バッファ。null のときは録っていない。
-  BytesBuilder? _dump;
 
   bool get isRunning => _controller != null;
 
@@ -180,7 +173,6 @@ class MicStreamService {
           );
         }
         _pushPreroll(chunk);
-        _dump?.add(chunk);
         _measure(chunk);
         controller.add(chunk);
       },
@@ -296,9 +288,6 @@ class MicStreamService {
     _meterPeak = 0;
   }
 
-  // ─── デバッグ用の録音 ───
-
-  bool get isDumping => _dump != null;
 
   /// マイクを使い続けたい利用者。
   ///
@@ -315,51 +304,6 @@ class MicStreamService {
   /// 今マイクの音を受け取っている相手がいるか。
   bool get hasListeners => _controller?.hasListener ?? false;
 
-  /// 生の PCM を溜め始める。
-  void startDump() {
-    _dump = BytesBuilder(copy: false);
-    RaimLog.i('[Mic] デバッグ録音を開始しました');
-  }
-
-  /// 溜めた PCM を wav にして保存し、そのパスを返す。
-  ///
-  /// 保存先はアプリ専用の作業領域。ドキュメント領域を使うと、
-  /// Windows で OneDrive にリダイレクトされている環境では
-  /// デバッグ用の wav が同期対象になってしまう。
-  Future<String?> stopDumpAndSave({String prefix = 'mic'}) async {
-    final dump = _dump;
-    _dump = null;
-    if (dump == null) return null;
-
-    final pcm = dump.takeBytes();
-    if (pcm.isEmpty) {
-      RaimLog.w('[Mic] デバッグ録音が空でした');
-      return null;
-    }
-
-    final wav = WavWriter.fromPcm16(
-      pcm: Uint8List.fromList(pcm),
-      sampleRate: sampleRate,
-      channels: channels,
-    );
-
-    final dir = await getApplicationSupportDirectory();
-    final stamp = DateTime.now()
-        .toIso8601String()
-        .replaceAll(RegExp(r'[:.]'), '-');
-    final file = File('${dir.path}${Platform.pathSeparator}${prefix}_$stamp.wav');
-    await file.writeAsBytes(wav, flush: true);
-
-    final seconds = pcm.length / bytesPerSample / sampleRate;
-    // 保存先はプラットフォームごとに違ううえ、探すのが手間なので
-    // パスもそのまま出す。デバッグ専用のログ。
-    RaimLog.i(
-      '[Mic] デバッグ録音を保存しました '
-      '(${seconds.toStringAsFixed(1)}秒 / ${wav.length}bytes)\n'
-      '      ${file.path}',
-    );
-    return file.path;
-  }
 }
 
 /// マイク1台ぶんの情報。

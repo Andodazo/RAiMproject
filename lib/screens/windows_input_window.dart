@@ -15,9 +15,8 @@ import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/services/lime_size.dart';
 import 'package:raim_prototype/services/mascot_window_service.dart';
-import 'package:raim_prototype/services/mic_stream_service.dart';
-import 'package:raim_prototype/services/wake_word_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
+import 'package:raim_prototype/services/wake_word_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/raim_log.dart';
@@ -66,8 +65,6 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   /// 聞き取った文を少し待ってから送る（設定「少し待ってから送る」）
   final DelayedSend _delayed = DelayedSend();
 
-  /// マイク検証用。録音中かどうか。
-  bool _isRecordingDump = false;
   _PanelMode _mode = _PanelMode.none;
 
   /// 窓を伸ばしている最中の、これから開くパネル。
@@ -108,14 +105,6 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   // 修正: 展示用タイマーを削除し、画像上限の通知だけを小窓内で管理する。
   String? _imageLimitNote;
-
-  // ---- 開発検証用: 接続先切り替え ----
-  // chat_input.dart の ChatMenuButton と同じ手順。URL は RaimConfig に集約。
-  static const String _awsUrl = RaimConfig.serverUrl;
-  static const String _localUrl = RaimConfig.localServerUrl;
-
-  bool _isSwitching = false;
-  String? _switchNote;
   String? _passkeyNote;
   bool _passkeyRegistered = false;
 
@@ -482,38 +471,6 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     if (_imageLimitNote != null) setState(() => _imageLimitNote = null);
   }
 
-  // ------------------------------------------------------------
-  // 接続先の切り替え（開発検証用）
-  // ------------------------------------------------------------
-  // 小窓に SnackBar は出しにくいので、メニュー行の下に状態を出す。
-
-  Future<void> _switchServer() async {
-    // 【追加】無効なビルドでは、トークン取得も開始しない。
-    if (!RaimConfig.enableServerSwitch) return;
-    if (_isSwitching) return;
-    _isSwitching = true;
-    setState(() => _switchNote = '切り替え中…');
-
-    try {
-      final raimService = context.read<RaimServerService>();
-      final isAws = RaimConfig.isAwsUrl(raimService.serverUrl);
-      final targetUrl = isAws ? _localUrl : _awsUrl;
-
-      final token = await context.read<AuthProvider>().getValidAccessToken();
-      await raimService.switchServer(targetUrl, accessToken: token);
-
-      if (mounted) {
-        setState(
-          () => _switchNote = isAws ? 'Tailscale に切り替えました' : 'AWS に切り替えました',
-        );
-      }
-    } catch (e) {
-      if (mounted) setState(() => _switchNote = '切り替えに失敗: $e');
-    } finally {
-      _isSwitching = false;
-    }
-  }
-
   /// メニューの「パスキーを登録する」を押したとき。
   // 修正: 以前は登録済みでも、押すとすぐブラウザが開いていた。登録済みなら
   // 先にメニューの中で確かめる。
@@ -555,38 +512,6 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
       if (restoreMascot) {
         await _mascot.restoreAfterExternalAuthentication();
       }
-    }
-  }
-
-  /// マイク検証用のトグル。
-  ///
-  /// 押すと 16kHz/16bit/モノラルで録音を始め、もう一度押すと
-  /// wav にして保存する。保存した wav は tools/stt の Python
-  /// 検証スクリプトにそのまま渡せるので、
-  /// 「Flutter のマイク処理が正しいか」を Vosk と切り離して確認できる。
-  ///
-  /// ウェイクワード本体が入ったら、このボタンは音声入力に置き換える。
-  Future<void> _toggleMicDump() async {
-    final mic = MicStreamService.instance;
-    try {
-      if (_isRecordingDump) {
-        final path = await mic.stopDumpAndSave();
-        // ウェイクワードが同じマイクを使っているなら閉じない。
-        // 閉じると待ち受けまで止まってしまう。
-        if (!WakeWordService.instance.isListening) await mic.stop();
-        if (!mounted) return;
-        setState(() => _isRecordingDump = false);
-        RaimLog.i('[Mic] 保存${path == null ? "できませんでした" : "しました"}');
-      } else {
-        await mic.start();
-        mic.startDump();
-        if (!mounted) return;
-        setState(() => _isRecordingDump = true);
-      }
-    } catch (e) {
-      RaimLog.e('[Mic] 録音テストに失敗しました', e);
-      if (!mounted) return;
-      setState(() => _isRecordingDump = false);
     }
   }
 
@@ -1069,15 +994,6 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         const Divider(color: _line, height: 13),
         _sectionLabel('アプリ'),
         _buildWakeWordRow(),
-        // 【追加】配布版では接続先切り替えの行を作らない。
-        if (RaimConfig.enableServerSwitch) _buildServerRow(),
-        // 開発用: マイクに入っている音を wav に保存して耳で確かめる
-        _menuRow(
-          _isRecordingDump ? Icons.stop_circle_outlined : Icons.graphic_eq,
-          _isRecordingDump ? 'マイク録音テストを止めて保存' : 'マイク録音テスト（開発用）',
-          _toggleMicDump,
-          color: _isRecordingDump ? _lime : _text,
-        ),
         _menuRow(
           Icons.settings_outlined,
           '設定',
@@ -1324,55 +1240,6 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
           ),
         ),
       ],
-    );
-  }
-
-  /// 接続先切り替え（開発検証用）。現在の接続先を副題に出す。
-  Widget _buildServerRow() {
-    final url = context.watch<RaimServerService>().serverUrl;
-    final isAws = RaimConfig.isAwsUrl(url);
-    final accent = isAws ? _lime : Colors.orangeAccent;
-
-    return InkWell(
-      onTap: _isSwitching ? null : _switchServer,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        child: Row(
-          children: [
-            Icon(Icons.swap_horiz_rounded, size: 16, color: accent),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    '接続先切り替え',
-                    style: TextStyle(color: _text, fontSize: 13),
-                  ),
-                  Text(
-                    _switchNote ??
-                        (isAws
-                            ? '現在: AWS (CloudFront)'
-                            : '現在: Tailscale / Local'),
-                    style: TextStyle(
-                      color: accent,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (_isSwitching)
-              const SizedBox(
-                width: 13,
-                height: 13,
-                child: CircularProgressIndicator(strokeWidth: 2, color: _mut),
-              ),
-          ],
-        ),
-      ),
     );
   }
 

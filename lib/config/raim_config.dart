@@ -1,6 +1,3 @@
-// 【追加】releaseビルドかどうかの判定に使う。
-import 'package:flutter/foundation.dart';
-
 /// RAiM クライアント側で使う接続・認証設定です。
 ///
 /// ここに置いている値は、Flutter アプリが直接利用してよい公開設定だけです。
@@ -94,22 +91,6 @@ class RaimConfig {
     defaultValue: 'wss://d1403ont6098ah.cloudfront.net/dev',
   );
 
-  /// 開発検証用のローカル/Tailscale 接続先。
-  ///
-  /// 接続先切り替えメニューは開発中だけの機能なので、
-  /// 配布ビルドでは [enableServerSwitch] を false にして隠す。
-  static const String localServerUrl = String.fromEnvironment(
-    'RAIM_LOCAL_SERVER_URL',
-    defaultValue: 'ws://100.81.35.109:8080',
-  );
-
-  /// 接続先切り替え UI を出すか。
-  static const bool enableServerSwitch = bool.fromEnvironment(
-    'RAIM_ENABLE_SERVER_SWITCH',
-    // 【変更】指定がなければreleaseでは無効にする。
-    defaultValue: !kReleaseMode,
-  );
-
   // 修正: 廃止した展示機能のビルドフラグ・グループ・無操作時間設定を削除した。
 
   // 【追加】トークンを送ってよい、確認済みのホスト。
@@ -133,7 +114,6 @@ class RaimConfig {
   /// 以前は上の固定ホストだけを見ていたので、--dart-define で別の AWS
   /// （CloudFront を作り直したときなど）を指すと、トークンが付かずに
   /// 接続を断られていた。ビルドする人が決めた接続先なので信用してよい。
-  /// ws:// の接続先（ローカル・Tailscale）には今までどおり付けない。
   static final String? _configuredServerHost = () {
     final uri = Uri.tryParse(serverUrl);
     if (uri == null || uri.scheme != 'wss' || uri.host.isEmpty) return null;

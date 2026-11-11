@@ -391,10 +391,10 @@ class VoiceController extends ChangeNotifier {
   ///
   /// 設定を OFF にしたのにマイクが開いたままだと、OS の表示では
   /// 「録音中」のままになる。ユーザーから見ると OFF にした意味がない。
-  /// ただし録音テストの最中や、駅アラームなど他の機能が使っている間は閉じない。
+  /// ただし駅アラームなど他の機能が使っている間は閉じない。
   Future<void> _releaseMic() async {
     final mic = MicStreamService.instance;
-    if (mic.isDumping || mic.isHeld) return;
+    if (mic.isHeld) return;
     await mic.stop();
   }
 

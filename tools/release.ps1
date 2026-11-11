@@ -91,8 +91,7 @@ if ($Publish) {
   }
 }
 
-# 配布ビルドでは接続先切り替えメニューを隠す（常に AWS につなぐ）
-$defines = @('--dart-define=RAIM_ENABLE_SERVER_SWITCH=false')
+$defines = @()
 
 $dist = Join-Path $repoRoot 'dist'
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }

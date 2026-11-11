@@ -79,7 +79,7 @@ dependencies:
       ref: e655a96f0ce0dadb5ea8900aa1ba23260c3ec904
   # 音声機能の ON/OFF 設定の保存
   shared_preferences: ^2.3.3
-  # デバッグ用 wav の保存先を得るため
+  # 音声認識・雑音除去モデルの保存先
   path_provider: ^2.1.5
   # 駅アラーム: 走行音などの雑音を消してから車内アナウンスを聞く（GTCRN）。
   # モデルは assets/models/gtcrn_simple.onnx（約520KB）
