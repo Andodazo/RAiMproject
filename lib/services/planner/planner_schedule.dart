@@ -27,7 +27,7 @@ class PlannerSlot {
 
   static const all = [eve, before, morning, timer, snooze];
 
-  /// タイマーの知らせか（ライムが話さず、止める・もう一回のボタンを付ける）
+  /// タイマーの知らせか（止める・もう一回のボタンを付ける）
   static bool isTimer(String slot) => slot == timer || slot == snooze;
 }
 
