@@ -1085,11 +1085,14 @@ class RaimServerService
     String time = '',
     String note = '',
     String source = 'manual',
+    String followUpId = '',
   }) async {
     final response = await _requestOnce(
       payload: {
         'type': 'planner.add',
         'source': source,
+        // 「予定に入れる？」で入れたら、サーバーが持っていた「あとで聞くこと」を消してもらう
+        if (followUpId.isNotEmpty) 'followUpId': followUpId,
         'item': {'title': title, 'date': date, 'time': time, 'note': note},
       },
       matches: (r) => r.isPlanner,

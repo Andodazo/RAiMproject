@@ -63,6 +63,7 @@ class FakeNotifier implements PlannerNotifier {
 
 class FakePlannerService implements PlannerService {
   List<PlannerItem> items = [];
+  String lastFollowUpId = '';
   int fetches = 0;
 
   @override
@@ -78,8 +79,13 @@ class FakePlannerService implements PlannerService {
     String time = '',
     String note = '',
     String source = 'manual',
+    String followUpId = '',
   }) async {
-    items = [...items, PlannerItem(itemId: 'ev_new0000aa', kind: 'event', title: title, date: date, time: time, source: source)];
+    lastFollowUpId = followUpId;
+    items = [
+      ...items.where((i) => i.itemId != followUpId),
+      PlannerItem(itemId: 'ev_new0000aa', kind: 'event', title: title, date: date, time: time, source: source),
+    ];
     return items;
   }
 
@@ -828,6 +834,95 @@ void main() {
       expect(chat.messages.single.text, contains('歯医者'));
       await chat.greetOnLaunch();
       expect(llm.greetings, 0);
+    });
+  });
+
+  group('あとで聞くこと', () {
+    PlannerController build(FakePlannerService service, {StreamController<LLMResponse>? incoming}) {
+      final controller = PlannerController(
+        service: service,
+        incoming: incoming?.stream,
+        notifier: FakeNotifier(),
+        notificationTaps: const Stream.empty(),
+        takeLaunchPayload: () => null,
+        notificationActions: const Stream.empty(),
+        takeLaunchAction: () => null,
+        requestPermission: () async {},
+        liveReminders: false,
+        clock: () => now,
+      );
+      addTearDown(controller.dispose);
+      return controller;
+    }
+
+    const followUp = {
+      'itemId': 'fu_1', 'kind': 'followup', 'title': 'テスト', 'date': '2026-11-12', 'importance': 'normal',
+    };
+
+    test('「予定に入れる？」が出たら、あとで聞くことに入る（予定には入らない、通知もしない）', () async {
+      final incoming = StreamController<LLMResponse>.broadcast();
+      final controller = build(FakePlannerService(), incoming: incoming);
+      incoming.add(LLMResponse.fromJson({
+        'type': 'client_action', 'action': 'planner.suggest',
+        'params': {
+          'candidate': {'title': 'テスト', 'date': '2026-11-12', 'followUpId': 'fu_1'},
+          'item': followUp,
+        },
+      }));
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.followUps.single.itemId, 'fu_1');
+      expect(controller.events, isEmpty);
+      expect(PlannerSchedule.remindersForAll(controller.items, now.toUtc()), isEmpty);
+
+      // ライムが同じことを予定に入れたら、あとで聞くことは消える
+      incoming.add(LLMResponse.fromJson({
+        'type': 'client_action', 'action': 'planner.added',
+        'params': {
+          'item': {'itemId': 'ev_x', 'kind': 'event', 'title': 'テスト', 'date': '2026-11-12'},
+          'removedIds': ['fu_1'],
+        },
+      }));
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.followUps, isEmpty);
+      expect(controller.events.single.itemId, 'ev_x');
+      await incoming.close();
+    });
+
+    test('候補は followUpId を持ち、入れるときにサーバーへ渡す', () async {
+      final candidate = PlannerCandidate.fromJson({'title': 'テスト', 'date': '2026-11-12', 'followUpId': 'fu_1'})!;
+      expect(candidate.followUpId, 'fu_1');
+      final service = FakePlannerService()..items = [PlannerItem.fromJson(followUp)];
+      final controller = build(service);
+      await controller.refresh();
+      await controller.addEvent(
+        title: candidate.title, date: candidate.date, source: 'suggest', followUpId: candidate.followUpId,
+      );
+      expect(service.lastFollowUpId, 'fu_1');
+      expect(controller.followUps, isEmpty);
+      expect(controller.events.single.source, 'suggest');
+    });
+
+    testWidgets('予定の画面の下に小さく出て、消せる', (tester) async {
+      final service = FakePlannerService()..items = [PlannerItem.fromJson(followUp)];
+      final controller = build(service);
+      await controller.refresh();
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChangeNotifierProvider.value(
+            value: controller,
+            child: const PlannerPanel(swipeToDelete: false),
+          ),
+        ),
+      ));
+      await tester.pump();
+      expect(find.text('あとで聞くこと'), findsOneWidget);
+      expect(find.text('テスト'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pump();
+      await tester.pump();
+      expect(controller.followUps, isEmpty);
+      expect(find.text('あとで聞くこと'), findsNothing);
+      await tester.pump(const Duration(milliseconds: 400));
     });
   });
 }

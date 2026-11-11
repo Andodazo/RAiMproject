@@ -119,6 +119,10 @@ class PlannerController extends ChangeNotifier {
     return _items.any((i) => i.isEvent && i.date == today && (!i.hasTime || i.time.compareTo(clock) >= 0));
   }
 
+  /// あとで聞くこと（日付の順）。「予定に入れる？」が押されなかったもの
+  List<PlannerItem> get followUps =>
+      _items.where((i) => i.isFollowUp).toList()..sort(PlannerItem.compare);
+
   /// メモ（新しい順）
   List<PlannerItem> get memos =>
       _items.where((i) => i.isMemo).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -176,6 +180,7 @@ class PlannerController extends ChangeNotifier {
     String time = '',
     String note = '',
     String source = 'manual',
+    String followUpId = '',
   }) async {
     final before = _items.map((i) => i.itemId).toSet();
     final items = await _service.addPlannerEvent(
@@ -184,6 +189,7 @@ class PlannerController extends ChangeNotifier {
       time: time,
       note: note,
       source: source,
+      followUpId: followUpId,
     );
     await _setItems(items);
     final added = items.where((i) => !before.contains(i.itemId));
@@ -309,8 +315,15 @@ class PlannerController extends ChangeNotifier {
     if (raw is! Map) return;
     final item = PlannerItem.fromJson(raw.map((k, v) => MapEntry(k.toString(), v)));
     if (item.itemId.isEmpty) return;
-    final next = _items.where((i) => i.itemId != item.itemId).toList();
+    // ライムが予定を入れたら、同じことの「あとで聞くこと」はサーバーが消している
+    final removed = response.actionParams['removedIds'] is List
+        ? (response.actionParams['removedIds'] as List).whereType<String>().toSet()
+        : const <String>{};
+    final next = _items.where((i) => i.itemId != item.itemId && !removed.contains(i.itemId)).toList();
     if (action == 'planner.added' || action == 'planner.updated') {
+      next.add(item);
+    } else if (action == 'planner.suggest' && item.isFollowUp) {
+      // 「予定に入れる？」を出したときに、サーバーが「あとで聞くこと」として持った
       next.add(item);
     } else if (action != 'planner.deleted') {
       return;

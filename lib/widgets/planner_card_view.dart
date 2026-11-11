@@ -325,6 +325,7 @@ class PlannerCardView extends StatelessWidget {
         date: candidate.date,
         time: candidate.time,
         source: 'suggest',
+        followUpId: candidate.followUpId,
       );
       if (busy != null) chat.updatePlannerCard(busy, PlannerCardState.accepted);
     } catch (e) {

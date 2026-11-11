@@ -82,6 +82,9 @@ class PlannerItem {
   bool get isMemo => kind == 'memo';
   bool get isList => kind == 'list';
 
+  /// あとで聞くこと（「予定に入れる？」が押されなかったもの。ライムが終わったあとに聞く）
+  bool get isFollowUp => kind == 'followup';
+
   /// リストのまだの項目
   List<PlannerListEntry> get openEntries => entries.where((e) => !e.checked).toList();
   bool get hasTime => time.isNotEmpty;
@@ -229,11 +232,14 @@ class PlannerListEntry {
 
 /// 「予定に入れる？」の中身（話に出ただけの予定）
 class PlannerCandidate {
-  const PlannerCandidate({required this.title, required this.date, this.time = ''});
+  const PlannerCandidate({required this.title, required this.date, this.time = '', this.followUpId = ''});
 
   final String title;
   final String date;
   final String time;
+
+  /// ボタンを出したときにサーバーが持った「あとで聞くこと」。入れたらサーバーが消す
+  final String followUpId;
 
   String get whenLabel {
     final d = formatPlannerDate(date);
@@ -247,10 +253,12 @@ class PlannerCandidate {
     if (title is! String || title.trim().isEmpty) return null;
     if (date is! String || !isPlannerDate(date)) return null;
     final time = json['time'];
+    final followUpId = json['followUpId'];
     return PlannerCandidate(
       title: title.trim(),
       date: date,
       time: time is String ? time : '',
+      followUpId: followUpId is String ? followUpId : '',
     );
   }
 }
@@ -335,6 +343,7 @@ abstract class PlannerService {
     String time = '',
     String note = '',
     String source = 'manual',
+    String followUpId = '',
   });
 
   Future<List<PlannerItem>> updatePlannerEvent(
