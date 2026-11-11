@@ -12,8 +12,9 @@
 // 通知を全部入れ直す。Windows では、時刻にライムが話す準備もし直す。
 //
 // 【タイマー】
-// 鳴る時刻に通知が1回出るだけ（ライムは話さない）。通知の「5分後にもう一回」が
-// 押されたら、この端末だけで5分後にもう1回出す。「止める」は通知が消えるだけ。
+// 知らせ方は予定と同じ（Windows は鳴る時刻にライムが話す、スマホは通知を押したら話す）。
+// 通知の「5分後にもう一回」が押されたら、この端末だけで5分後にもう1回出す。
+// 「止める」は通知が消えるだけ。
 
 import 'dart:async';
 import 'dart:convert';
@@ -238,12 +239,12 @@ class PlannerController extends ChangeNotifier {
   void _onNotificationTap(String payload) {
     final parsed = PlannerReminder.parsePayload(payload);
     if (parsed == null) return;
-    // タイマーの通知を押したときは、アプリが開くだけ（ライムは話さない）
-    if (PlannerSlot.isTimer(parsed.slot)) return;
     final speak = _speak;
     if (speak == null) return;
-    RaimLog.d('[Planner] 予定の通知が押されました: ${parsed.slot}');
-    unawaited(speak(parsed.itemId, parsed.slot));
+    // 「もう一回」の通知も、ライムにはタイマーとして話してもらう
+    final slot = PlannerSlot.isTimer(parsed.slot) ? PlannerSlot.timer : parsed.slot;
+    RaimLog.d('[Planner] 予定の通知が押されました: $slot');
+    unawaited(speak(parsed.itemId, slot));
   }
 
   void _onNotificationAction(AppNotificationAction action) {
@@ -297,8 +298,7 @@ class PlannerController extends ChangeNotifier {
   Future<void> rescheduleNow() async {
     final now = _clock().toUtc();
     final reminders = PlannerSchedule.remindersForAll(_items, now);
-    // タイマーはライムが話さず、通知だけ
-    _runner?.update(reminders.where((r) => !r.isTimer).toList());
+    _runner?.update(reminders);
     _armTimerTick(now);
     if (reminders.isNotEmpty) await _askPermissionOnce();
     try {

@@ -334,7 +334,7 @@ void main() {
           (payload: 'planner:tm_1:timer', actionId: null));
     });
 
-    test('ライムは話さない。「5分後にもう一回」でこの端末だけもう1回鳴らす', () async {
+    test('通知を押したらライムが話す。「5分後にもう一回」でこの端末だけもう1回鳴らす', () async {
       final notifier = FakeNotifier();
       final taps = StreamController<String>.broadcast();
       final actions = StreamController<AppNotificationAction>.broadcast();
@@ -363,10 +363,11 @@ void main() {
       expect(notifier.scheduled.single.slot, 'timer');
 
       taps.add('planner:tm_a:timer');
+      taps.add('planner:tm_a:snooze');
       actions.add(const AppNotificationAction(payload: 'planner:tm_a:timer', actionId: 'stop'));
       actions.add(const AppNotificationAction(payload: 'planner:tm_a:timer', actionId: 'snooze'));
       await Future<void>.delayed(Duration.zero);
-      expect(spoken, isEmpty);
+      expect(spoken, ['timer', 'timer']);
       final snooze = notifier.snoozed.single;
       expect(snooze.slot, 'snooze');
       expect(snooze.at, now.toUtc().add(const Duration(minutes: 5)));
@@ -376,20 +377,20 @@ void main() {
       await actions.close();
     });
 
-    test('Windows でもタイマーはライムが話さず、通知に任せる', () async {
+    test('Windows ではタイマーも、鳴る時刻にライムが話す（予定より遅く、ぎりぎりに動く）', () async {
       final notifier = FakeNotifier();
       final spoken = <String>[];
       final controller = PlannerController(
         service: FakePlannerService()
           ..items = [
-            // 10秒後に鳴るタイマー（予定なら、もう話し出している近さ）
+            // 2秒後に鳴るタイマー
             PlannerItem(
               itemId: 'tm_a',
               kind: 'timer',
               title: 'タイマー',
               date: '',
               durationSec: 60,
-              endsAt: now.toUtc().add(const Duration(seconds: 10)),
+              endsAt: now.toUtc().add(const Duration(seconds: 2)),
             ),
             event('ev_a', '2026-11-11', time: '23:30'),
           ],
@@ -411,9 +412,11 @@ void main() {
       await controller.refresh();
       await controller.rescheduleNow();
       expect(notifier.scheduled.map((r) => r.slot), containsAll(['timer', 'before']));
-      // runner に渡るのは予定だけなので、すぐ鳴るタイマーでも話さない
       await Future<void>.delayed(const Duration(milliseconds: 10));
-      expect(spoken, isEmpty);
+      expect(spoken, ['tm_a:timer']);
+      expect(notifier.cancelled, [PlannerSchedule.notificationId('tm_a', 'timer')]);
+      expect(PlannerReminderRunner.leadFor(notifier.scheduled.firstWhere((r) => r.isTimer)),
+          PlannerReminderRunner.timerLead);
     });
   });
 

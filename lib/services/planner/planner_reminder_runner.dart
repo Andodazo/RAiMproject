@@ -1,6 +1,6 @@
 // lib/services/planner/planner_reminder_runner.dart
 //
-// Windows で、予定を知らせる時刻にライムがその場で一言話す。
+// Windows で、予定を知らせる時刻（タイマーが鳴る時刻）にライムがその場で一言話す。
 //
 // 【流れ】（安藤さんと決めた）
 //   アプリが動いている → 時刻の少し前に、予約した通知を取り消して、
@@ -39,6 +39,11 @@ class PlannerReminderRunner {
   /// 時刻のどれだけ前に動くか（予約した通知が先に出ないように）
   static const Duration lead = Duration(seconds: 20);
 
+  /// タイマーは早く鳴ると困るので、ぎりぎりに動く
+  static const Duration timerLead = Duration(seconds: 3);
+
+  static Duration leadFor(PlannerReminder r) => r.isTimer ? timerLead : lead;
+
   /// これより遅れて動いたら喋らない
   static const Duration tooLate = Duration(minutes: 2);
 
@@ -56,15 +61,17 @@ class PlannerReminderRunner {
     _timer?.cancel();
     _timer = null;
     final now = _clock().toUtc();
+    // 動く時刻（知らせる時刻 − lead）がいちばん早いもの
     PlannerReminder? next;
     for (final r in _reminders) {
       if (_done.contains(r.id)) continue;
       if (r.at.isBefore(now.subtract(tooLate))) continue;
-      next = r;
-      break;
+      if (next == null || r.at.subtract(leadFor(r)).isBefore(next.at.subtract(leadFor(next)))) {
+        next = r;
+      }
     }
     if (next == null) return;
-    var wait = next.at.subtract(lead).difference(now);
+    var wait = next.at.subtract(leadFor(next)).difference(now);
     if (wait.isNegative) wait = Duration.zero;
     final target = next;
     _timer = Timer(wait, () => unawaited(fire(target)));
