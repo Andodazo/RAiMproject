@@ -23,6 +23,9 @@
     <!-- 予定の知らせ: 端末を再起動しても、予約した通知を入れ直すため
          （flutter_local_notifications の ScheduledNotificationBootReceiver） -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- タイマー: 時刻ちょうどに鳴らすため。Android 14 からは設定で許可されたときだけ使い、
+         許可が無ければ数分ずれる通知になる（planner_notifications.dart） -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
         android:label="RAiM"

@@ -1496,7 +1496,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                             // 予定のカードは本文が無いので、何を入れたかを出す
                             m.plannerCard == null
                                 ? m.text
-                                : '📅 ${m.plannerCard!.whenLabel} ${m.plannerCard!.title}',
+                                : m.plannerCard!.item?.isTimer == true
+                                    ? '⏱ ${m.plannerCard!.title}（${m.plannerCard!.whenLabel}）'
+                                    : '📅 ${m.plannerCard!.whenLabel} ${m.plannerCard!.title}',
                             style: const TextStyle(
                               color: _text,
                               fontSize: 12.5,

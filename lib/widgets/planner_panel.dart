@@ -130,6 +130,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
     final events = planner.events;
     final upcoming = events.where((e) => e.date.compareTo(today) >= 0).toList();
     final past = events.where((e) => e.date.compareTo(today) < 0).toList();
+    final timers = planner.timers;
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -173,6 +174,11 @@ class _PlannerPanelState extends State<PlannerPanel> {
             ),
           ),
         if (_error != null) _note(_error!, color: _p.error),
+        if (timers.isNotEmpty) ...[
+          _label('タイマー'),
+          ...timers.map((t) => _timerRow(t, planner)),
+          Divider(color: _p.line, height: 17),
+        ],
         if (!planner.isLoaded && planner.isLoading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
@@ -322,6 +328,71 @@ class _PlannerPanelState extends State<PlannerPanel> {
         }
       },
       child: content,
+    );
+  }
+
+  /// 動いているタイマーの1行。消すとすぐ止まる（聞き返さない）
+  Widget _timerRow(PlannerItem item, PlannerController planner) {
+    Future<void> stop() => _run(
+          () => planner.deleteItem(item.itemId),
+          '止められませんでした。もう一度試してください',
+        );
+    final label = item.title.trim();
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 52 * _fs,
+            child: Text(
+              item.endsAt == null ? '' : formatJstClock(item.endsAt!),
+              style: TextStyle(color: _p.muted, fontSize: 12 * _fs),
+            ),
+          ),
+          Icon(Icons.timer_outlined, size: 15 * _fs, color: _p.accent),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              [
+                if (label.isNotEmpty && label != 'タイマー') label,
+                if (item.durationLabel.isNotEmpty) '${item.durationLabel}のタイマー',
+              ].join('・').ifEmpty('タイマー'),
+              style: TextStyle(color: _p.text, fontSize: 13.5 * _fs, height: 1.35),
+            ),
+          ),
+          if (!_swipe)
+            IconButton(
+              tooltip: '止める',
+              icon: const Icon(Icons.delete_outline, size: 16),
+              color: _p.muted,
+              splashRadius: 16,
+              visualDensity: VisualDensity.compact,
+              onPressed: _busy ? null : stop,
+            ),
+        ],
+      ),
+    );
+    if (!_swipe) return row;
+    return Dismissible(
+      key: ValueKey('planner-${item.itemId}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 16),
+        color: _p.error.withValues(alpha: 0.25),
+        child: Icon(Icons.delete_outline, color: _p.error),
+      ),
+      confirmDismiss: (_) async {
+        try {
+          await planner.deleteItem(item.itemId);
+          return true;
+        } catch (e) {
+          RaimLog.d('[PlannerPanel] 止められませんでした: ${e.runtimeType}');
+          if (mounted) setState(() => _error = '止められませんでした。もう一度試してください');
+          return false;
+        }
+      },
+      child: row,
     );
   }
 
@@ -606,4 +677,8 @@ class _PlannerEditorState extends State<_PlannerEditor> {
           ),
         ),
       );
+}
+
+extension on String {
+  String ifEmpty(String fallback) => isEmpty ? fallback : this;
 }
