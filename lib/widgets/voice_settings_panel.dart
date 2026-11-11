@@ -177,6 +177,13 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
           ValueListenableBuilder<AvatarMode>(
             valueListenable: AvatarModeSetting.current,
             builder: (context, mode, _) => SegmentedButton<AvatarMode>(
+              style: SegmentedButton.styleFrom(
+                foregroundColor: _p.text,
+                backgroundColor: _p.surface,
+                selectedForegroundColor: Colors.black,
+                selectedBackgroundColor: _p.accent,
+                textStyle: TextStyle(fontSize: 12 * _fs),
+              ),
               segments: const [
                 ButtonSegment(value: AvatarMode.twoD, label: Text('2D立ち絵')),
                 ButtonSegment(value: AvatarMode.threeD, label: Text('3Dモデル')),

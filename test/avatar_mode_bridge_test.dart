@@ -20,6 +20,7 @@ void main() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call);
+      return null;
     });
     final bridge = EmbedUnityBridge();
     try {
@@ -111,14 +112,20 @@ void main() {
         }
       },
       createFile: (path) {
-        if (!path.endsWith('bridge_token'))
+        if (!path.endsWith('bridge_token')) {
           throw StateError('Unexpected file in bridge test');
+        }
         return tokenFile;
       },
     );
     final tempRoot = await Directory.systemTemp.resolveSymbolicLinks();
     final resolved = await temp.resolveSymbolicLinks();
-    expect(resolved.startsWith('$tempRoot${Platform.pathSeparator}raim-avatar-bridge-test-'), isTrue);
+    expect(
+      resolved.startsWith(
+        '$tempRoot${Platform.pathSeparator}raim-avatar-bridge-test-',
+      ),
+      isTrue,
+    );
     await temp.delete(recursive: true);
   });
 }
