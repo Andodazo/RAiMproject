@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using RAiM.Presentation;
 using UnityEngine.Rendering.Universal;
 
 namespace RAiM.NightOffice.Compatible {
@@ -13,6 +14,8 @@ namespace RAiM.NightOffice.Compatible {
         public Camera mainCamera;
         [Tooltip("Existing character SpriteRenderer. Its object name, sprites and receiver scripts are unchanged.")]
         public SpriteRenderer character;
+        [Tooltip("Optional 3D character; when assigned it is placed instead of the sprite.")]
+        public RAiM.Companion.CompanionActor character3D;
         public GameObject roomContent;
         public Transform avatarAnchor;
         public TextAsset placementProfile;
@@ -62,32 +65,100 @@ namespace RAiM.NightOffice.Compatible {
                 if(additional) {additional.renderPostProcessing=post;additional.volumeLayerMask=volumeMask;additional.volumeTrigger=volumeTrigger;}
             }
         }
+        Pose desktopSpritePose,desktopModelPose;
+        bool desktopPosesSaved;
+        Sprite desktopLastSprite;
+        AvatarPresentation avatarPresentation;
+        SpriteRenderer roomSprite;
+        RAiM.Companion.CompanionActor roomModel;
         bool roomApplied;
         DisplayMode lastMode;
         CameraState savedCamera;
         SpriteRenderer savedCharacter;
         Pose savedCharacterPose;
+        RAiM.Companion.CompanionActor savedCharacter3D;
+        Pose savedCharacter3DPose;
+        bool placedCharacter3D;
         GameObject[] savedHidden=Array.Empty<GameObject>();
         bool[] savedActive=Array.Empty<bool>();
         Profile profile;
         Sprite lastSprite;
         int lastScreenWidth,lastScreenHeight;
 
-        void OnEnable() {if(Application.isPlaying)ApplyMode();}
-        void OnDisable() {if(Application.isPlaying)LeaveRoom();}
+        void OnEnable() {
+            if(!Application.isPlaying)return;
+            avatarPresentation=character?character.GetComponent<AvatarPresentation>():
+                (character3D?character3D.GetComponentInParent<AvatarPresentation>():null);
+            if(avatarPresentation) {
+                avatarPresentation.Changed+=RefreshAvatar;
+                if(!desktopPosesSaved) {
+                    if(character)desktopSpritePose=Pose.Read(character.transform);
+                    if(character3D)desktopModelPose=Pose.Read(character3D.transform);
+                    desktopPosesSaved=true;
+                }
+            }
+            ApplyMode();
+        }
+        void OnDisable() {
+            if(avatarPresentation)avatarPresentation.Changed-=RefreshAvatar;
+            if(Application.isPlaying)LeaveRoom();
+        }
+        void RestoreAvatarPoses() {
+            // The sprite root is the model's parent. Restore the parent first.
+            if(roomSprite)savedCharacterPose.Restore(roomSprite.transform);
+            if(roomModel)savedCharacter3DPose.Restore(roomModel.transform);
+        }
+        void RefreshAvatar() {
+            if(!roomApplied) {PlaceDesktopAvatar();return;}
+            RestoreAvatarPoses();
+            savedCharacter3D=(!avatarPresentation || avatarPresentation.ActiveMode==AvatarMode.ThreeD)?roomModel:null;
+            savedCharacter=savedCharacter3D?null:roomSprite;
+            placedCharacter3D=false;lastSprite=null;
+            PlaceCharacter();
+        }
         void LateUpdate() {
             if(!Application.isPlaying)return;
             if(mode!=lastMode)ApplyMode();
-            if(roomApplied && savedCharacter && savedCharacter.sprite!=lastSprite)PlaceSprite();
+            if(!roomApplied && avatarPresentation && avatarPresentation.ActiveMode==AvatarMode.TwoD &&
+                character && character.sprite!=desktopLastSprite)PlaceDesktopAvatar();
+            if(roomApplied && savedCharacter3D && !placedCharacter3D && savedCharacter3D.Ready)PlaceCharacter();
+            else if(roomApplied && savedCharacter && savedCharacter.sprite!=lastSprite)PlaceCharacter();
             // 画面の大きさが変わったら（回転・分割表示など）頭の位置を合わせ直す
-            else if(roomApplied && (Screen.width!=lastScreenWidth || Screen.height!=lastScreenHeight))PlaceSprite();
+            else if(roomApplied && (Screen.width!=lastScreenWidth || Screen.height!=lastScreenHeight))PlaceCharacter();
+        }
+        Region GetRegion(Sprite sprite) {
+            if(profile==null && placementProfile)profile=JsonUtility.FromJson<Profile>(placementProfile.text);
+            if(profile?.sprites!=null)foreach(var entry in profile.sprites)
+                if(entry.spriteName==sprite.name && entry.visibleRect!=null)return entry.visibleRect;
+            return new Region {x=0,y=0,width=1,height=1};
+        }
+        void PlaceDesktopAvatar() {
+            if(!avatarPresentation || !desktopPosesSaved)return;
+            // Keep the original 3D framing and camera. The 2D image has different
+            // source units and transparent padding, so match its visible feet/height.
+            if(character)desktopSpritePose.Restore(character.transform);
+            if(character3D)desktopModelPose.Restore(character3D.transform);
+            desktopLastSprite=null;
+            if(avatarPresentation.ActiveMode!=AvatarMode.TwoD || !character || !character.sprite ||
+                !character3D || !character3D.Ready)return;
+            var bounds=character3D.ModelBounds;var sprite=character.sprite;var region=GetRegion(sprite);
+            var size=sprite.rect.size/sprite.pixelsPerUnit;var pivot=sprite.pivot/sprite.pixelsPerUnit;
+            var parentScale=character.transform.parent?character.transform.parent.lossyScale:Vector3.one;
+            if(bounds.size.y<=0 || size.y<=0 || region.height<=0 || parentScale.x<=0)return;
+            float scale=bounds.size.y/(size.y*region.height);
+            character.transform.localScale=Vector3.one*(scale/parentScale.x);
+            var offset=new Vector3((pivot.x-size.x*(region.x+region.width*.5f))*scale,
+                (pivot.y-size.y*region.y)*scale,0);
+            var feet=new Vector3(bounds.center.x,bounds.min.y,character.transform.position.z);
+            character.transform.position=feet+character.transform.rotation*offset;
+            desktopLastSprite=sprite;
         }
         /// <summary>
         /// 頭のてっぺんの位置（画面の上からの割合）を変える。Flutter から呼ばれる。
         /// </summary>
         public void SetHeadTopFromScreenTop(float value) {
             headTopFromScreenTop=Mathf.Clamp(value,0f,.6f);
-            if(roomApplied)PlaceSprite();
+            if(roomApplied)PlaceCharacter();
         }
         public void SetMode(DisplayMode value) {mode=value;if(Application.isPlaying && isActiveAndEnabled)ApplyMode();}
         public void ApplyMode() {
@@ -96,19 +167,20 @@ namespace RAiM.NightOffice.Compatible {
             bool show=mode==DisplayMode.Room || mode==DisplayMode.Automatic && !AutomaticUsesDesktopOverlay;
             if(show)EnterRoom();else LeaveRoom();
         }
-        bool ValidateReferences(Camera camera,SpriteRenderer sprite) {
+        bool ValidateReferences(Camera camera,SpriteRenderer sprite,Transform model) {
             if(!roomContent || roomContent==gameObject || !roomContent.transform.IsChildOf(transform) || !avatarAnchor || !camera) {
                 Debug.LogWarning("NightOffice: assign the existing camera and room references. Room stays hidden.",this);return false;
             }
-            if(camera.transform.IsChildOf(roomContent.transform) || sprite && sprite.transform.IsChildOf(roomContent.transform)) {
+            if(camera.transform.IsChildOf(roomContent.transform) || sprite && sprite.transform.IsChildOf(roomContent.transform) || model && model.IsChildOf(roomContent.transform)) {
                 Debug.LogWarning("NightOffice: camera and character must stay outside RoomContent.",this);return false;
             }
-            var parentScale=sprite && sprite.transform.parent?sprite.transform.parent.lossyScale:Vector3.one;
+            var characterTransform=model?model:(sprite?sprite.transform:null);
+            var parentScale=characterTransform && characterTransform.parent?characterTransform.parent.lossyScale:Vector3.one;
             if(parentScale.x<=0 || Mathf.Abs(parentScale.x-parentScale.y)>.0001f || Mathf.Abs(parentScale.x-parentScale.z)>.0001f) {
                 Debug.LogWarning("NightOffice: character parent must have a positive uniform scale.",this);return false;
             }
             foreach(var target in hideWhileRoomVisible) if(target && (transform.IsChildOf(target.transform) ||
-                camera.transform.IsChildOf(target.transform) || sprite && sprite.transform.IsChildOf(target.transform))) {
+                camera.transform.IsChildOf(target.transform) || sprite && sprite.transform.IsChildOf(target.transform) || model && model.IsChildOf(target.transform))) {
                 Debug.LogWarning("NightOffice: a hide target contains the camera, character or mode controller.",this);return false;
             }
             return true;
@@ -116,10 +188,16 @@ namespace RAiM.NightOffice.Compatible {
         void EnterRoom() {
             if(roomApplied)return;
             var camera=mainCamera?mainCamera:Camera.main;
-            var sprite=character;
-            if(!sprite) {var existing=GameObject.Find("character");if(existing)sprite=existing.GetComponent<SpriteRenderer>();}
-            if(!ValidateReferences(camera,sprite)) {if(roomContent)roomContent.SetActive(false);return;}
-            savedCamera=new CameraState(camera);savedCharacter=sprite;if(sprite)savedCharacterPose=Pose.Read(sprite.transform);
+            var model=(!avatarPresentation || avatarPresentation.ActiveMode==AvatarMode.ThreeD)?character3D:null;
+            var sprite=model?null:character;
+            if(!model && !sprite) {var existing=GameObject.Find("character");if(existing)sprite=existing.GetComponent<SpriteRenderer>();}
+            if(!ValidateReferences(camera,sprite,model?model.transform:null)) {if(roomContent)roomContent.SetActive(false);return;}
+            roomSprite=character?character:sprite;roomModel=character3D;
+            savedCamera=new CameraState(camera);savedCharacter=sprite;
+            if(roomSprite)savedCharacterPose=Pose.Read(roomSprite.transform);
+            savedCharacter3D=model;
+            if(roomModel)savedCharacter3DPose=Pose.Read(roomModel.transform);
+            placedCharacter3D=false;
             savedHidden=(GameObject[])hideWhileRoomVisible.Clone();savedActive=new bool[savedHidden.Length];
             for(int i=0;i<savedHidden.Length;i++)if(savedHidden[i]) {savedActive[i]=savedHidden[i].activeSelf;savedHidden[i].SetActive(false);}
             roomApplied=true;
@@ -133,12 +211,28 @@ namespace RAiM.NightOffice.Compatible {
                 savedCamera.additional.volumeTrigger=camera.transform;
             }
             if(profile==null && placementProfile)profile=JsonUtility.FromJson<Profile>(placementProfile.text);
-            PlaceSprite();roomContent.SetActive(true);
+            PlaceCharacter();roomContent.SetActive(true);
+        }
+        void PlaceCharacter() {
+            if(savedCharacter3D)Place3D();else PlaceSprite();
+        }
+        void Place3D() {
+            if(!savedCharacter3D || !savedCharacter3D.Ready || !avatarAnchor)return;
+            var t=savedCharacter3D.transform;
+            // Start from the saved desktop pose every time: resize/layout events
+            // must never multiply the previous room scale.
+            savedCharacter3DPose.Restore(t);
+            t.rotation=avatarAnchor.rotation*Quaternion.Euler(0,180,0);
+            var bounds=savedCharacter3D.ModelBounds;
+            if(bounds.size.y<=.0001f || visibleHeight<=0)return;
+            t.localScale*=visibleHeight*HeadFitFactor()/bounds.size.y;
+            bounds=savedCharacter3D.ModelBounds;
+            t.position+=avatarAnchor.position-new Vector3(bounds.center.x,bounds.min.y,bounds.center.z);
+            placedCharacter3D=true;lastScreenWidth=Screen.width;lastScreenHeight=Screen.height;
         }
         void PlaceSprite() {
             if(!savedCharacter || !savedCharacter.sprite || !avatarAnchor)return;
-            var sprite=savedCharacter.sprite;var region=new Region {x=0,y=0,width=1,height=1};
-            if(profile?.sprites!=null)foreach(var entry in profile.sprites)if(entry.spriteName==sprite.name) {region=entry.visibleRect;break;}
+            var sprite=savedCharacter.sprite;var region=GetRegion(sprite);
             var size=sprite.rect.size/sprite.pixelsPerUnit;var pivot=sprite.pivot/sprite.pixelsPerUnit;
             if(region==null || size.y<=0 || region.height<=0 || visibleHeight<=0)return;
             float scale=visibleHeight/(size.y*region.height)*HeadFitFactor();
@@ -179,9 +273,11 @@ namespace RAiM.NightOffice.Compatible {
             if(roomContent)roomContent.SetActive(false);
             if(!roomApplied)return; // Windows Automatic startup never touches an existing camera or sprite.
             roomApplied=false;savedCamera?.Restore();
-            if(savedCharacter)savedCharacterPose.Restore(savedCharacter.transform);
+            RestoreAvatarPoses();
             for(int i=0;i<savedHidden.Length;i++)if(savedHidden[i])savedHidden[i].SetActive(savedActive[i]);
-            savedCamera=null;savedCharacter=null;lastSprite=null;savedHidden=Array.Empty<GameObject>();savedActive=Array.Empty<bool>();
+            roomSprite=null;roomModel=null;
+            savedCamera=null;savedCharacter=null;savedCharacter3D=null;placedCharacter3D=false;lastSprite=null;savedHidden=Array.Empty<GameObject>();savedActive=Array.Empty<bool>();
+            PlaceDesktopAvatar();
         }
     }
 }

@@ -5,9 +5,19 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using NativeWebSocket;
+using RAiM.Presentation;
 
 public class RAiMCharacterController : MonoBehaviour
 {
+    [SerializeField] private RAiM.Companion.CompanionActor companion;
+    public RAiM.Companion.CompanionActor Companion => companion;
+    private AvatarPresentation presentation;
+    public AvatarPresentation Presentation {
+        get {
+            if (!presentation) presentation = GetComponent<AvatarPresentation>();
+            return presentation;
+        }
+    }
     // ============================================================
     // Inspector設定
     // ============================================================
@@ -96,8 +106,9 @@ public class RAiMCharacterController : MonoBehaviour
     {
         // SpriteRendererを取得
         spriteRenderer = GetComponent<SpriteRenderer>();
+        if (speechBubble != null && Presentation != null) speechBubble.BindAvatar(Presentation);
 
-        if (spriteRenderer == null)
+        if (spriteRenderer == null && companion == null)
         {
             Debug.LogError("SpriteRendererが見つかりません。");
             return;
@@ -125,9 +136,11 @@ public class RAiMCharacterController : MonoBehaviour
         };
 
         // 初期表情（起動より先に「寝ている」が届いていたら寝ている絵）
-        spriteRenderer.sprite = isSleeping && sleepingSprite != null
-            ? sleepingSprite
-            : defaultSprite;
+        if (spriteRenderer != null)
+            spriteRenderer.sprite = isSleeping && sleepingSprite != null
+                ? sleepingSprite
+                : defaultSprite;
+        if (companion != null) companion.SetSleeping(isSleeping);
         currentEmotion = "neutral";
 
         // ========================================================
@@ -189,6 +202,23 @@ public class RAiMCharacterController : MonoBehaviour
     // flutter_embed_unityから呼ばれるメソッド
     // ============================================================
 
+    [Serializable]
+    private sealed class AvatarModeMessage { public string type; public string mode; }
+
+    // Shared entry for mobile SendMessage and authenticated desktop WebSocket.
+    public void ReceiveAvatarMode(string json)
+    {
+        if (string.IsNullOrEmpty(json) || json.Length > 256) return;
+        try {
+            var data = JsonUtility.FromJson<AvatarModeMessage>(json);
+            if (data == null || data.type != "avatar_mode" || Presentation == null) return;
+            if (data.mode == "2d") Presentation.RequestMode(AvatarMode.TwoD);
+            else if (data.mode == "3d") Presentation.RequestMode(AvatarMode.ThreeD);
+        } catch (ArgumentException) {
+            Debug.LogWarning("[Unity] 表示方式の通知を読み取れませんでした");
+        }
+    }
+
     /// <summary>
     /// 単一感情を受信する
     /// 例：happy
@@ -204,7 +234,8 @@ public class RAiMCharacterController : MonoBehaviour
             return;
         }
 
-        ChangeEmotion(emotion);
+        if (companion != null) companion.ReceiveLegacyEmotion(emotion);
+        SetSpriteEmotion(emotion);
     }
 
     /// <summary>
@@ -223,6 +254,11 @@ public class RAiMCharacterController : MonoBehaviour
         // 修正: 会話本文や認証情報を含む受信データは出力せず、文字数のみ記録する。
         Debug.Log($"[Unity] 複数感情受信 chars={json?.Length ?? 0}");
 
+        if (companion != null)
+        {
+            if (!companion.ReceiveEmotions(json)) Debug.LogWarning("[Unity] 3D表情データを受信できませんでした");
+        }
+
         try
         {
             var data = JsonUtility.FromJson<EmotionsMessage>(json);
@@ -239,7 +275,7 @@ public class RAiMCharacterController : MonoBehaviour
             Debug.Log($"[Unity] 最終感情: {mainEmotion}");
 
             // 通常の表情に切り替える
-            ChangeEmotion(mainEmotion);
+            SetSpriteEmotion(mainEmotion);
         }
         catch (Exception e)
         {
@@ -324,6 +360,11 @@ public class RAiMCharacterController : MonoBehaviour
        // 修正: 会話本文や認証情報を含む受信データは出力せず、文字数のみ記録する。
        Debug.Log($"[Unity] Tool状態受信 chars={json?.Length ?? 0}");
 
+        if (companion != null)
+        {
+            companion.ReceiveToolState(json);
+        }
+
         try
         {
             var data = JsonUtility.FromJson<ToolStateMessage>(json);
@@ -360,6 +401,11 @@ public class RAiMCharacterController : MonoBehaviour
         {
             var typeData = JsonUtility.FromJson<MessageType>(json);
 
+            if (typeData != null && typeData.type == "avatar_mode") {
+                ReceiveAvatarMode(json);
+                return;
+            }
+
             if (typeData != null && typeData.type == "tool_state")
             {
                 ReceiveToolState(json);
@@ -377,7 +423,7 @@ public class RAiMCharacterController : MonoBehaviour
             if (emotionData != null &&
                 !string.IsNullOrEmpty(emotionData.emotion))
             {
-                ChangeEmotion(emotionData.emotion);
+                ReceiveEmotion(emotionData.emotion);
             }
         }
         catch (Exception e)
@@ -624,6 +670,11 @@ public class RAiMCharacterController : MonoBehaviour
 
             var typeData = JsonUtility.FromJson<MessageType>(json);
 
+            if (typeData != null && typeData.type == "avatar_mode") {
+                ReceiveAvatarMode(json);
+                return;
+            }
+
             if (typeData != null && typeData.type == "device_time")
             {
                 ReceiveDeviceTime(json);
@@ -732,7 +783,7 @@ public class RAiMCharacterController : MonoBehaviour
             if (emotionData != null &&
                 !string.IsNullOrEmpty(emotionData.emotion))
             {
-                ChangeEmotion(emotionData.emotion);
+                ReceiveEmotion(emotionData.emotion);
             }
         }
         catch (Exception e)
@@ -794,7 +845,7 @@ public class RAiMCharacterController : MonoBehaviour
 
             // 一度、Tool開始前の表情に戻す
             // その後、ReceiveEmotionsで最終感情に変更される
-            ChangeEmotion(emotionBeforeTool);
+            SetSpriteEmotion(emotionBeforeTool);
 
             Debug.Log("Tool終了。通常のSpriteに戻しました。");
         }
@@ -812,6 +863,11 @@ public class RAiMCharacterController : MonoBehaviour
         // Windows（デスクトップマスコット）では、頭の右上に「Z」を浮かべる。
         // スマホは Flutter 側で出すので、ここでは出さない
         if (useWebSocket) ShowZzz(value);
+
+        if (companion != null)
+        {
+            companion.SetSleeping(value);
+        }
 
         if (spriteRenderer == null)
         {
@@ -837,7 +893,7 @@ public class RAiMCharacterController : MonoBehaviour
 
         // 起きたら、ふだんの表情に戻す
         Debug.Log("[Unity] 起きました");
-        ChangeEmotion("neutral");
+        SetSpriteEmotion("neutral");
     }
 
     private void ShowZzz(bool visible)
@@ -845,10 +901,10 @@ public class RAiMCharacterController : MonoBehaviour
         if (sleepZzz == null)
         {
             if (!visible) return;
-            var renderer = spriteRenderer != null ? spriteRenderer : GetComponent<SpriteRenderer>();
-            if (renderer == null) return;
             sleepZzz = gameObject.AddComponent<SleepZzzEffect>();
-            sleepZzz.Init(renderer);
+            if (Presentation != null) sleepZzz.Init(Presentation);
+            else if (companion != null) sleepZzz.Init(companion);
+            else sleepZzz.Init(spriteRenderer);
         }
         sleepZzz.SetVisible(visible);
     }
@@ -857,7 +913,7 @@ public class RAiMCharacterController : MonoBehaviour
     // 感情によるSprite変更
     // ============================================================
 
-    private void ChangeEmotion(string emotion)
+    private void SetSpriteEmotion(string emotion)
     {
         if (spriteRenderer == null)
         {

@@ -1484,7 +1484,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
       children: [
         Row(
           children: [
-            Expanded(child: _sectionLabel('音声の設定')),
+            Expanded(child: _sectionLabel('設定')),
             IconButton(
               icon: const Icon(Icons.close, size: 15),
               color: _mut,

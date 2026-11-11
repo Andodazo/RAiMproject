@@ -1,0 +1,114 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5dcf14138bf8a2a4e93ff9a8048a23bf, type: 3}
+  m_Name: N Main Portrait Motions
+  m_EditorClassIdentifier: 
+  standingPortraitMode: 1
+  portraitPlaybackSpeed: 0.65
+  portraitTransitionSeconds: 0.85
+  portraitContactReleaseSeconds: 0.75
+  idles:
+  - {fileID: 7400000, guid: 717c3724926b35a4ea6ab2be553b4a6c, type: 2}
+  - {fileID: 7400000, guid: ec71435090ef0dd4394b6fd33cf4eb07, type: 2}
+  - {fileID: 7400000, guid: 5c37029f9b96f7249a578d9bae17eaea, type: 2}
+  - {fileID: 7400000, guid: 601566535640e5443b84e3c8e67c8135, type: 2}
+  talk: {fileID: 7400000, guid: 717c3724926b35a4ea6ab2be553b4a6c, type: 2}
+  breathing: {fileID: 7400000, guid: 2db1828f297c8f7439c6ec6e1be39d19, type: 2}
+  sleeping: {fileID: 7400000, guid: 30cb78e7faf7efd45ba68ee0214d2fea, type: 2}
+  phrases:
+  - key: happy
+    clip: {fileID: 7400000, guid: dd074c1336a737848942d469049b4033, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Right hand over the upper chest, closed smiling eyes, weight on the
+      left leg.
+  - key: sad
+    clip: {fileID: 7400000, guid: 3aa330c31b5f23545a9f0d08aaebae8c, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Right hand lightly holds the left elbow; shoulders and gaze lowered.
+  - key: angry
+    clip: {fileID: 7400000, guid: 681f42d6257d85e43ac2b278b1a22f2a, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Crossed arms with the right forearm in front, hands resting on the
+      opposite sleeves.
+  - key: surprised
+    clip: {fileID: 7400000, guid: 87443dec8add3b54db9277279e03854a, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Right hand near the collar and the open left hand beside the chest;
+      small backward recoil.
+  - key: caring
+    clip: {fileID: 7400000, guid: 55208d4f4da407d4fb4ce51cd2b21e48, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Left palm over the chest, right palm offered forward and upward.
+  - key: embarrassed
+    clip: {fileID: 7400000, guid: 8265b9e1e4fee624192bed1c57bc3875, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Right fingertips beside the collar and chin, lowered head and inward
+      knees.
+  - key: excited
+    clip: {fileID: 7400000, guid: 68c1109a00abcec47bf80f2fec71281c, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Both small fists beside the shoulders; a light rise and asymmetric
+      stance.
+  - key: curious
+    clip: {fileID: 7400000, guid: 68d931c90c863f6478a1e79232a6765c, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Right index rests near the chin, head tilted; the opposite arm stays
+      down.
+  - key: amused
+    clip: {fileID: 7400000, guid: 24d7ef43252e8b0428c8a5e26cca1b7a, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Right fingertips near the lips, one-sided smile, a gentle lean.
+  - key: thoughtful
+    clip: {fileID: 7400000, guid: 3c1dd9efa66086f44b22b453e6425070, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Right index at the chin; left palm supports the right elbow.
+  - key: playful
+    clip: {fileID: 7400000, guid: bdb3752ac1c91fd4dbe191c109e5014a, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Right fingertips under the lips and a right-eye wink; left arm down.
+  - key: researching_state
+    clip: {fileID: 7400000, guid: 8afcaf9d098f29e4a87a5cfce108a7f8, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Smartphone held in the right hand, left index tapping its screen,
+      eyes looking down.
+  - key: thinking_state
+    clip: {fileID: 7400000, guid: 3c1dd9efa66086f44b22b453e6425070, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Compatibility preview alias; main uses the current emotion portrait.
+  - key: listening_state
+    clip: {fileID: 7400000, guid: 717c3724926b35a4ea6ab2be553b4a6c, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Compatibility preview alias; main uses the current emotion portrait.
+  - key: nod
+    clip: {fileID: 7400000, guid: 717c3724926b35a4ea6ab2be553b4a6c, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Compatibility preview alias; main uses the current emotion portrait.
+  - key: discovery
+    clip: {fileID: 7400000, guid: 68d931c90c863f6478a1e79232a6765c, type: 2}
+    readableTime: 1.5
+    minimumInterval: 12
+    intention: Compatibility preview alias; main uses the current emotion portrait.

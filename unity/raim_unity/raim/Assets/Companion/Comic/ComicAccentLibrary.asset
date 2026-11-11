@@ -1,0 +1,60 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 76524c13e765ece48bec38667b52049d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  marks:
+  - key: exclamation
+    fill: {fileID: 4300000, guid: 35931cac02f20254ab14a134d7ebac0a, type: 2}
+    outline: {fileID: 4300000, guid: 0e2c676d67ff3bd4daccffbb3edd7a52, type: 2}
+    color: {fileID: 2100000, guid: 4736f6f11b9d4a04d8e67aa2e910b3fc, type: 2}
+    border: {fileID: 2100000, guid: 758243857e3a4614287dfd83821112c6, type: 2}
+  - key: question
+    fill: {fileID: 4300000, guid: 8ba4b0cd921d4fc4cb73d2e82dd6c5d3, type: 2}
+    outline: {fileID: 4300000, guid: a956fb151398e2d47ae6769a64c7e0f9, type: 2}
+    color: {fileID: 2100000, guid: b566ec14f70c3a443a0e93772b80b6cd, type: 2}
+    border: {fileID: 2100000, guid: 758243857e3a4614287dfd83821112c6, type: 2}
+  - key: heart
+    fill: {fileID: 4300000, guid: c061215c29d6ece40b0f28ea23cb6d75, type: 2}
+    outline: {fileID: 4300000, guid: 0f3daaa43b7d734488467cad76e8ff27, type: 2}
+    color: {fileID: 2100000, guid: 9cfbf8ea0da48074496a97b274094641, type: 2}
+    border: {fileID: 2100000, guid: 758243857e3a4614287dfd83821112c6, type: 2}
+  - key: anger
+    fill: {fileID: 4300000, guid: 8212030472e0d7f41ab40dc595419cff, type: 2}
+    outline: {fileID: 4300000, guid: 531fca9c2487e5f44b51d12234d0ce62, type: 2}
+    color: {fileID: 2100000, guid: c99c3415c31c1be4f85be2a95e8f3349, type: 2}
+    border: {fileID: 2100000, guid: 758243857e3a4614287dfd83821112c6, type: 2}
+  - key: sparkle
+    fill: {fileID: 4300000, guid: dc456fa8e9beb8b42852c743a5cd5647, type: 2}
+    outline: {fileID: 4300000, guid: a2d916ce836d8dc44a0335ddc5957a89, type: 2}
+    color: {fileID: 2100000, guid: eb017621c8e6cfa459dc289375be1b1f, type: 2}
+    border: {fileID: 2100000, guid: 758243857e3a4614287dfd83821112c6, type: 2}
+  - key: rays
+    fill: {fileID: 4300000, guid: 24d8643d0b055574a9011dd322790f51, type: 2}
+    outline: {fileID: 4300000, guid: 1ed6751bbd3cb4b4b890517e748990a1, type: 2}
+    color: {fileID: 2100000, guid: ba40eecf4b6a3d44aa337cc5cad84a1d, type: 2}
+    border: {fileID: 2100000, guid: 758243857e3a4614287dfd83821112c6, type: 2}
+  - key: sweat
+    fill: {fileID: 4300000, guid: 1758c5df13989d244aacaf06e8fb0970, type: 2}
+    outline: {fileID: 4300000, guid: cc8a3a1c5fcb6504c857bc036c84a15a, type: 2}
+    color: {fileID: 2100000, guid: db6d786ef758ea64eb6fa195a69d3f3d, type: 2}
+    border: {fileID: 2100000, guid: 758243857e3a4614287dfd83821112c6, type: 2}
+  - key: ellipsis
+    fill: {fileID: 4300000, guid: 3040c96408deafd4a831ec4446fda14d, type: 2}
+    outline: {fileID: 4300000, guid: 8d953c5c9eae843428e21af02f0fe1ce, type: 2}
+    color: {fileID: 2100000, guid: edfbe7895873d0140af320354cc1a5b7, type: 2}
+    border: {fileID: 2100000, guid: 758243857e3a4614287dfd83821112c6, type: 2}
+  - key: music
+    fill: {fileID: 4300000, guid: 6a0ff8aeb6bc67c4982988730eec3838, type: 2}
+    outline: {fileID: 4300000, guid: ec0acd2eea7cd7240a0432b3e7f57fe9, type: 2}
+    color: {fileID: 2100000, guid: dff3dfb9ff32e3243887fd68893ca31e, type: 2}
+    border: {fileID: 2100000, guid: 758243857e3a4614287dfd83821112c6, type: 2}
