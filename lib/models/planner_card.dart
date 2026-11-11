@@ -7,13 +7,54 @@
 //   メモのカード   … 「メモ何あったっけ？」（planner.show）。リストはその場でチェックできる
 //   メモ・リストに入れたとき（planner.added / planner.updated）も「入れたよ」カード。
 //   リストに足したときの「取り消す」は、足した項目だけ消す
+//   前の会話のカード … 「この前話したお店なんだっけ」で見つけた会話（history.found）。
+//                     「開く」でその会話を開いて、その発言まで送る
 //
 // サーバーの会話の記録には残らない（開き直すと消える）。予定そのものは
 // 「予定とメモ」の画面にいつでもある。
 
 import 'package:raim_prototype/models/planner_item.dart';
 
-enum PlannerCardType { added, suggest, show }
+enum PlannerCardType { added, suggest, show, talk }
+
+/// 前の話を探して見つけた会話（history.found）
+class PastTalkRef {
+  const PastTalkRef({required this.threadId, required this.at, this.title = '', this.date = ''});
+
+  final String threadId;
+
+  /// 見つけた発言の時刻（サーバーの createdAt）
+  final String at;
+
+  /// 会話のタイトル
+  final String title;
+
+  /// 話した日（YYYY-MM-DD、日本時間）
+  final String date;
+
+  /// 「11/3(火)の会話「週末の話」」
+  String get label {
+    final day = date.isEmpty ? '前' : formatPlannerDate(date);
+    final name = title.trim();
+    return name.isEmpty ? '$dayの会話' : '$dayの会話「$name」';
+  }
+
+  static PastTalkRef? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final threadId = json['threadId'];
+    final at = json['at'];
+    if (threadId is! String || threadId.isEmpty) return null;
+    if (at is! String || DateTime.tryParse(at) == null) return null;
+    final title = json['title'];
+    final date = json['date'];
+    return PastTalkRef(
+      threadId: threadId,
+      at: at,
+      title: title is String ? title : '',
+      date: date is String && isPlannerDate(date) ? date : '',
+    );
+  }
+}
 
 enum PlannerCardState {
   /// 押される前
@@ -44,6 +85,7 @@ class PlannerCard {
     this.state = PlannerCardState.open,
     this.addedEntryIds = const [],
     this.showItems = const [],
+    this.talk,
   });
 
   factory PlannerCard.added(
@@ -61,6 +103,12 @@ class PlannerCard {
   factory PlannerCard.show(List<PlannerItem> items, {DateTime? at}) => PlannerCard._(
         type: PlannerCardType.show,
         showItems: items,
+        createdAt: at ?? DateTime.now(),
+      );
+
+  factory PlannerCard.talk(PastTalkRef talk, {DateTime? at}) => PlannerCard._(
+        type: PlannerCardType.talk,
+        talk: talk,
         createdAt: at ?? DateTime.now(),
       );
 
@@ -88,6 +136,9 @@ class PlannerCard {
   /// 見せるメモ・リスト（show のとき）
   final List<PlannerItem> showItems;
 
+  /// 見つけた前の会話（talk のとき）
+  final PastTalkRef? talk;
+
   /// リストに項目を足した（リストそのものを作ったのではない）カードか
   bool get isListAddition => item?.isList == true && addedEntryIds.isNotEmpty;
 
@@ -107,5 +158,6 @@ class PlannerCard {
         state: next,
         addedEntryIds: addedEntryIds,
         showItems: showItems,
+        talk: talk,
       );
 }
