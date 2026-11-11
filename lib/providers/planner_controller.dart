@@ -10,6 +10,10 @@
 //
 // 変わるたびに、端末に保存して（電波が無くても一覧と通知が使えるように）、
 // 通知を全部入れ直す。Windows では、時刻にライムが話す準備もし直す。
+//
+// 【タイマー】
+// 鳴る時刻に通知が1回出るだけ（ライムは話さない）。通知の「5分後にもう一回」が
+// 押されたら、この端末だけで5分後にもう1回出す。「止める」は通知が消えるだけ。
 
 import 'dart:async';
 import 'dart:convert';
@@ -47,6 +51,8 @@ class PlannerController extends ChangeNotifier {
     bool Function()? isLocked,
     Stream<String>? notificationTaps,
     String? Function()? takeLaunchPayload,
+    Stream<AppNotificationAction>? notificationActions,
+    AppNotificationAction? Function()? takeLaunchAction,
     Future<void> Function()? requestPermission,
     DateTime Function()? clock,
   })  : _service = service,
@@ -60,6 +66,8 @@ class PlannerController extends ChangeNotifier {
     });
     _tapSub = (notificationTaps ?? AppNotifications.taps).listen(_onNotificationTap);
     _takeLaunchPayload = takeLaunchPayload ?? AppNotifications.takeLaunchPayload;
+    _actionSub = (notificationActions ?? AppNotifications.actions).listen(_onNotificationAction);
+    _takeLaunchAction = takeLaunchAction ?? AppNotifications.takeLaunchAction;
     final live = liveReminders ?? (!kIsWeb && Platform.isWindows);
     if (live && speak != null) {
       _runner = PlannerReminderRunner(
@@ -77,11 +85,13 @@ class PlannerController extends ChangeNotifier {
   final DateTime Function() _clock;
   final Future<void> Function() _requestPermission;
   late final String? Function() _takeLaunchPayload;
+  late final AppNotificationAction? Function() _takeLaunchAction;
   PlannerReminderRunner? _runner;
 
   StreamSubscription<LLMResponse>? _incomingSub;
   StreamSubscription<RaimConnectionState>? _connectionSub;
   StreamSubscription<String>? _tapSub;
+  StreamSubscription<AppNotificationAction>? _actionSub;
 
   static const String _cacheKey = 'planner.items';
   static const String _askedKey = 'planner.askedNotificationPermission';
@@ -93,9 +103,18 @@ class PlannerController extends ChangeNotifier {
   int _generation = 0;
   Timer? _rescheduleTimer;
 
+  /// 次のタイマーが鳴ったら一覧を描き直す（鳴ったタイマーを「動いている」から外す）
+  Timer? _timerTick;
+
   /// 予定（日付の順）。終わって7日たったものはサーバーが返さない
   List<PlannerItem> get items => _items;
   List<PlannerItem> get events => _items.where((i) => i.isEvent).toList();
+
+  /// まだ鳴っていないタイマー（鳴る順）
+  List<PlannerItem> get timers {
+    final now = _clock().toUtc();
+    return _items.where((i) => i.isRunningAt(now)).toList();
+  }
   bool get isLoading => _loading;
 
   /// 一度でもサーバーか端末の保存から読めたか
@@ -107,6 +126,8 @@ class PlannerController extends ChangeNotifier {
     await _loadCache();
     final launch = _takeLaunchPayload();
     if (launch != null) _onNotificationTap(launch);
+    final launchAction = _takeLaunchAction();
+    if (launchAction != null) _onNotificationAction(launchAction);
   }
 
   /// サーバーから読み直す。失敗しても今の一覧は残す
@@ -177,6 +198,7 @@ class PlannerController extends ChangeNotifier {
     _error = null;
     _loading = false;
     _rescheduleTimer?.cancel();
+    _timerTick?.cancel();
     _runner?.update(const []);
     notifyListeners();
     try {
@@ -216,10 +238,37 @@ class PlannerController extends ChangeNotifier {
   void _onNotificationTap(String payload) {
     final parsed = PlannerReminder.parsePayload(payload);
     if (parsed == null) return;
+    // タイマーの通知を押したときは、アプリが開くだけ（ライムは話さない）
+    if (PlannerSlot.isTimer(parsed.slot)) return;
     final speak = _speak;
     if (speak == null) return;
     RaimLog.d('[Planner] 予定の通知が押されました: ${parsed.slot}');
     unawaited(speak(parsed.itemId, parsed.slot));
+  }
+
+  void _onNotificationAction(AppNotificationAction action) {
+    final parsed = PlannerReminder.parsePayload(action.payload);
+    if (parsed == null || !PlannerSlot.isTimer(parsed.slot)) return;
+    if (action.actionId != AppNotifications.snoozeActionId) return;
+    // 鳴って10分たつとサーバーの一覧から消えるので、無ければ決まり文句
+    final item = findItem(parsed.itemId);
+    final body = item != null && item.isTimer
+        ? PlannerSchedule.timerBody(item)
+        : 'タイマーの時間だよ';
+    final now = _clock().toUtc();
+    final reminder = PlannerSchedule.snoozeFor(
+      PlannerReminder(
+        id: PlannerSchedule.notificationId(parsed.itemId, parsed.slot),
+        itemId: parsed.itemId,
+        slot: parsed.slot,
+        at: now,
+        title: PlannerSchedule.notificationTitle,
+        body: body,
+      ),
+      now,
+    );
+    RaimLog.d('[Planner] タイマーを5分後にもう一回鳴らします');
+    unawaited(_notifier.snooze(reminder));
   }
 
   // ──────────────────────────────────────────
@@ -246,14 +295,29 @@ class PlannerController extends ChangeNotifier {
   /// 通知を入れ直す（テストからも呼ぶ）
   @visibleForTesting
   Future<void> rescheduleNow() async {
-    final reminders = PlannerSchedule.remindersForAll(_items, _clock().toUtc());
-    _runner?.update(reminders);
+    final now = _clock().toUtc();
+    final reminders = PlannerSchedule.remindersForAll(_items, now);
+    // タイマーはライムが話さず、通知だけ
+    _runner?.update(reminders.where((r) => !r.isTimer).toList());
+    _armTimerTick(now);
     if (reminders.isNotEmpty) await _askPermissionOnce();
     try {
       await _notifier.replaceAll(reminders);
     } catch (e) {
       RaimLog.w('[Planner] 通知を予約できませんでした: ${e.runtimeType}');
     }
+  }
+
+  void _armTimerTick(DateTime now) {
+    _timerTick?.cancel();
+    _timerTick = null;
+    final running = timers;
+    if (running.isEmpty) return;
+    final wait = running.first.endsAt!.difference(now) + const Duration(seconds: 1);
+    _timerTick = Timer(wait.isNegative ? Duration.zero : wait, () {
+      notifyListeners();
+      _armTimerTick(_clock().toUtc());
+    });
   }
 
   /// 予定が入って初めて、通知の許可を聞く（起動直後にいきなり聞かない）
@@ -308,7 +372,9 @@ class PlannerController extends ChangeNotifier {
     _incomingSub?.cancel();
     _connectionSub?.cancel();
     _tapSub?.cancel();
+    _actionSub?.cancel();
     _rescheduleTimer?.cancel();
+    _timerTick?.cancel();
     _runner?.dispose();
     super.dispose();
   }

@@ -24,17 +24,19 @@ class PlannerItem {
     this.enriched = false,
     this.source = 'manual',
     this.updatedAt = '',
+    this.endsAt,
+    this.durationSec = 0,
   });
 
   /// 'ev_…' のような ID
   final String itemId;
 
-  /// 'event'（予定）。タイマー・メモはあとで足す
+  /// 'event'（予定）| 'timer'（タイマー）。メモはあとで足す
   final String kind;
 
   final String title;
 
-  /// 日本時間の日付 YYYY-MM-DD
+  /// 日本時間の日付 YYYY-MM-DD（タイマーは空）
   final String date;
 
   /// 日本時間の時刻 HH:mm。決まっていなければ空
@@ -56,14 +58,30 @@ class PlannerItem {
 
   final String updatedAt;
 
+  /// タイマーが鳴る時刻（UTC）。予定は null
+  final DateTime? endsAt;
+
+  /// タイマーの長さ（秒）
+  final int durationSec;
+
   bool get isEvent => kind == 'event';
+  bool get isTimer => kind == 'timer';
   bool get hasTime => time.isNotEmpty;
+
+  /// タイマーがまだ鳴っていないか
+  bool isRunningAt(DateTime now) => isTimer && endsAt != null && endsAt!.isAfter(now);
 
   /// 「11/14(土)」
   String get dateLabel => formatPlannerDate(date);
 
-  /// 「11/14(土) 10:00」
-  String get whenLabel => hasTime ? '$dateLabel $time' : dateLabel;
+  /// 「11/14(土) 10:00」。タイマーは「15:03 に鳴る」
+  String get whenLabel {
+    if (isTimer) return endsAt == null ? 'タイマー' : '${formatJstClock(endsAt!)} に鳴る';
+    return hasTime ? '$dateLabel $time' : dateLabel;
+  }
+
+  /// タイマーの長さ「3分」「1時間30分」「45秒」
+  String get durationLabel => formatTimerDuration(durationSec);
 
   factory PlannerItem.fromJson(Map<String, dynamic> json) {
     String str(Object? v) => v is String ? v : (v == null ? '' : v.toString());
@@ -87,6 +105,8 @@ class PlannerItem {
       enriched: json['enriched'] == true,
       source: str(json['source']).isEmpty ? 'manual' : str(json['source']),
       updatedAt: str(json['updatedAt']),
+      endsAt: DateTime.tryParse(str(json['endsAt']))?.toUtc(),
+      durationSec: json['durationSec'] is num ? (json['durationSec'] as num).toInt() : 0,
     );
   }
 
@@ -102,10 +122,18 @@ class PlannerItem {
         'enriched': enriched,
         'source': source,
         'updatedAt': updatedAt,
+        if (endsAt != null) 'endsAt': endsAt!.toUtc().toIso8601String(),
+        if (durationSec > 0) 'durationSec': durationSec,
       };
 
-  /// 並べる順（日付 → 時刻。時刻なしはその日の先頭）
+  /// 並べる順（タイマーが先で鳴る順 → 予定は日付 → 時刻。時刻なしはその日の先頭）
   static int compare(PlannerItem a, PlannerItem b) {
+    if (a.isTimer != b.isTimer) return a.isTimer ? -1 : 1;
+    if (a.isTimer) {
+      final ae = a.endsAt, be = b.endsAt;
+      if (ae != null && be != null) return ae.compareTo(be);
+      return a.itemId.compareTo(b.itemId);
+    }
     final byDate = a.date.compareTo(b.date);
     if (byDate != 0) return byDate;
     return a.time.compareTo(b.time);
@@ -169,6 +197,26 @@ String formatPlannerDate(String value) {
   final d = parsePlannerDate(value);
   if (d == null) return value;
   return '${d.month}/${d.day}(${_weekdays[d.weekday - 1]})';
+}
+
+/// UTC の時刻を日本時間の「HH:mm」に
+String formatJstClock(DateTime utc) {
+  final jst = utc.toUtc().add(const Duration(hours: 9));
+  return '${jst.hour.toString().padLeft(2, '0')}:${jst.minute.toString().padLeft(2, '0')}';
+}
+
+/// タイマーの長さ「3分」「1時間30分」「45秒」「1分30秒」
+String formatTimerDuration(int seconds) {
+  if (seconds <= 0) return '';
+  final h = seconds ~/ 3600;
+  final m = (seconds % 3600) ~/ 60;
+  final s = seconds % 60;
+  final parts = <String>[
+    if (h > 0) '$h時間',
+    if (m > 0) '$m分',
+    if (s > 0 && h == 0) '$s秒',
+  ];
+  return parts.join();
 }
 
 /// 「10時」「9:5」なども受けて「HH:mm」に。空なら ''、読めなければ null。

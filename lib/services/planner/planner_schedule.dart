@@ -5,6 +5,7 @@
 // 【決めたこと】（安藤さんと決めた）
 //   時刻のある予定 … 前の日の 21:00 と、1時間前
 //   日付だけの予定 … 当日の朝 8:00 だけ（8:00 は仮）
+//   タイマー       … 鳴る時刻に1回。「5分後にもう一回」を押したら5分後にもう1回
 //
 // 日付と時刻は日本時間で決まっているので、日本時間として時刻を出す。
 // 通知の文は、サーバーの LLM が作った文（lines）を基本にして、無ければ決まり文句。
@@ -17,6 +18,17 @@ class PlannerSlot {
   static const eve = 'eve';
   static const before = 'before';
   static const morning = 'morning';
+
+  /// タイマーが鳴る時刻
+  static const timer = 'timer';
+
+  /// タイマーの「5分後にもう一回」
+  static const snooze = 'snooze';
+
+  static const all = [eve, before, morning, timer, snooze];
+
+  /// タイマーの知らせか（ライムが話さず、止める・もう一回のボタンを付ける）
+  static bool isTimer(String slot) => slot == timer || slot == snooze;
 }
 
 /// 1回分の知らせ
@@ -44,6 +56,8 @@ class PlannerReminder {
   /// 通知の本文（保存しておいた文 + 日時）
   final String body;
 
+  bool get isTimer => PlannerSlot.isTimer(slot);
+
   /// 通知を押したときに戻ってくる中身
   String get payload => 'planner:$itemId:$slot';
 
@@ -52,10 +66,7 @@ class PlannerReminder {
     if (payload == null || !payload.startsWith('planner:')) return null;
     final parts = payload.split(':');
     if (parts.length != 3) return null;
-    if (!const [PlannerSlot.eve, PlannerSlot.before, PlannerSlot.morning]
-        .contains(parts[2])) {
-      return null;
-    }
+    if (!PlannerSlot.all.contains(parts[2])) return null;
     return (itemId: parts[1], slot: parts[2]);
   }
 }
@@ -71,6 +82,9 @@ class PlannerSchedule {
 
   /// 何分前に知らせるか
   static const Duration beforeLead = Duration(hours: 1);
+
+  /// タイマーの「もう一回」までの時間
+  static const Duration snoozeDelay = Duration(minutes: 5);
 
   /// 予約しておく数の上限。iOS は1つのアプリで64件までしか予約できない
   /// （駅アラームの分を残しておく）。
@@ -89,6 +103,20 @@ class PlannerSchedule {
 
   /// 予定1件の知らせ（[now] より後のものだけ）
   static List<PlannerReminder> remindersFor(PlannerItem item, DateTime now) {
+    if (item.isTimer) {
+      final at = item.endsAt;
+      if (at == null || !at.isAfter(now)) return const [];
+      return [
+        PlannerReminder(
+          id: notificationId(item.itemId, PlannerSlot.timer),
+          itemId: item.itemId,
+          slot: PlannerSlot.timer,
+          at: at,
+          title: notificationTitle,
+          body: timerBody(item),
+        ),
+      ];
+    }
     if (!item.isEvent || parsePlannerDate(item.date) == null) return const [];
     final out = <PlannerReminder>[];
     void add(String slot, DateTime at) {
@@ -124,6 +152,27 @@ class PlannerSchedule {
     final all = [for (final item in items) ...remindersFor(item, now)]
       ..sort((a, b) => a.at.compareTo(b.at));
     return all.length > maxPending ? all.sublist(0, maxPending) : all;
+  }
+
+  /// タイマーの「5分後にもう一回」（[now] から [snoozeDelay] 後）
+  static PlannerReminder snoozeFor(PlannerReminder reminder, DateTime now) =>
+      PlannerReminder(
+        id: notificationId(reminder.itemId, PlannerSlot.snooze),
+        itemId: reminder.itemId,
+        slot: PlannerSlot.snooze,
+        at: now.toUtc().add(snoozeDelay),
+        title: notificationTitle,
+        body: reminder.body,
+      );
+
+  /// タイマーの本文。「3分たったよ」「パスタの時間だよ（3分のタイマー）」
+  static String timerBody(PlannerItem item) {
+    final length = item.durationLabel;
+    final label = item.title.trim();
+    if (label.isEmpty || label == 'タイマー') {
+      return length.isEmpty ? 'タイマーの時間だよ' : '$lengthたったよ';
+    }
+    return length.isEmpty ? '$labelの時間だよ' : '$labelの時間だよ（$lengthのタイマー）';
   }
 
   /// 保存しておいた文（無ければ決まり文句）に、日時を足した本文

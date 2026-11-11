@@ -1,6 +1,6 @@
 // lib/widgets/planner_card_view.dart
 //
-// チャットに出す予定のカード（入れたよ・予定に入れる？）。
+// チャットに出す予定のカード（入れたよ・予定に入れる？・タイマーを始めたよ）。
 //
 // スマホはチャットの中に、Windows は入力欄の上に（compact）出す。
 // 押したときの処理（取り消す・入れる）はここで PlannerController を呼び、
@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:raim_prototype/models/planner_card.dart';
+import 'package:raim_prototype/models/planner_item.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/planner_controller.dart';
 import 'package:raim_prototype/services/raim_log.dart';
@@ -79,6 +80,8 @@ class PlannerCardView extends StatelessWidget {
   }
 
   String _message() {
+    final item = card.item;
+    if (item != null && item.isTimer) return _timerMessage(item);
     final what = '${card.whenLabel} ${card.title}';
     return switch ((card.type, card.state)) {
       (PlannerCardType.added, PlannerCardState.undone) => '$what を取り消したよ',
@@ -87,6 +90,20 @@ class PlannerCardView extends StatelessWidget {
       (PlannerCardType.suggest, PlannerCardState.accepted) => '$what を入れたよ',
       (PlannerCardType.suggest, PlannerCardState.failed) => '入れられなかった。もう一度押してね',
       (PlannerCardType.suggest, _) => '予定に入れる？ $what',
+    };
+  }
+
+  /// 「3分のタイマーを始めたよ（15:03 に鳴る）」
+  String _timerMessage(PlannerItem item) {
+    final label = item.title.trim();
+    final length = item.durationLabel;
+    final name = (label.isEmpty || label == 'タイマー')
+        ? (length.isEmpty ? 'タイマー' : '$lengthのタイマー')
+        : (length.isEmpty ? '$labelのタイマー' : '$labelのタイマー（$length）');
+    return switch (card.state) {
+      PlannerCardState.undone => '$nameを止めたよ',
+      PlannerCardState.failed => '止められなかった。もう一度押してね',
+      _ => '$nameを始めたよ（${item.whenLabel}）',
     };
   }
 
