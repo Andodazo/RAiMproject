@@ -7,6 +7,8 @@
 // 知らせる時刻は、前の日の夜と1時間前（時間が無ければ当日の朝）。
 //
 // 日付はダイアログを開かずに選ぶ（Windows の小窓ではダイアログが開きにくいため）。
+//
+// 上のタブで「予定」と「メモ」を切り替える。メモタブの中身は planner_memo_panel.dart。
 
 import 'dart:io' show Platform;
 
@@ -17,10 +19,14 @@ import 'package:provider/provider.dart';
 import 'package:raim_prototype/models/planner_item.dart';
 import 'package:raim_prototype/providers/planner_controller.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/widgets/planner_memo_panel.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 
+/// 「予定とメモ」のタブ
+enum PlannerTab { schedule, memo }
+
 /// スマホではボトムシートで開く。
-Future<void> showPlannerSheet(BuildContext context) {
+Future<void> showPlannerSheet(BuildContext context, {PlannerTab tab = PlannerTab.schedule}) {
   final planner = context.read<PlannerController>();
   return showModalBottomSheet<void>(
     context: context,
@@ -38,10 +44,10 @@ Future<void> showPlannerSheet(BuildContext context) {
         child: Padding(
           // 文字を打つときにキーボードで隠れないように
           padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-          child: const SafeArea(
+          child: SafeArea(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(4, 12, 4, 8),
-              child: PlannerPanel(showTitle: true),
+              padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+              child: PlannerPanel(showTitle: true, initialTab: tab),
             ),
           ),
         ),
@@ -62,7 +68,11 @@ class PlannerPanel extends StatefulWidget {
     this.showTitle = false,
     this.fontScale = 1.0,
     this.swipeToDelete,
+    this.initialTab = PlannerTab.schedule,
   });
+
+  /// 開いたときのタブ
+  final PlannerTab initialTab;
 
   final VoiceSettingsPalette palette;
   final bool showTitle;
@@ -87,6 +97,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
 
   bool _busy = false;
   String? _error;
+
+  late PlannerTab _tab = widget.initialTab;
 
   VoiceSettingsPalette get _p => widget.palette;
   double get _fs => widget.fontScale;
@@ -144,6 +156,51 @@ class _PlannerPanelState extends State<PlannerPanel> {
               style: TextStyle(color: _p.text, fontSize: 16 * _fs, fontWeight: FontWeight.w600),
             ),
           ),
+        _tabs(),
+        if (_tab == PlannerTab.memo)
+          PlannerMemoSection(palette: _p, fontScale: _fs)
+        else
+          ..._scheduleChildren(planner, events, upcoming, past, timers),
+      ],
+    );
+  }
+
+  Widget _tabs() {
+    Widget tab(String label, PlannerTab value) {
+      final selected = _tab == value;
+      return Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: ChoiceChip(
+          label: Text(label, style: TextStyle(fontSize: 12 * _fs, color: selected ? _p.surface : _p.text)),
+          selected: selected,
+          showCheckmark: false,
+          selectedColor: _p.accent,
+          backgroundColor: Colors.transparent,
+          side: BorderSide(color: selected ? _p.accent : _p.line),
+          visualDensity: VisualDensity.compact,
+          onSelected: (_) => setState(() {
+            _tab = value;
+            _editing = null;
+            _confirming = null;
+          }),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(children: [tab('予定', PlannerTab.schedule), tab('メモ', PlannerTab.memo)]),
+    );
+  }
+
+  List<Widget> _scheduleChildren(
+    PlannerController planner,
+    List<PlannerItem> events,
+    List<PlannerItem> upcoming,
+    List<PlannerItem> past,
+    List<PlannerItem> timers,
+  ) {
+    return [
         _note('ライムに頼んだ予定と、手で入れた予定です。前の日の夜と1時間前'
             '（時間がなければ当日の朝）に知らせます。'),
         if (_editing == _newKey)
@@ -200,8 +257,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
           ],
         ],
         const SizedBox(height: 8),
-      ],
-    );
+    ];
   }
 
   List<Widget> _grouped(List<PlannerItem> items, PlannerController planner) {

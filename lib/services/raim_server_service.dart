@@ -1113,6 +1113,36 @@ class RaimServerService
     return _plannerItems(response);
   }
 
+  @override
+  Future<List<PlannerItem>> addPlannerMemo(String text) => _plannerAdd({'kind': 'memo', 'text': text});
+
+  @override
+  Future<List<PlannerItem>> addPlannerList(String title, List<String> entries) =>
+      _plannerAdd({'kind': 'list', 'title': title, 'entries': entries});
+
+  Future<List<PlannerItem>> _plannerAdd(Map<String, dynamic> item) async {
+    final response = await _requestOnce(
+      payload: {'type': 'planner.add', 'item': item},
+      matches: (r) => r.isPlanner,
+      label: 'planner.add',
+    );
+    return _plannerItems(response);
+  }
+
+  /// メモやリストを直す（リストの項目は全部送って入れ替える）
+  @override
+  Future<List<PlannerItem>> updatePlannerItem(
+    String itemId,
+    Map<String, dynamic> changes,
+  ) async {
+    final response = await _requestOnce(
+      payload: {'type': 'planner.update', 'itemId': itemId, 'changes': changes},
+      matches: (r) => r.isPlanner,
+      label: 'planner.update',
+    );
+    return _plannerItems(response);
+  }
+
   static List<PlannerItem> _plannerItems(Map<String, dynamic> response) {
     final raw = response['items'];
     if (raw is! List) return const [];

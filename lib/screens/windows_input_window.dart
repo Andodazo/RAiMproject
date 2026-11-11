@@ -71,6 +71,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   _PanelMode _mode = _PanelMode.none;
 
+  /// 「予定とメモ」を開いたときのタブ（メモのカードの「開く」ならメモ）
+  PlannerTab _plannerTab = PlannerTab.schedule;
+
   /// 窓を伸ばしている最中の、これから開くパネル。
   _PanelMode? _pendingMode;
 
@@ -699,6 +702,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                         textColor: _text,
                         mutedColor: _mut,
                         accentColor: _lime,
+                        onOpenMemos: () {
+                          setState(() => _plannerTab = PlannerTab.memo);
+                          _setMode(_PanelMode.planner);
+                        },
                       ),
                     ),
                   )
@@ -1028,7 +1035,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         _menuRow(
           Icons.event_note_outlined,
           '予定とメモ',
-          () => _setMode(_PanelMode.planner),
+          () {
+            setState(() => _plannerTab = PlannerTab.schedule);
+            _setMode(_PanelMode.planner);
+          },
         ),
         _menuRow(
           Icons.psychology_outlined,
@@ -1377,6 +1387,19 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     );
   }
 
+  /// 会話の記録に出す、予定のカードの1行
+  static String _plannerLogText(PlannerCard card) {
+    final item = card.item;
+    if (card.type == PlannerCardType.show) {
+      final first = card.showItems.first;
+      return first.isList ? '📝 ${first.title}' : '📝 メモ ${card.showItems.length}件';
+    }
+    if (item != null && item.isTimer) return '⏱ ${card.title}（${card.whenLabel}）';
+    if (item != null && item.isMemo) return '📝 ${item.text}';
+    if (item != null && item.isList) return '📝 ${item.title}';
+    return '📅 ${card.whenLabel} ${card.title}';
+  }
+
   Widget _buildPlanner() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1392,9 +1415,12 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
             ),
           ],
         ),
-        const Expanded(
+        Expanded(
           child: PlannerPanel(
-            palette: VoiceSettingsPalette(
+            // タブを変えて開き直したときに作り直す
+            key: ValueKey(_plannerTab),
+            initialTab: _plannerTab,
+            palette: const VoiceSettingsPalette(
               text: _text,
               muted: _mut,
               accent: _lime,
@@ -1496,9 +1522,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                             // 予定のカードは本文が無いので、何を入れたかを出す
                             m.plannerCard == null
                                 ? m.text
-                                : m.plannerCard!.item?.isTimer == true
-                                    ? '⏱ ${m.plannerCard!.title}（${m.plannerCard!.whenLabel}）'
-                                    : '📅 ${m.plannerCard!.whenLabel} ${m.plannerCard!.title}',
+                                : _plannerLogText(m.plannerCard!),
                             style: const TextStyle(
                               color: _text,
                               fontSize: 12.5,

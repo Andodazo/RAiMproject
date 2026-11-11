@@ -1,6 +1,6 @@
 // lib/widgets/planner_card_view.dart
 //
-// チャットに出す予定のカード（入れたよ・予定に入れる？・タイマーを始めたよ）。
+// チャットに出す予定のカード（入れたよ・予定に入れる？・タイマーを始めたよ・メモ）。
 //
 // スマホはチャットの中に、Windows は入力欄の上に（compact）出す。
 // 押したときの処理（取り消す・入れる）はここで PlannerController を呼び、
@@ -14,6 +14,7 @@ import 'package:raim_prototype/models/planner_item.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/planner_controller.dart';
 import 'package:raim_prototype/services/raim_log.dart';
+import 'package:raim_prototype/widgets/planner_memo_panel.dart';
 
 class PlannerCardView extends StatelessWidget {
   const PlannerCardView({
@@ -25,7 +26,11 @@ class PlannerCardView extends StatelessWidget {
     this.accentColor = const Color(0xFF4D7C0F),
     this.background = const Color(0xFFF1F6E8),
     this.borderColor = const Color(0xFFCFE3A8),
+    this.onOpenMemos,
   });
+
+  /// メモのカードで「開く」を押したとき（Windows は入力欄の上で中身を出せないので、メモタブを開く）
+  final VoidCallback? onOpenMemos;
 
   final PlannerCard card;
 
@@ -40,6 +45,7 @@ class PlannerCardView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (card.type == PlannerCardType.show && !compact) return _showCard(context);
     final message = _message();
     final actions = _actions(context);
     final content = Row(
@@ -80,8 +86,17 @@ class PlannerCardView extends StatelessWidget {
   }
 
   String _message() {
+    if (card.type == PlannerCardType.show) return _showSummary();
     final item = card.item;
     if (item != null && item.isTimer) return _timerMessage(item);
+    if (item != null && item.isMemo) {
+      return card.state == PlannerCardState.undone
+          ? 'メモを取り消したよ'
+          : card.state == PlannerCardState.failed
+              ? '取り消せなかった。もう一度押してね'
+              : '「${item.text}」をメモしたよ';
+    }
+    if (item != null && item.isList) return _listMessage(item);
     final what = '${card.whenLabel} ${card.title}';
     return switch ((card.type, card.state)) {
       (PlannerCardType.added, PlannerCardState.undone) => '$what を取り消したよ',
@@ -90,6 +105,7 @@ class PlannerCardView extends StatelessWidget {
       (PlannerCardType.suggest, PlannerCardState.accepted) => '$what を入れたよ',
       (PlannerCardType.suggest, PlannerCardState.failed) => '入れられなかった。もう一度押してね',
       (PlannerCardType.suggest, _) => '予定に入れる？ $what',
+      (PlannerCardType.show, _) => _showSummary(),
     };
   }
 
@@ -107,7 +123,99 @@ class PlannerCardView extends StatelessWidget {
     };
   }
 
+  /// リストに入れたときの文
+  String _listMessage(PlannerItem item) {
+    final added = card.isListAddition
+        ? item.entries.where((e) => card.addedEntryIds.contains(e.id)).map((e) => e.text).toList()
+        : item.entries.map((e) => e.text).toList();
+    final what = added.isEmpty ? '' : '${added.take(4).join('・')}${added.length > 4 ? ' ほか' : ''} を';
+    return switch (card.state) {
+      PlannerCardState.undone => card.isListAddition ? '足した項目を取り消したよ' : '「${item.title}」を取り消したよ',
+      PlannerCardState.failed => '取り消せなかった。もう一度押してね',
+      _ => card.isListAddition ? '「${item.title}」に $what足したよ' : '「${item.title}」を作って $what入れたよ',
+    };
+  }
+
+  /// メモのカードを1行にしたもの（Windows の入力欄の上）
+  String _showSummary() {
+    final items = card.showItems;
+    final memos = items.where((i) => i.isMemo).toList();
+    if (memos.isNotEmpty) {
+      return 'メモ ${memos.length}件「${memos.first.text}」${memos.length > 1 ? ' ほか' : ''}';
+    }
+    final list = items.first;
+    final open = list.openEntries.map((e) => e.text).toList();
+    return '${list.title}: ${open.isEmpty ? '全部チェック済み' : open.take(5).join('・')}';
+  }
+
+  /// メモのカード（スマホのチャットの中）。リストはその場でチェックできる
+  Widget _showCard(BuildContext context) {
+    final items = card.showItems;
+    final memos = items.where((i) => i.isMemo).toList();
+    final lists = items.where((i) => i.isList).toList();
+    final title = TextStyle(color: textColor, fontSize: 13.5, fontWeight: FontWeight.w600);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 340),
+        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+        decoration: BoxDecoration(
+          color: background,
+          border: Border.all(color: borderColor),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (memos.isNotEmpty) ...[
+              Row(children: [
+                Icon(Icons.sticky_note_2_outlined, size: 16, color: accentColor),
+                const SizedBox(width: 6),
+                Text('メモ', style: title),
+              ]),
+              const SizedBox(height: 4),
+              for (final memo in memos.take(10))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text('・${memo.text}', style: TextStyle(color: textColor, fontSize: 13, height: 1.35)),
+                ),
+              if (memos.length > 10)
+                Text('ほかに${memos.length - 10}件（「予定とメモ」のメモタブ）',
+                    style: TextStyle(color: mutedColor, fontSize: 11.5)),
+            ],
+            for (final list in lists) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(children: [
+                  Icon(Icons.checklist, size: 16, color: accentColor),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(list.title, style: title)),
+                ]),
+              ),
+              PlannerListEntries(
+                listId: list.itemId,
+                fallback: list,
+                textColor: textColor,
+                mutedColor: mutedColor,
+                accentColor: accentColor,
+                maxEntries: 15,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Widget> _actions(BuildContext context) {
+    if (card.type == PlannerCardType.show) {
+      // Windows の入力欄の上: メモタブを開く・閉じる
+      return [
+        if (onOpenMemos != null) _button('開く', onOpenMemos!),
+        _close(context),
+      ];
+    }
     if (card.state == PlannerCardState.busy) {
       return [
         Padding(
@@ -161,7 +269,12 @@ class PlannerCardView extends StatelessWidget {
     if (itemId == null) return;
     final busy = chat.updatePlannerCard(card, PlannerCardState.busy);
     try {
-      await planner.deleteItem(itemId);
+      if (card.isListAddition) {
+        // リストに足した項目だけ消す（前からあった項目は残す）
+        await planner.removeEntries(itemId, card.addedEntryIds.toSet());
+      } else {
+        await planner.deleteItem(itemId);
+      }
       if (busy != null) chat.updatePlannerCard(busy, PlannerCardState.undone);
     } catch (e) {
       RaimLog.d('[PlannerCard] 取り消せませんでした: ${e.runtimeType}');

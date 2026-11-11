@@ -2,7 +2,9 @@
 
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:raim_prototype/models/llm_response.dart';
@@ -15,6 +17,7 @@ import 'package:raim_prototype/services/llm_service.dart';
 import 'package:raim_prototype/services/planner/planner_notifications.dart';
 import 'package:raim_prototype/services/planner/planner_reminder_runner.dart';
 import 'package:raim_prototype/services/planner/planner_schedule.dart';
+import 'package:raim_prototype/widgets/planner_card_view.dart';
 import 'package:raim_prototype/widgets/planner_panel.dart';
 
 import 'review/support/fakes.dart';
@@ -95,6 +98,56 @@ class FakePlannerService implements PlannerService {
   @override
   Future<List<PlannerItem>> deletePlannerItem(String itemId) async {
     items = items.where((i) => i.itemId != itemId).toList();
+    return items;
+  }
+
+  final List<Map<String, dynamic>> itemUpdates = [];
+  bool failUpdates = false;
+
+  @override
+  Future<List<PlannerItem>> addPlannerMemo(String text) async {
+    items = [...items, PlannerItem(itemId: 'mm_new0000aa', kind: 'memo', title: '', date: '', text: text)];
+    return items;
+  }
+
+  @override
+  Future<List<PlannerItem>> addPlannerList(String title, List<String> entries) async {
+    items = [
+      ...items,
+      PlannerItem(
+        itemId: 'ls_new0000aa',
+        kind: 'list',
+        title: title,
+        date: '',
+        entries: [for (var i = 0; i < entries.length; i++) PlannerListEntry(id: 'e0000000$i', text: entries[i])],
+      ),
+    ];
+    return items;
+  }
+
+  @override
+  Future<List<PlannerItem>> updatePlannerItem(String itemId, Map<String, dynamic> changes) async {
+    itemUpdates.add(changes);
+    if (failUpdates) throw StateError('offline');
+    items = [
+      for (final i in items)
+        if (i.itemId == itemId)
+          i.copyWith(
+            text: changes['text'] as String?,
+            title: changes['title'] as String?,
+            entries: changes['entries'] is List
+                ? [
+                    for (final (n, e) in (changes['entries'] as List).indexed)
+                      PlannerListEntry.fromJson({
+                        ...(e as Map<String, dynamic>),
+                        if ((e['id'] ?? '') == '') 'id': 'enew$n',
+                      }),
+                  ]
+                : null,
+          )
+        else
+          i,
+    ];
     return items;
   }
 }
@@ -417,6 +470,178 @@ void main() {
       expect(notifier.cancelled, [PlannerSchedule.notificationId('tm_a', 'timer')]);
       expect(PlannerReminderRunner.leadFor(notifier.scheduled.firstWhere((r) => r.isTimer)),
           PlannerReminderRunner.timerLead);
+    });
+  });
+
+  group('メモ帳', () {
+    PlannerItem shopping() => const PlannerItem(
+          itemId: 'ls_aaaaaa00',
+          kind: 'list',
+          title: '買うもの',
+          date: '',
+          entries: [
+            PlannerListEntry(id: 'e00000001', text: '牛乳'),
+            PlannerListEntry(id: 'e00000002', text: '卵', checked: true, checkedAt: '2026-11-11T01:00:00Z'),
+          ],
+        );
+
+    PlannerController build(FakePlannerService service) {
+      final controller = PlannerController(
+        service: service,
+        notifier: FakeNotifier(),
+        notificationTaps: const Stream.empty(),
+        takeLaunchPayload: () => null,
+        notificationActions: const Stream.empty(),
+        takeLaunchAction: () => null,
+        requestPermission: () async {},
+        liveReminders: false,
+        clock: () => now,
+      );
+      addTearDown(controller.dispose);
+      return controller;
+    }
+
+    test('メモとリストを読めて、保存の形に戻せる。通知は予約しない', () {
+      final item = PlannerItem.fromJson({
+        'itemId': 'ls_1',
+        'kind': 'list',
+        'title': '買うもの',
+        'entries': [
+          {'id': 'e00000001', 'text': '牛乳', 'checked': false},
+          {'id': 'e00000002', 'text': '卵', 'checked': true, 'checkedAt': '2026-11-11T01:00:00Z'},
+          {'id': 'e00000003', 'text': ' '},
+        ],
+      });
+      expect(item.isList, isTrue);
+      expect(item.entries.map((e) => e.text), ['牛乳', '卵']);
+      expect(item.openEntries.single.text, '牛乳');
+      expect(PlannerItem.fromJson(item.toJson()).entries.last.checkedAt, '2026-11-11T01:00:00Z');
+      final memo = PlannerItem.fromJson({'itemId': 'mm_1', 'kind': 'memo', 'text': '駐輪場は3階'});
+      expect(memo.isMemo, isTrue);
+      expect(PlannerSchedule.remindersForAll([item, memo], now.toUtc()), isEmpty);
+    });
+
+    test('チェック・項目の追加と削除は、先に画面を変えてから送る。失敗したら戻す', () async {
+      final service = FakePlannerService()..items = [shopping()];
+      final controller = build(service);
+      await controller.refresh();
+      expect(controller.lists.single.title, '買うもの');
+
+      await controller.toggleEntry('ls_aaaaaa00', 'e00000001', true);
+      expect(service.itemUpdates.last['entries'][0]['checked'], isTrue);
+      expect(controller.lists.single.entries.first.checked, isTrue);
+
+      // 外したチェックは、付けた時刻も送らない
+      await controller.toggleEntry('ls_aaaaaa00', 'e00000002', false);
+      expect((service.itemUpdates.last['entries'][1] as Map).containsKey('checkedAt'), isFalse);
+
+      await controller.addEntry('ls_aaaaaa00', 'パン');
+      expect(controller.lists.single.entries.map((e) => e.text), ['牛乳', '卵', 'パン']);
+      expect((service.itemUpdates.last['entries'][2] as Map).containsKey('id'), isFalse);
+
+      service.failUpdates = true;
+      await expectLater(controller.removeEntries('ls_aaaaaa00', {'e00000001'}), throwsStateError);
+      expect(controller.lists.single.entries.length, 3);
+    });
+
+    test('ライムが「メモ何あったっけ」に答えたらメモのカード、リストに足したら足した分だけ取り消せるカード', () async {
+      final llm = ScriptedLlm([
+        {'type': 'metadata'},
+        {
+          'type': 'client_action', 'action': 'planner.updated', 'actionId': 'a1',
+          'params': {
+            'item': shopping().toJson(),
+            'addedEntryIds': ['e00000001'],
+          },
+        },
+        {
+          'type': 'client_action', 'action': 'planner.show', 'actionId': 'a2',
+          'params': {
+            'items': [
+              {'itemId': 'mm_1', 'kind': 'memo', 'text': '駐輪場は3階'},
+            ],
+          },
+        },
+        {'type': 'text_chunk', 'text': '入れたよ'},
+        {'type': 'chat_end', 'full_text': '入れたよ'},
+      ]);
+      final chat = ChatProvider(llm, FakeUnity(), audioQueue: FakeAudioQueue(), clock: () => now);
+      addTearDown(chat.dispose);
+      await chat.sendUserMessage('買うものに牛乳足して');
+      final cards = chat.messages.map((m) => m.plannerCard).whereType<PlannerCard>().toList();
+      expect(cards.length, 2);
+      expect(cards[0].isListAddition, isTrue);
+      expect(cards[0].addedEntryIds, ['e00000001']);
+      expect(cards[1].type, PlannerCardType.show);
+      expect(cards[1].isActionable, isFalse);
+      expect(cards[1].showItems.single.text, '駐輪場は3階');
+    });
+  });
+
+  group('メモ帳の画面', () {
+    Future<(PlannerController, FakePlannerService)> pump(WidgetTester tester, Widget child) async {
+      final service = FakePlannerService()
+        ..items = [
+          const PlannerItem(
+            itemId: 'ls_aaaaaa00',
+            kind: 'list',
+            title: '買うもの',
+            date: '',
+            entries: [PlannerListEntry(id: 'e00000001', text: '牛乳')],
+          ),
+          const PlannerItem(itemId: 'mm_1', kind: 'memo', title: '', date: '', text: '駐輪場は3階'),
+        ];
+      final controller = PlannerController(
+        service: service,
+        notifier: FakeNotifier(),
+        notificationTaps: const Stream.empty(),
+        takeLaunchPayload: () => null,
+        notificationActions: const Stream.empty(),
+        takeLaunchAction: () => null,
+        requestPermission: () async {},
+        liveReminders: false,
+        clock: () => now,
+      );
+      addTearDown(controller.dispose);
+      await controller.refresh();
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChangeNotifierProvider.value(value: controller, child: child),
+        ),
+      ));
+      await tester.pump();
+      return (controller, service);
+    }
+
+    testWidgets('メモタブにメモとリストが出て、チェックできる', (tester) async {
+      final (controller, service) = await pump(
+        tester,
+        const PlannerPanel(initialTab: PlannerTab.memo, swipeToDelete: false),
+      );
+      expect(find.text('駐輪場は3階'), findsOneWidget);
+      expect(find.text('買うもの'), findsOneWidget);
+      await tester.tap(find.byType(Checkbox));
+      await tester.pump();
+      expect(controller.lists.single.entries.single.checked, isTrue);
+      expect(service.itemUpdates, hasLength(1));
+      await tester.pump(const Duration(milliseconds: 400));
+    });
+
+    testWidgets('メモのカードはリストをその場でチェックできる', (tester) async {
+      final list = PlannerItem.fromJson({
+        'itemId': 'ls_aaaaaa00', 'kind': 'list', 'title': '買うもの',
+        'entries': [{'id': 'e00000001', 'text': '牛乳'}],
+      });
+      final (controller, _) = await pump(
+        tester,
+        PlannerCardView(card: PlannerCard.show([list], at: now)),
+      );
+      expect(find.text('買うもの'), findsOneWidget);
+      expect(find.text('牛乳'), findsOneWidget);
+      await tester.tap(find.text('牛乳'));
+      await tester.pump();
+      expect(controller.lists.single.entries.single.checked, isTrue);
+      await tester.pump(const Duration(milliseconds: 400));
     });
   });
 

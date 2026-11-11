@@ -6,6 +6,8 @@
 // 知らせる文（lines）は、予定を入れたときにサーバーの LLM が作ったもの。
 // まだ作られていない（enriched=false）ときは、アプリの決まり文句を使う。
 //
+// 種類（kind）: event 予定 / timer タイマー / memo メモ / list チェックできるリスト。
+//
 // 日付と時刻は日本時間の「YYYY-MM-DD」「HH:mm」の文字列のまま持つ。
 // サーバーも日本時間で決めているので、端末の時間帯に合わせて変えない。
 
@@ -26,12 +28,15 @@ class PlannerItem {
     this.updatedAt = '',
     this.endsAt,
     this.durationSec = 0,
+    this.text = '',
+    this.entries = const [],
+    this.createdAt = '',
   });
 
   /// 'ev_…' のような ID
   final String itemId;
 
-  /// 'event'（予定）| 'timer'（タイマー）。メモはあとで足す
+  /// 'event'（予定）| 'timer'（タイマー）| 'memo'（メモ）| 'list'（リスト）
   final String kind;
 
   final String title;
@@ -64,8 +69,21 @@ class PlannerItem {
   /// タイマーの長さ（秒）
   final int durationSec;
 
+  /// メモの文
+  final String text;
+
+  /// リストの項目
+  final List<PlannerListEntry> entries;
+
+  final String createdAt;
+
   bool get isEvent => kind == 'event';
   bool get isTimer => kind == 'timer';
+  bool get isMemo => kind == 'memo';
+  bool get isList => kind == 'list';
+
+  /// リストのまだの項目
+  List<PlannerListEntry> get openEntries => entries.where((e) => !e.checked).toList();
   bool get hasTime => time.isNotEmpty;
 
   /// タイマーがまだ鳴っていないか
@@ -107,8 +125,36 @@ class PlannerItem {
       updatedAt: str(json['updatedAt']),
       endsAt: DateTime.tryParse(str(json['endsAt']))?.toUtc(),
       durationSec: json['durationSec'] is num ? (json['durationSec'] as num).toInt() : 0,
+      text: str(json['text']),
+      entries: json['entries'] is List
+          ? (json['entries'] as List)
+              .whereType<Map>()
+              .map((m) => PlannerListEntry.fromJson(m.map((k, v) => MapEntry(k.toString(), v))))
+              .where((e) => e.text.isNotEmpty)
+              .toList()
+          : const [],
+      createdAt: str(json['createdAt']),
     );
   }
+
+  PlannerItem copyWith({List<PlannerListEntry>? entries, String? text, String? title}) => PlannerItem(
+        itemId: itemId,
+        kind: kind,
+        title: title ?? this.title,
+        date: date,
+        time: time,
+        note: note,
+        importance: importance,
+        lines: lines,
+        enriched: enriched,
+        source: source,
+        updatedAt: updatedAt,
+        endsAt: endsAt,
+        durationSec: durationSec,
+        text: text ?? this.text,
+        entries: entries ?? this.entries,
+        createdAt: createdAt,
+      );
 
   Map<String, dynamic> toJson() => {
         'itemId': itemId,
@@ -124,6 +170,9 @@ class PlannerItem {
         'updatedAt': updatedAt,
         if (endsAt != null) 'endsAt': endsAt!.toUtc().toIso8601String(),
         if (durationSec > 0) 'durationSec': durationSec,
+        if (text.isNotEmpty) 'text': text,
+        if (isList) 'entries': entries.map((e) => e.toJson()).toList(),
+        if (createdAt.isNotEmpty) 'createdAt': createdAt,
       };
 
   /// 並べる順（タイマーが先で鳴る順 → 予定は日付 → 時刻。時刻なしはその日の先頭）
@@ -138,6 +187,44 @@ class PlannerItem {
     if (byDate != 0) return byDate;
     return a.time.compareTo(b.time);
   }
+}
+
+/// リストの項目1つ
+class PlannerListEntry {
+  const PlannerListEntry({
+    required this.id,
+    required this.text,
+    this.checked = false,
+    this.checkedAt = '',
+  });
+
+  /// 'e' + 16進8文字。新しく足すときは空（サーバーが付ける）
+  final String id;
+  final String text;
+  final bool checked;
+  final String checkedAt;
+
+  factory PlannerListEntry.fromJson(Map<String, dynamic> json) => PlannerListEntry(
+        id: json['id'] is String ? json['id'] as String : '',
+        text: json['text'] is String ? (json['text'] as String).trim() : '',
+        checked: json['checked'] == true,
+        checkedAt: json['checkedAt'] is String ? json['checkedAt'] as String : '',
+      );
+
+  Map<String, dynamic> toJson() => {
+        if (id.isNotEmpty) 'id': id,
+        'text': text,
+        'checked': checked,
+        if (checkedAt.isNotEmpty) 'checkedAt': checkedAt,
+      };
+
+  PlannerListEntry withChecked(bool value) => PlannerListEntry(
+        id: id,
+        text: text,
+        checked: value,
+        // 付けた時刻はサーバーが入れる
+        checkedAt: value ? checkedAt : '',
+      );
 }
 
 /// 「予定に入れる？」の中身（話に出ただけの予定）
@@ -256,4 +343,13 @@ abstract class PlannerService {
   );
 
   Future<List<PlannerItem>> deletePlannerItem(String itemId);
+
+  /// メモを手で足す
+  Future<List<PlannerItem>> addPlannerMemo(String text);
+
+  /// リストを手で作る
+  Future<List<PlannerItem>> addPlannerList(String title, List<String> entries);
+
+  /// メモ（text）やリスト（title / entries）を直す。entries は全部入れ替える
+  Future<List<PlannerItem>> updatePlannerItem(String itemId, Map<String, dynamic> changes);
 }
