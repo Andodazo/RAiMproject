@@ -351,12 +351,18 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
         // lazy: false にしているのは、画面を開かなくても通知を入れ直すため
         ChangeNotifierProvider(
           lazy: false,
-          create: (context) => PlannerController(
-            service: widget.raimService,
-            incoming: widget.raimService.incomingStream,
-            connection: widget.raimService.stateStream,
-            speak: context.read<ChatProvider>().speakReminder,
-          )..start(),
+          create: (context) {
+            final chat = context.read<ChatProvider>();
+            final planner = PlannerController(
+              service: widget.raimService,
+              incoming: widget.raimService.incomingStream,
+              connection: widget.raimService.stateStream,
+              speak: chat.speakReminder,
+            )..start();
+            // その日はじめての話しかけを、今日の予定のまとめにするか（朝のまとめ）
+            chat.hasPlansToday = planner.hasUpcomingEventsToday;
+            return planner;
+          },
         ),
         // 駅アラーム（乗車モード）。ライムが喋っている間はアナウンスを聞かない
         ChangeNotifierProvider(

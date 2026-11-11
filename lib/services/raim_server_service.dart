@@ -79,6 +79,7 @@ class RaimServerService
         LLMService,
         GreetingService,
         ReminderService,
+        BriefService,
         MemoryService,
         PlannerService {
   // ─── 設定値（コンストラクタで受け取る） ───
@@ -778,6 +779,12 @@ class RaimServerService
     );
   }
 
+  /// その日はじめての話しかけ（朝のまとめ）。今日の予定はサーバーが読み直す
+  @override
+  Stream<LLMResponse> sendBrief({String? threadId}) {
+    return _send('', threadId: threadId, greeting: true, brief: true);
+  }
+
   Stream<LLMResponse> _send(
     String userInput, {
     List<Map<String, dynamic>>? images,
@@ -785,6 +792,7 @@ class RaimServerService
     String? threadId,
     bool greeting = false,
     Map<String, String>? reminder,
+    bool brief = false,
   }) async* {
     // オフラインまたは切断中なら、送信前に再接続を試す
     if (_state == RaimConnectionState.offline ||
@@ -811,6 +819,7 @@ class RaimServerService
     if (greeting) {
       payload['type'] = 'greeting';
       if (reminder != null) payload['reminder'] = reminder;
+      if (brief) payload['brief'] = true;
     }
     // 画像がある場合は、S3参照形式を追加する。
     if (!greeting && images != null && images.isNotEmpty) {

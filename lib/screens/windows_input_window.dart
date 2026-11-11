@@ -703,7 +703,10 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                         mutedColor: _mut,
                         accentColor: _lime,
                         onOpenMemos: () {
-                          setState(() => _plannerTab = PlannerTab.memo);
+                          // 朝のまとめのカードは予定タブ、メモのカードはメモタブ
+                          final card = context.read<ChatProvider>().activePlannerCard;
+                          final events = card?.showItems.any((i) => i.isEvent) ?? false;
+                          setState(() => _plannerTab = events ? PlannerTab.schedule : PlannerTab.memo);
                           _setMode(_PanelMode.planner);
                         },
                       ),
@@ -1392,6 +1395,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     final item = card.item;
     if (card.type == PlannerCardType.show) {
       final first = card.showItems.first;
+      if (first.isEvent) return '📅 今日の予定 ${card.showItems.length}件';
       return first.isList ? '📝 ${first.title}' : '📝 メモ ${card.showItems.length}件';
     }
     if (item != null && item.isTimer) return '⏱ ${card.title}（${card.whenLabel}）';

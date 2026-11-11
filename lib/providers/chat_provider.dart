@@ -10,6 +10,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:raim_prototype/models/client_action.dart';
 import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/models/planner_card.dart';
@@ -149,6 +150,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     // テストでは、話しかけるかのくじと今の時刻を決め打ちにできる。
     double Function()? greetDice,
     DateTime Function()? clock,
+    // 今日これからの予定があるか（朝のまとめ）。PlannerController があとから入れる
+    bool Function()? hasPlansToday,
     // 【追加】テストでは、音声プラグインを使わない偽物のキューを渡せる。
     AudioPlayQueue? audioQueue,
   })  : _audioQueue = audioQueue ?? AudioPlayQueue(),
@@ -158,6 +161,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
         _isSpeechMuted = isSpeechMuted ?? (() => false),
         _greetOnLaunchEnabled = greetOnLaunchEnabled ?? (() => false),
         _greetDice = greetDice ?? Random().nextDouble,
+        hasPlansToday = hasPlansToday ?? (() => false),
         _clock = clock ?? DateTime.now {
     _audioAssembler = AudioChunkAssembler(
       onAudioReady: (audio) {
@@ -1005,12 +1009,59 @@ _toolStatus = null;
     if (_isLoading) return;
     // くじを外れたときも引き直さない（つなぎ直すたびに引くと、結局話しかけてしまう）
     _greetedGeneration = _accountGeneration;
+    // その日はじめてで今日の予定があれば、くじを引かずに朝のまとめ
+    if (service is BriefService && await _wantsBrief()) {
+      final brief = service as BriefService;
+      final ended = await _speakFirst(() => brief.sendBrief(threadId: _currentThreadId));
+      if (ended) await _rememberBrief();
+      return;
+    }
     if (!_shouldGreet()) {
       RaimLog.d('[ChatProvider] 今回は話しかけない');
       return;
     }
 
     await _speakFirst(() => service.sendGreeting(threadId: _currentThreadId));
+  }
+
+  // ============================================================
+  // 朝のまとめ
+  // ============================================================
+  // その日はじめて開いたとき、今日これからの予定があれば、くじを引かずに
+  // 話しかけを「今日の予定のまとめ」にする（安藤さんと決めた）。
+  // 「その日はじめて」は端末ごとに覚えておく。予定はサーバーが読み直すので、
+  // 端末の控えが古くても、予定が無ければ普段の話しかけになる。
+
+  /// 今日これからの予定があるか（main.dart で PlannerController につなぐ）
+  bool Function() hasPlansToday;
+
+  static const String _lastBriefKey = 'planner.lastBriefDay';
+
+  /// 日本時間の今日「YYYY-MM-DD」
+  String _todayJst() {
+    final jst = _clock().toUtc().add(const Duration(hours: 9));
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${jst.year}-${two(jst.month)}-${two(jst.day)}';
+  }
+
+  /// 今日まだまとめていなくて、今日これからの予定があるか
+  Future<bool> _wantsBrief() async {
+    try {
+      if (!hasPlansToday()) return false;
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_lastBriefKey) != _todayJst();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _rememberBrief() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_lastBriefKey, _todayJst());
+    } catch (_) {
+      // 覚えられなくても、次に開いたときにもう一度まとめるだけ
+    }
   }
 
   /// ライムから先に話す（話しかけ・予定の一言）。最後まで受け取れたら true。
