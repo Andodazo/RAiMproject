@@ -12,6 +12,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:raim_prototype/models/client_action.dart';
 import 'package:raim_prototype/models/message.dart';
+import 'package:raim_prototype/models/planner_card.dart';
+import 'package:raim_prototype/models/planner_item.dart';
 import 'package:raim_prototype/models/llm_response.dart';
 import 'package:raim_prototype/models/conversation_thread.dart';
 import 'package:raim_prototype/services/llm_service.dart';
@@ -343,6 +345,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
 
     // ストリーミング中メッセージを終了扱いにする
     _currentStreamingMessage = null;
+    // 返事のあとに、予定のカードを並べる
+    _flushPlannerCards();
     // 検索中表示を消す
     _toolStatus = null;
     // AI返答待ち状態を解除する
@@ -401,6 +405,119 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
         ClientAction(action: action, params: response.actionParams),
       );
     }
+    _collectPlannerCard(action, response.actionParams);
+  }
+
+  // ============================================================
+  // 予定のカード
+  // ============================================================
+  // ライムが予定を入れたら「入れたよ（取り消す）」、話に出ただけの予定なら
+  // 「予定に入れる？」をチャットに出す。返事の途中に届くので、返事を出し終えたら
+  // （chat_end で）返事のあとに並べる。返事が失敗したら出さない。
+
+  final List<PlannerCard> _pendingPlannerCards = [];
+
+  /// カードを出しておく時間（Windows の入力欄の上に出すもの）
+  static const Duration plannerCardLifetime = Duration(minutes: 10);
+
+  void _collectPlannerCard(String action, Map<String, dynamic> params) {
+    if (action == 'planner.added') {
+      final raw = params['item'];
+      if (raw is! Map) return;
+      final item = PlannerItem.fromJson(raw.map((k, v) => MapEntry(k.toString(), v)));
+      if (item.itemId.isEmpty) return;
+      _pendingPlannerCards.add(PlannerCard.added(item, at: _clock()));
+    } else if (action == 'planner.suggest') {
+      final candidate = PlannerCandidate.fromJson(params['candidate']);
+      if (candidate == null) return;
+      _pendingPlannerCards.add(PlannerCard.suggest(candidate, at: _clock()));
+    } else if (action == 'planner.deleted') {
+      // 入れた予定をライムが消したら、その予定のカードはもう押せない
+      final raw = params['item'];
+      final itemId = raw is Map ? raw['itemId'] : null;
+      if (itemId is String) _closeCardsForItem(itemId);
+    }
+  }
+
+  void _flushPlannerCards() {
+    if (_pendingPlannerCards.isEmpty) return;
+    for (final card in _pendingPlannerCards) {
+      _messages.add(Message(
+        text: '',
+        role: MessageRole.assistant,
+        timestamp: card.createdAt,
+        plannerCard: card,
+      ));
+    }
+    _pendingPlannerCards.clear();
+  }
+
+  void _closeCardsForItem(String itemId) {
+    for (var i = 0; i < _messages.length; i++) {
+      final card = _messages[i].plannerCard;
+      if (card?.item?.itemId == itemId && card!.isActionable) {
+        _messages[i] = _messages[i].copyWith(
+          plannerCard: card.withState(PlannerCardState.undone),
+        );
+      }
+    }
+  }
+
+  /// カードの状態を変える（取り消した・入れた・閉じた など）。変えたあとのカードを返す。
+  /// 会話を切り替えるなどでカードが無くなっていたら null
+  PlannerCard? updatePlannerCard(PlannerCard card, PlannerCardState state) {
+    final index = _messages.indexWhere((m) => identical(m.plannerCard, card));
+    if (index < 0) return null;
+    final next = card.withState(state);
+    _messages[index] = _messages[index].copyWith(plannerCard: next);
+    notifyListeners();
+    return next;
+  }
+
+  /// まだ押せる、いちばん新しいカード（Windows の入力欄の上に出す）。
+  /// 古くなったもの・押し終わったものは出さない
+  PlannerCard? get activePlannerCard {
+    final now = _clock();
+    for (final m in _messages.reversed) {
+      final card = m.plannerCard;
+      if (card == null) continue;
+      if (now.difference(card.createdAt) > plannerCardLifetime) return null;
+      if (card.state == PlannerCardState.dismissed) return null;
+      return card;
+    }
+    return null;
+  }
+
+  // ============================================================
+  // 予定を知らせる一言
+  // ============================================================
+
+  /// つながる前に頼まれた、予定の一言（通知を押して起動したとき）
+  ({String itemId, String slot})? _pendingReminder;
+
+  /// 予定を知らせる時刻に、ライムからその予定の一言を話してもらう。話せたら true。
+  ///
+  /// Windows で時刻が来たときと、予定の通知を押して開いたときに呼ぶ。
+  /// 通知を押したとき（[live] が false）は、まだつながっていなければ、つながったときに話す
+  /// （そのときの話しかけの代わりにする）。Windows で時刻が来たとき（[live] が true）は待たない
+  /// （話せなければ通知を出すので、あとから古い知らせを話さない）。
+  Future<bool> speakReminder(String itemId, String slot, {bool live = false}) async {
+    final Object service = _llmService;
+    if (service is! ReminderService) return false;
+    if (_connectionState != RaimConnectionState.connected) {
+      if (!live) _pendingReminder = (itemId: itemId, slot: slot);
+      return false;
+    }
+    if (_isLoading) return false;
+    // 予定の一言を話したら、アプリを開いたときの話しかけはしない
+    _greetedGeneration = _accountGeneration;
+    return _speakFirst(
+      () => service.sendReminder(
+        itemId: itemId,
+        slot: slot,
+        threadId: _currentThreadId,
+      ),
+    );
   }
 
   //音声Base64を再生キューに入れる処理
@@ -579,6 +696,7 @@ _toolStatus = null;
     _unityBridge.sendChatEnd();
     _messages.removeWhere(_pendingResponseMessages.contains);
     _pendingResponseMessages.clear();
+    _pendingPlannerCards.clear();
     _currentStreamingMessage = null;
     _isThinking = false;
     _isUsingTool = false;
@@ -597,6 +715,7 @@ _toolStatus = null;
     // 今回の返答だけを削除する。過去の返答やユーザーの発言は残す。
     _messages.removeWhere(_pendingResponseMessages.contains);
     _pendingResponseMessages.clear();
+    _pendingPlannerCards.clear();
 
     _currentStreamingMessage = null;
     _isLoading = false;
@@ -839,6 +958,13 @@ _toolStatus = null;
     final generation = _accountGeneration;
     await _restoreLastThread();
     if (generation != _accountGeneration) return;
+    // 予定の通知を押して開いたなら、話しかけの代わりにその予定の一言を話す
+    final reminder = _pendingReminder;
+    if (reminder != null) {
+      _pendingReminder = null;
+      await speakReminder(reminder.itemId, reminder.slot);
+      return;
+    }
     await greetOnLaunch();
   }
 
@@ -864,13 +990,19 @@ _toolStatus = null;
       return;
     }
 
+    await _speakFirst(() => service.sendGreeting(threadId: _currentThreadId));
+  }
+
+  /// ライムから先に話す（話しかけ・予定の一言）。最後まで受け取れたら true。
+  Future<bool> _speakFirst(Stream<LLMResponse> Function() send) async {
     final generation = _conversationGeneration;
     _prepareForReply();
     _isLoading = true;
     notifyListeners();
+    var ended = false;
     try {
-      final ended = await _receiveReply(
-        service.sendGreeting(threadId: _currentThreadId),
+      ended = await _receiveReply(
+        send(),
         generation,
         // 古いサーバーは話しかけを知らず、本文が無いので入力不正で断る。
         // 利用者は何も頼んでいないので、そのときもエラーは出さない
@@ -883,6 +1015,7 @@ _toolStatus = null;
       }
     } catch (e) {
       RaimLog.d('[ChatProvider] 話しかけに失敗: $e');
+      ended = false;
       if (generation == _conversationGeneration) _discardCurrentResponse();
     } finally {
       if (generation == _conversationGeneration) {
@@ -891,6 +1024,7 @@ _toolStatus = null;
         notifyListeners();
       }
     }
+    return ended;
   }
 
   /// 話しかけるか。開いている会話の最後のメッセージから、どれだけ空いたかで決める。
@@ -1027,6 +1161,8 @@ _toolStatus = null;
 
     // 会話本文・会話ID・会話一覧を消す。
     _messages.clear();
+    _pendingPlannerCards.clear();
+    _pendingReminder = null;
     _currentThreadId = null;
     _threads = [];
 
@@ -1269,6 +1405,7 @@ _toolStatus = null;
     _currentStreamingMessage = null;
     // 【追加】今回の返答の記録を新しく始める。
     _pendingResponseMessages.clear();
+    _pendingPlannerCards.clear();
     _toolStatus = null;
     // ここに追加
     _isThinking = false;

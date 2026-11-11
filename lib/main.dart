@@ -26,11 +26,13 @@ import 'package:provider/provider.dart';
 import 'package:raim_prototype/config/raim_config.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
+import 'package:raim_prototype/providers/planner_controller.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/providers/station_alarm_controller.dart';
 import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/screens/splash_screen.dart';
+import 'package:raim_prototype/services/app_notifications.dart';
 import 'package:raim_prototype/services/approx_location.dart';
 import 'package:raim_prototype/services/auth_service.dart';
 import 'package:raim_prototype/services/transcribe_stt_service.dart';
@@ -121,7 +123,12 @@ void main() async {
   // （iPhone・Android）だけ、ライムが「◯◯で起こして」に応えられるようになる
   raimService.features = [
     if (StationAlarmController.isSupported) 'station_alarm',
+    // 予定の手帳（「金曜10時に面接、入れといて」）。どの端末でも使える
+    'planner',
   ];
+  // 端末の通知の準備（駅アラームと予定の知らせで共通）。
+  // 予定の通知を押して起動したかどうかも、ここで分かる
+  await AppNotifications.ensureInitialized();
   // 場所を言わずに天気を聞いたとき用の、だいたいの現在地（設定で ON のときだけ）
   // 音量ボタンで声を消しているときは、サーバーに読み上げを作らせない
   raimService.speechEnabledGetter = () => !voiceSettings.speechMuted;
@@ -338,6 +345,18 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
               idTokenGetter: widget.authProvider.getValidIdToken,
             ),
           ),
+        ),
+        // 予定とメモ。一覧を持ち、端末の通知を予約し直す。
+        // 予定の通知を押したとき・Windows で時刻が来たときは、ライムが予定の一言を話す。
+        // lazy: false にしているのは、画面を開かなくても通知を入れ直すため
+        ChangeNotifierProvider(
+          lazy: false,
+          create: (context) => PlannerController(
+            service: widget.raimService,
+            incoming: widget.raimService.incomingStream,
+            connection: widget.raimService.stateStream,
+            speak: context.read<ChatProvider>().speakReminder,
+          )..start(),
         ),
         // 駅アラーム（乗車モード）。ライムが喋っている間はアナウンスを聞かない
         ChangeNotifierProvider(

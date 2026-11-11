@@ -30,6 +30,18 @@ abstract class GreetingService {
   Stream<LLMResponse> sendGreeting({String? threadId});
 }
 
+/// 予定を知らせる時刻に、ライムから予定の一言を話してもらえるサービス。
+///
+/// GreetingService と同じ理由で分けている（話しかけのテスト用の偽物に手を入れずに済む）。
+abstract class ReminderService {
+  /// [slot] は 'eve'（前の日の夜）/ 'before'（1時間前）/ 'morning'（当日の朝）
+  Stream<LLMResponse> sendReminder({
+    required String itemId,
+    required String slot,
+    String? threadId,
+  });
+}
+
 // ─────────────────────────────────────────────
 // MockLLMService（テスト用、Stream対応）
 // ─────────────────────────────────────────────

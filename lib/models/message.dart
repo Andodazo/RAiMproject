@@ -1,4 +1,6 @@
 //全体Messageの定義
+import 'package:raim_prototype/models/planner_card.dart';
+
 //Messageの型定義
 class Message {
   final String text;
@@ -9,6 +11,10 @@ class Message {
   final List<String>? selectedImagePaths;
   final Map<String, double> emotions;
   final double overallIntensity;
+
+  /// 予定のカード（入れたよ・予定に入れる？）。ふつうの発言では null。
+  /// カードのときは text が空で、ライムの返事のあとに並ぶ
+  final PlannerCard? plannerCard;
 //Messageの戻り値
   Message({
     required this.text,
@@ -19,6 +25,7 @@ class Message {
     this.selectedImagePaths,
     this.emotions = const {'neutral': 1.0},
     this.overallIntensity = 0.5,
+    this.plannerCard,
   });
 
   // ============================================================
@@ -41,6 +48,7 @@ class Message {
     List<String>? selectedImagePaths,
     Map<String, double>? emotions,
     double? overallIntensity,
+    PlannerCard? plannerCard,
   }) {
     return Message(
       text: text ?? this.text,
@@ -51,6 +59,7 @@ class Message {
       selectedImagePaths: selectedImagePaths ?? this.selectedImagePaths,
       emotions: emotions ?? this.emotions,
       overallIntensity: overallIntensity ?? this.overallIntensity,
+      plannerCard: plannerCard ?? this.plannerCard,
     );
   }
 }
