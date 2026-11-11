@@ -42,6 +42,13 @@ abstract class ReminderService {
   });
 }
 
+/// その日はじめての話しかけで、今日の予定をまとめてもらえるサービス（朝のまとめ）。
+///
+/// GreetingService と同じ理由で分けている。サーバーは今日の予定が無ければ普段の話しかけにする。
+abstract class BriefService {
+  Stream<LLMResponse> sendBrief({String? threadId});
+}
+
 // ─────────────────────────────────────────────
 // MockLLMService（テスト用、Stream対応）
 // ─────────────────────────────────────────────

@@ -139,6 +139,10 @@ class PlannerCardView extends StatelessWidget {
   /// メモのカードを1行にしたもの（Windows の入力欄の上）
   String _showSummary() {
     final items = card.showItems;
+    final events = items.where((i) => i.isEvent).toList();
+    if (events.isNotEmpty) {
+      return '今日の予定: ${events.take(4).map(_eventLine).join('・')}${events.length > 4 ? ' ほか' : ''}';
+    }
     final memos = items.where((i) => i.isMemo).toList();
     if (memos.isNotEmpty) {
       return 'メモ ${memos.length}件「${memos.first.text}」${memos.length > 1 ? ' ほか' : ''}';
@@ -148,9 +152,14 @@ class PlannerCardView extends StatelessWidget {
     return '${list.title}: ${open.isEmpty ? '全部チェック済み' : open.take(5).join('・')}';
   }
 
-  /// メモのカード（スマホのチャットの中）。リストはその場でチェックできる
+  /// 今日の予定の1行「15:00 バイト」
+  static String _eventLine(PlannerItem e) => e.hasTime ? '${e.time} ${e.title}' : e.title;
+
+  /// メモのカード（スマホのチャットの中）。リストはその場でチェックできる。
+  /// 朝のまとめでは、今日の予定を全部出す
   Widget _showCard(BuildContext context) {
     final items = card.showItems;
+    final events = items.where((i) => i.isEvent).toList();
     final memos = items.where((i) => i.isMemo).toList();
     final lists = items.where((i) => i.isList).toList();
     final title = TextStyle(color: textColor, fontSize: 13.5, fontWeight: FontWeight.w600);
@@ -168,6 +177,28 @@ class PlannerCardView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (events.isNotEmpty) ...[
+              Row(children: [
+                Icon(Icons.today_outlined, size: 16, color: accentColor),
+                const SizedBox(width: 6),
+                Text('今日の予定', style: title),
+              ]),
+              const SizedBox(height: 4),
+              for (final e in events)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 48,
+                        child: Text(e.hasTime ? e.time : '終日', style: TextStyle(color: mutedColor, fontSize: 12.5)),
+                      ),
+                      Expanded(child: Text(e.title, style: TextStyle(color: textColor, fontSize: 13, height: 1.35))),
+                    ],
+                  ),
+                ),
+            ],
             if (memos.isNotEmpty) ...[
               Row(children: [
                 Icon(Icons.sticky_note_2_outlined, size: 16, color: accentColor),

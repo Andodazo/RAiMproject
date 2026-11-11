@@ -111,6 +111,14 @@ class PlannerController extends ChangeNotifier {
   List<PlannerItem> get items => _items;
   List<PlannerItem> get events => _items.where((i) => i.isEvent).toList();
 
+  /// 今日これからの予定があるか（朝のまとめに使う。日付だけの予定と、まだ始まっていない予定）
+  bool hasUpcomingEventsToday() {
+    final jst = _clock().toUtc().add(const Duration(hours: 9));
+    final today = plannerDateString(jst);
+    final clock = '${jst.hour.toString().padLeft(2, '0')}:${jst.minute.toString().padLeft(2, '0')}';
+    return _items.any((i) => i.isEvent && i.date == today && (!i.hasTime || i.time.compareTo(clock) >= 0));
+  }
+
   /// メモ（新しい順）
   List<PlannerItem> get memos =>
       _items.where((i) => i.isMemo).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));

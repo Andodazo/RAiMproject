@@ -152,6 +152,39 @@ class FakePlannerService implements PlannerService {
   }
 }
 
+class BriefLlm extends ScriptedLlm implements GreetingService, BriefService {
+  BriefLlm() : super(const []);
+
+  int briefs = 0;
+  int greetings = 0;
+
+  @override
+  Stream<LLMResponse> sendGreeting({String? threadId}) async* {
+    greetings++;
+  }
+
+  @override
+  Stream<LLMResponse> sendBrief({String? threadId}) async* {
+    briefs++;
+    for (final raw in const [
+      {'type': 'metadata'},
+      {
+        'type': 'client_action', 'action': 'planner.show', 'actionId': 'b1',
+        'params': {
+          'brief': true,
+          'items': [
+            {'itemId': 'ev_1', 'kind': 'event', 'title': 'バイト', 'date': '2026-11-11', 'time': '15:00'},
+          ],
+        },
+      },
+      {'type': 'text_chunk', 'text': '今日は15時からバイトだね'},
+      {'type': 'chat_end', 'full_text': '今日は15時からバイトだね'},
+    ]) {
+      yield LLMResponse.fromJson(raw);
+    }
+  }
+}
+
 class ReminderLlm extends ScriptedLlm implements GreetingService, ReminderService {
   ReminderLlm(super.script);
 
@@ -642,6 +675,55 @@ void main() {
       await tester.pump();
       expect(controller.lists.single.entries.single.checked, isTrue);
       await tester.pump(const Duration(milliseconds: 400));
+    });
+  });
+
+  group('朝のまとめ', () {
+    test('今日これからの予定があるか（過ぎた時刻の予定は数えない）', () async {
+      final service = FakePlannerService()..items = [event('ev_a', '2026-11-11', time: '09:00')];
+      final controller = PlannerController(
+        service: service,
+        notifier: FakeNotifier(),
+        notificationTaps: const Stream.empty(),
+        takeLaunchPayload: () => null,
+        notificationActions: const Stream.empty(),
+        takeLaunchAction: () => null,
+        requestPermission: () async {},
+        liveReminders: false,
+        clock: () => now, // 11:30 JST
+      );
+      addTearDown(controller.dispose);
+      await controller.refresh();
+      expect(controller.hasUpcomingEventsToday(), isFalse);
+      service.items = [...service.items, event('ev_b', '2026-11-11')];
+      await controller.refresh();
+      expect(controller.hasUpcomingEventsToday(), isTrue);
+    });
+
+    test('その日はじめてで予定があれば、くじを引かずにまとめを頼む。2回目は頼まない', () async {
+      final llm = BriefLlm();
+      ChatProvider build() => ChatProvider(
+            llm,
+            FakeUnity(),
+            audioQueue: FakeAudioQueue(),
+            clock: () => now,
+            greetOnLaunchEnabled: () => true,
+            greetDice: () => 0.99, // くじは外れ
+            hasPlansToday: () => true,
+          );
+      final first = build();
+      addTearDown(first.dispose);
+      await first.greetOnLaunch();
+      expect(llm.briefs, 1);
+      expect(llm.greetings, 0);
+      final card = first.messages.last.plannerCard!;
+      expect(card.type, PlannerCardType.show);
+      expect(card.showItems.single.title, 'バイト');
+
+      final second = build();
+      addTearDown(second.dispose);
+      await second.greetOnLaunch();
+      expect(llm.briefs, 1);
     });
   });
 
