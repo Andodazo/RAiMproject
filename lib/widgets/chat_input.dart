@@ -11,9 +11,7 @@ import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
-// 開発検証用
 import 'package:raim_prototype/providers/auth_provider.dart';
-import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/mascot_window_service.dart';
 import 'package:raim_prototype/services/passkey_registration.dart';
@@ -461,18 +459,12 @@ class ChatMenuButton extends StatefulWidget {
   /// ライムが覚えていることを開く。null ならメニューに出さない
   final VoidCallback? onMemory;
   final bool isWide;
-  //開発検証用---------------------------------------------------
   @override
   State<ChatMenuButton> createState() => _ChatMenuButtonState();
 }
 
 class _ChatMenuButtonState extends State<ChatMenuButton> {
-  bool _isSwitching = false;
   bool _passkeyRegistered = false;
-  // 接続先は RaimConfig に集約した（3箇所に散っていたのをやめる）
-  static const String awsUrl = RaimConfig.serverUrl;
-  static const String localUrl = RaimConfig.localServerUrl;
-  //-----------------------------------------------------------
 
   @override
   void initState() {
@@ -543,11 +535,6 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
 
   @override
   Widget build(BuildContext context) {
-    // --現在の RaimServerService から接続先URLを取得(開発検証用)
-    final raimService = context.read<RaimServerService>();
-    final currentUrl = raimService.serverUrl;
-    final isAws = RaimConfig.isAwsUrl(currentUrl);
-    //--------------------------------------------------------
     return PopupMenuButton<String>(
       tooltip: 'メニュー',
       color: Colors.black.withValues(alpha: 0.88),
@@ -555,58 +542,12 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
       onOpened: _removeFocus,
       onCanceled: _removeFocus,
       onSelected: (value) async {
-        //asyncは開発検証を消すときに消す
         _removeFocus();
 
         switch (value) {
-          //開発検証用------------------------------
-          case 'switch_server':
-            // 【追加・課題5】無効なビルドでは、処理を開始しない。
-            if (!RaimConfig.enableServerSwitch) return;
-            // すでに切り替え中ならタップを無視（ロック）
-            if (_isSwitching) return;
-            _isSwitching = true;
-
-            try {
-              final currentUrl = raimService.serverUrl;
-              final isAws = RaimConfig.isAwsUrl(currentUrl);
-              final targetUrl = isAws ? localUrl : awsUrl;
-              // 古いポップアップを全て消去してから「切り替え中」を出す
-              ScaffoldMessenger.of(context).clearSnackBars();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('サーバー切り替え中...'),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-
-              final authProvider = context.read<AuthProvider>();
-              final token = await authProvider.getValidAccessToken();
-
-              // 実際の切り替え処理
-              await raimService.switchServer(targetUrl, accessToken: token);
-
-              if (context.mounted) {
-                setState(() {});
-                //古いポップアップを消去してから「完了通知」を出す
-                ScaffoldMessenger.of(context).clearSnackBars();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      isAws ? 'Tailscale に切り替えました' : 'AWS に切り替えました',
-                    ),
-                  ),
-                );
-              }
-            } finally {
-              // 成功・失敗にかかわらず、処理が終わったら必ずロック解除
-              _isSwitching = false;
-            }
-            break;
           case 'credits':
             _showCreditsDialog(context);
             break;
-          //widgetは検証が終わったら消す
           case 'settings':
             widget.onSettings();
             break;
@@ -625,44 +566,6 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
         }
       },
       itemBuilder: (context) => /*const*/ [
-        // 接続先切り替えメニュー項目(開発検証用)
-        // 【追加】有効なビルドだけ、項目をリストへ入れる。
-        if (RaimConfig.enableServerSwitch)
-          PopupMenuItem(
-            value: 'switch_server',
-            child: Row(
-              children: [
-                Icon(
-                  Icons.swap_horiz_rounded,
-                  color: isAws ? const Color(0xFFB7F35A) : Colors.orangeAccent,
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      '接続先切り替え',
-                      style: TextStyle(color: Colors.white, fontSize: 13),
-                    ),
-                    Text(
-                      isAws ? '現在: AWS (CloudFront)' : '現在: Tailscale / Local',
-                      style: TextStyle(
-                        color: isAws
-                            ? const Color(0xFFB7F35A)
-                            : Colors.orangeAccent,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        //------------------------------------
-        // 【追加】項目を隠したら、この区切り線も隠す。
-        if (RaimConfig.enableServerSwitch) const PopupMenuDivider(),
         // メニューに「クレジット表記」ボタンを追加
         PopupMenuItem<String>(
           value: 'credits',
