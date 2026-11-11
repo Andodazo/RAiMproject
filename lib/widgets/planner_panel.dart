@@ -256,6 +256,13 @@ class _PlannerPanelState extends State<PlannerPanel> {
             ...past.map((e) => _row(e, planner, dim: true)),
           ],
         ],
+        if (planner.followUps.isNotEmpty) ...[
+          Divider(color: _p.line, height: 17),
+          _label('あとで聞くこと'),
+          _note('話に出たけれど予定には入れなかったものです。終わったころにライムが「どうだった？」と'
+              '聞くことがあります。7日たつと消えます。'),
+          ...planner.followUps.map((f) => _followUpRow(f, planner)),
+        ],
         const SizedBox(height: 8),
     ];
   }
@@ -449,6 +456,37 @@ class _PlannerPanelState extends State<PlannerPanel> {
         }
       },
       child: row,
+    );
+  }
+
+  /// あとで聞くことの1行（小さく出す。消すときは聞き返さない）
+  Widget _followUpRow(PlannerItem item, PlannerController planner) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 52 * _fs,
+            child: Text(item.dateLabel, style: TextStyle(color: _p.muted, fontSize: 11 * _fs)),
+          ),
+          Expanded(
+            child: Text(
+              item.title,
+              style: TextStyle(color: _p.muted, fontSize: 12 * _fs, height: 1.35),
+            ),
+          ),
+          IconButton(
+            tooltip: '消す',
+            icon: const Icon(Icons.close, size: 14),
+            color: _p.muted,
+            splashRadius: 14,
+            visualDensity: VisualDensity.compact,
+            onPressed: _busy
+                ? null
+                : () => _run(() => planner.deleteItem(item.itemId), '消せませんでした。もう一度試してください'),
+          ),
+        ],
+      ),
     );
   }
 
