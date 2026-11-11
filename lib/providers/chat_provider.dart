@@ -451,6 +451,11 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
       final items = raw.map(itemOf).whereType<PlannerItem>().toList();
       if (items.isEmpty) return;
       _pendingPlannerCards.add(PlannerCard.show(items, at: _clock()));
+    } else if (action == 'history.found') {
+      // 「この前話したお店なんだっけ」: 見つけた会話を開くカード
+      final talk = PastTalkRef.fromJson(params);
+      if (talk == null) return;
+      _pendingPlannerCards.add(PlannerCard.talk(talk, at: _clock()));
     } else if (action == 'planner.suggest') {
       final candidate = PlannerCandidate.fromJson(params['candidate']);
       if (candidate == null) return;
@@ -878,6 +883,8 @@ _toolStatus = null;
       _currentThreadId = threadId;
       _messages.clear();
       _currentStreamingMessage = null;
+      // 前の会話のカードで送った先は、開き直したら目立たせない
+      _focusAt = null;
 
       if (history != null) {
         _historyCursor = history.hasMore ? history.startIndex : null;
@@ -901,6 +908,57 @@ _toolStatus = null;
         notifyListeners();
       }
     }
+  }
+
+  // ==========================================================================
+  // 前の会話を開く（「この前話したお店なんだっけ」のカード）
+  // ==========================================================================
+
+  int _focusSerial = 0;
+  DateTime? _focusAt;
+
+  /// 送り先の発言が変わるたびに増える（画面はこれを見てスクロールする）
+  int get focusSerial => _focusSerial;
+
+  /// 送り先の発言の時刻（目立たせる）
+  DateTime? get focusAt => _focusAt;
+
+  /// 送り先の発言の位置。見つからなければ null
+  int? get focusIndex {
+    final at = _focusAt;
+    if (at == null) return null;
+    final index = _messages.indexWhere((m) => m.plannerCard == null && _sameMoment(m.timestamp, at));
+    return index < 0 ? null : index;
+  }
+
+  static bool _sameMoment(DateTime a, DateTime b) => a.difference(b).inMilliseconds.abs() <= 1000;
+
+  bool _hasMessageAt(DateTime at) =>
+      _messages.any((m) => m.plannerCard == null && _sameMoment(m.timestamp, at));
+
+  /// 前の会話を開いて、その発言まで送る。開けて発言も見つかったら true。
+  ///
+  /// サーバーは新しい方から少しずつしか返さないので、見つかるまで古い方を読み足す（上限あり）。
+  Future<bool> openPastTalk(PastTalkRef talk) async {
+    final target = DateTime.tryParse(talk.at);
+    if (target == null) return false;
+    if (talk.threadId != _currentThreadId) {
+      await switchThread(talk.threadId);
+      if (_currentThreadId != talk.threadId) return false;
+    }
+    for (var i = 0; i < 10 && !_hasMessageAt(target) && _hasMoreHistory; i++) {
+      final before = _messages.length;
+      await loadOlderMessages();
+      if (_messages.length == before) break;
+    }
+    if (!_hasMessageAt(target)) {
+      RaimLog.d('[ChatProvider] 前の会話は開けたが、その発言が見つかりませんでした');
+      return false;
+    }
+    _focusAt = target;
+    _focusSerial++;
+    notifyListeners();
+    return true;
   }
 
   /// スレッドを削除する

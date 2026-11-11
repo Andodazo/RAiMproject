@@ -376,6 +376,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     // 修正: 展示用タイマー・ライフサイクル監視の後始末も廃止した。
     trayManager.removeListener(this);
     _callingTimer?.cancel();
+    _logScroll.dispose();
     _unitySub?.cancel();
     _wakeSub?.cancel();
     _utteranceSub?.cancel();
@@ -709,6 +710,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                           setState(() => _plannerTab = events ? PlannerTab.schedule : PlannerTab.memo);
                           _setMode(_PanelMode.planner);
                         },
+                        // 前の会話を開いたら、会話ログでその発言を見せる
+                        onOpenedTalk: () => _setMode(_PanelMode.log),
                       ),
                     ),
                   )
@@ -1393,6 +1396,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   /// 会話の記録に出す、予定のカードの1行
   static String _plannerLogText(PlannerCard card) {
     final item = card.item;
+    if (card.type == PlannerCardType.talk) return '💬 ${card.talk?.label ?? '前の会話'}';
     if (card.type == PlannerCardType.show) {
       final first = card.showItems.first;
       if (first.isEvent) return '📅 今日の予定 ${card.showItems.length}件';
@@ -1474,8 +1478,42 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   // ---------- 会話ログ ----------
 
+  /// 前の会話のカードで開いた発言（ChatProvider.focusSerial）。処理したものは繰り返さない
+  int _handledLogFocus = 0;
+  final ScrollController _logScroll = ScrollController();
+  final GlobalKey _logFocusKey = GlobalKey();
+
+  /// 会話ログを開いた発言まで送る（新しい順に並べた reverse の一覧なので、下からの位置で見当をつける）
+  void _scheduleLogFocus(int reversedIndex, int count) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_logScroll.hasClients) return;
+      final position = _logScroll.position;
+      final ratio = count <= 1 ? 0.0 : reversedIndex / (count - 1);
+      _logScroll.jumpTo((position.maxScrollExtent * ratio).clamp(0.0, position.maxScrollExtent));
+      void ensure(int triesLeft) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final focusContext = _logFocusKey.currentContext;
+          if (focusContext != null) {
+            Scrollable.ensureVisible(focusContext, alignment: 0.5);
+          } else if (triesLeft > 0) {
+            ensure(triesLeft - 1);
+          }
+        });
+      }
+
+      ensure(3);
+    });
+  }
+
   Widget _buildLog() {
-    final messages = context.watch<ChatProvider>().messages;
+    final chat = context.watch<ChatProvider>();
+    final messages = chat.messages;
+    final focusIndex = chat.focusIndex;
+    if (chat.focusSerial != _handledLogFocus && focusIndex != null) {
+      _handledLogFocus = chat.focusSerial;
+      _scheduleLogFocus(messages.length - 1 - focusIndex, messages.length);
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1500,13 +1538,16 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                   ),
                 )
               : ListView.builder(
+                  controller: _logScroll,
                   reverse: true,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   itemCount: messages.length,
                   itemBuilder: (_, i) {
                     final m = messages[messages.length - 1 - i];
                     final isUser = m.role == MessageRole.user;
+                    final focused = focusIndex == messages.length - 1 - i;
                     return Padding(
+                      key: focused ? _logFocusKey : null,
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Align(
                         alignment: isUser
@@ -1521,6 +1562,8 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                           decoration: BoxDecoration(
                             color: isUser ? const Color(0xFF2E4A1E) : _bg2,
                             borderRadius: BorderRadius.circular(8),
+                            // 前の会話のカードで開いた発言
+                            border: focused ? Border.all(color: _lime) : null,
                           ),
                           child: Text(
                             // 予定のカードは本文が無いので、何を入れたかを出す

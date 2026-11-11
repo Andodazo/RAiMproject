@@ -1,6 +1,7 @@
 // lib/widgets/planner_card_view.dart
 //
 // チャットに出す予定のカード（入れたよ・予定に入れる？・タイマーを始めたよ・メモ）。
+// 「この前話したお店なんだっけ」で見つけた会話を開くカードもここで出す。
 //
 // スマホはチャットの中に、Windows は入力欄の上に（compact）出す。
 // 押したときの処理（取り消す・入れる）はここで PlannerController を呼び、
@@ -27,10 +28,14 @@ class PlannerCardView extends StatelessWidget {
     this.background = const Color(0xFFF1F6E8),
     this.borderColor = const Color(0xFFCFE3A8),
     this.onOpenMemos,
+    this.onOpenedTalk,
   });
 
   /// メモのカードで「開く」を押したとき（Windows は入力欄の上で中身を出せないので、メモタブを開く）
   final VoidCallback? onOpenMemos;
+
+  /// 前の会話を開いたあと（Windows は会話ログを開いて見せる）
+  final VoidCallback? onOpenedTalk;
 
   final PlannerCard card;
 
@@ -50,7 +55,11 @@ class PlannerCardView extends StatelessWidget {
     final actions = _actions(context);
     final content = Row(
       children: [
-        Icon(Icons.event_note_outlined, size: compact ? 16 : 18, color: accentColor),
+        Icon(
+          card.type == PlannerCardType.talk ? Icons.history : Icons.event_note_outlined,
+          size: compact ? 16 : 18,
+          color: accentColor,
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
@@ -87,6 +96,10 @@ class PlannerCardView extends StatelessWidget {
 
   String _message() {
     if (card.type == PlannerCardType.show) return _showSummary();
+    if (card.type == PlannerCardType.talk) {
+      final label = card.talk?.label ?? '前の会話';
+      return card.state == PlannerCardState.failed ? '$label を開けなかった' : label;
+    }
     final item = card.item;
     if (item != null && item.isTimer) return _timerMessage(item);
     if (item != null && item.isMemo) {
@@ -106,6 +119,7 @@ class PlannerCardView extends StatelessWidget {
       (PlannerCardType.suggest, PlannerCardState.failed) => '入れられなかった。もう一度押してね',
       (PlannerCardType.suggest, _) => '予定に入れる？ $what',
       (PlannerCardType.show, _) => _showSummary(),
+      (PlannerCardType.talk, _) => card.talk?.label ?? '前の会話',
     };
   }
 
@@ -266,6 +280,9 @@ class PlannerCardView extends StatelessWidget {
     if (card.type == PlannerCardType.added) {
       return [_button('取り消す', () => _undo(context)), if (compact) _close(context)];
     }
+    if (card.type == PlannerCardType.talk) {
+      return [_button('開く', () => _openTalk(context)), if (compact) _close(context)];
+    }
     return [_button('入れる', () => _accept(context)), _close(context)];
   }
 
@@ -311,6 +328,23 @@ class PlannerCardView extends StatelessWidget {
       RaimLog.d('[PlannerCard] 取り消せませんでした: ${e.runtimeType}');
       if (busy != null) chat.updatePlannerCard(busy, PlannerCardState.failed);
     }
+  }
+
+  /// 見つけた前の会話を開いて、その発言まで送る。何度でも開ける
+  Future<void> _openTalk(BuildContext context) async {
+    final chat = context.read<ChatProvider>();
+    final talk = card.talk;
+    if (talk == null) return;
+    final busy = chat.updatePlannerCard(card, PlannerCardState.busy);
+    bool opened = false;
+    try {
+      opened = await chat.openPastTalk(talk);
+    } catch (e) {
+      RaimLog.d('[PlannerCard] 前の会話を開けませんでした: ${e.runtimeType}');
+    }
+    // 別の会話を開くと、このカードは画面から消える（前の会話にはカードが無い）
+    if (busy != null) chat.updatePlannerCard(busy, opened ? PlannerCardState.open : PlannerCardState.failed);
+    if (opened) onOpenedTalk?.call();
   }
 
   Future<void> _accept(BuildContext context) async {
