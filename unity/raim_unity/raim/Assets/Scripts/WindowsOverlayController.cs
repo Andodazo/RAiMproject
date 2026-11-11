@@ -121,23 +121,34 @@ public class WindowsOverlayController : MonoBehaviour
     // 修正（9）: 展示表示の退避状態を持たず、通常の透過マスコットだけを使う。
 
     private Camera Cam => _cam != null ? _cam : (_cam = Camera.main);
+    private RAiM.Presentation.AvatarPresentation avatarPresentation;
+    private int avatarChangedFrame = -1;
+    private void OnAvatarChanged() { avatarChangedFrame = Time.frameCount; }
+    private void OnDestroy() {
+        if (avatarPresentation != null) avatarPresentation.Changed -= OnAvatarChanged;
+    }
+
 
     // 3D は奥行きがあるため、バウンディングボックスの8頂点を画面へ投影する。
     private bool TryGetCharacterScreenBounds(Camera cam, out Vector3 min, out Vector3 max)
     {
         min = max = default;
         if (cam == null) return false;
-        var companion = characterController != null ? characterController.Companion : null;
-        if (companion == null)
-        {
-            var sprite = Sprite;
-            if (sprite == null) return false;
-            min = cam.WorldToScreenPoint(sprite.bounds.min);
-            max = cam.WorldToScreenPoint(sprite.bounds.max);
-            return true;
+        Bounds bounds;
+        var presentation = characterController != null ? characterController.Presentation : null;
+        if (presentation != null) {
+            if (!presentation.TryGetWorldBounds(out bounds)) return false;
+        } else {
+            var companion = characterController != null ? characterController.Companion : null;
+            if (companion == null) {
+                var sprite = Sprite;
+                if (sprite == null) return false;
+                bounds = sprite.bounds;
+            } else {
+                if (!companion.Ready) return false;
+                bounds = companion.ModelBounds;
+            }
         }
-        if (!companion.Ready) return false;
-        var bounds = companion.ModelBounds;
         min = Vector3.one * float.PositiveInfinity;
         max = Vector3.one * float.NegativeInfinity;
         for (int x = 0; x < 2; x++) for (int y = 0; y < 2; y++) for (int z = 0; z < 2; z++)
@@ -537,6 +548,11 @@ public class WindowsOverlayController : MonoBehaviour
 #endif
         }
 
+        if (characterController != null) {
+            avatarPresentation = characterController.Presentation;
+            if (avatarPresentation != null) avatarPresentation.Changed += OnAvatarChanged;
+        }
+
         if (targetFrameRate > 0)
         {
             Application.targetFrameRate = targetFrameRate;
@@ -648,6 +664,12 @@ public class WindowsOverlayController : MonoBehaviour
         // 画面の外で透過の準備をしている間は、押し戻しも位置の通知もしない。
         // 通知すると Flutter が「ライムが来た」と判断して「発信中」を消してしまう
         if (startupHidden) return;
+
+        // Room placement and the first posed frame have completed by the next update.
+        if (avatarChangedFrame >= 0 && Time.frameCount > avatarChangedFrame) {
+            avatarChangedFrame = -1;
+            NotifyMove(force: true);
+        }
 
         HandleQuitShortcut();
         HandleClickDetection();

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:raim_prototype/models/avatar_mode.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_embed_unity/flutter_embed_unity.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
@@ -34,6 +35,26 @@ class EmbedUnityBridge implements UnityCommunicator {
 
   /// 最後に伝えた「寝ているか」。同じ値を何度も送らないために覚えておく
   bool _sleeping = false;
+  AvatarMode? _avatarMode;
+
+  @override
+  void setAvatarMode(AvatarMode mode) {
+    if (_avatarMode == mode) return;
+    _avatarMode = mode;
+    _sendAvatarMode();
+  }
+
+  void _sendAvatarMode() {
+    final mode = _avatarMode;
+    if (mode == null || !UnityReadySignal.ready.value) return;
+    sendToUnity(gameObjectName, 'ReceiveAvatarMode',
+        jsonEncode({'type': 'avatar_mode', 'mode': mode.wireValue}));
+  }
+
+  void _onResume() {
+    _sendDeviceTime();
+    _sendAvatarMode();
+  }
 
   /// Unity の準備ができる前に送ろうとしたもの。送り先のメソッドごとに最新の1件だけ持つ。
   final Map<String, String> _pending = {};
@@ -64,7 +85,7 @@ class EmbedUnityBridge implements UnityCommunicator {
       _deviceTimeSyncInterval,
       (_) => _sendDeviceTime(),
     );
-    _timeLifecycle ??= AppLifecycleListener(onResume: _sendDeviceTime);
+    _timeLifecycle ??= AppLifecycleListener(onResume: _onResume);
     _sendDeviceTime();
   }
 
@@ -96,6 +117,7 @@ class EmbedUnityBridge implements UnityCommunicator {
     if (!UnityReadySignal.ready.value) return;
     // 保留が空でも、Unityの準備ができた時点の時刻を送る。
     _sendDeviceTime();
+    _sendAvatarMode();
     if (_pending.isEmpty) return;
     final pending = Map<String, String>.of(_pending);
     _pending.clear();

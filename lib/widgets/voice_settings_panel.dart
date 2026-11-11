@@ -14,6 +14,8 @@
 // 外（AWS）に送るのは、呼ばれたあとに話した部分だけ。
 
 import 'package:flutter/material.dart';
+import 'package:raim_prototype/models/avatar_mode.dart';
+import 'package:raim_prototype/services/avatar_mode_setting.dart';
 import 'package:provider/provider.dart';
 
 import 'package:raim_prototype/providers/voice_controller.dart';
@@ -161,7 +163,7 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
         children: [
           if (widget.showTitle) ...[
             Text(
-              '音声の設定',
+              '設定',
               style: TextStyle(
                 color: _p.text,
                 fontSize: 16 * _fs,
@@ -171,6 +173,29 @@ class _VoiceSettingsPanelState extends State<VoiceSettingsPanel> {
             const SizedBox(height: 8),
           ],
 
+          _label('キャラクターの表示'),
+          ValueListenableBuilder<AvatarMode>(
+            valueListenable: AvatarModeSetting.current,
+            builder: (context, mode, _) => SegmentedButton<AvatarMode>(
+              segments: const [
+                ButtonSegment(value: AvatarMode.twoD, label: Text('2D立ち絵')),
+                ButtonSegment(value: AvatarMode.threeD, label: Text('3Dモデル')),
+              ],
+              selected: {mode},
+              onSelectionChanged: (selection) async {
+                try {
+                  await AvatarModeSetting.set(selection.single);
+                } catch (_) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('表示設定を保存できませんでした。もう一度選択してください。'),
+                  ));
+                }
+              },
+            ),
+          ),
+          _divider(),
+          _label('音声'),
           if (!supported)
             _note(
               'この端末ではまだ「ねえライム」を使えません（iOS は音声認識のライブラリを入れてビルドする必要があります）。',

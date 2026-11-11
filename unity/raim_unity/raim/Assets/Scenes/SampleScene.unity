@@ -1308,6 +1308,7 @@ GameObject:
   - component: {fileID: 1726773440}
   - component: {fileID: 1726773442}
   - component: {fileID: 1726773443}
+  - component: {fileID: 1726773444}
   m_Layer: 0
   m_Name: character
   m_TagString: Untagged
@@ -1457,6 +1458,20 @@ MonoBehaviour:
   thoughtfulSprite: {fileID: 21300000, guid: 4a6dbd7b4dcbe7147af46d115698f5df, type: 3}
   investigateSprite: {fileID: 21300000, guid: 9409ad516447925449dc079d540bb187, type: 3}
   sleepingSprite: {fileID: 21300000, guid: 418e07959bd44afdb2eefc54a3538b49, type: 3}
+--- !u!114 &1726773444
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1726773436}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 217f5057161f42568ec0961eb70e99e8, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  spriteRenderer: {fileID: 1726773438}
+  companion: {fileID: 572412981}
 --- !u!114 &1726773443
 MonoBehaviour:
   m_ObjectHideFlags: 0

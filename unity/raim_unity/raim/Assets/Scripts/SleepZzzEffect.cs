@@ -31,7 +31,13 @@ public class SleepZzzEffect : MonoBehaviour
     private static readonly Color LetterColor = Color.white;
     private static readonly Color OutlineColor = new Color(0.25f, 0.35f, 0.05f, 0.9f);
 
+    private RAiM.Presentation.AvatarPresentation avatarPresentation;
     private SpriteRenderer target;
+    public void Init(RAiM.Presentation.AvatarPresentation presentation)
+    {
+        avatarPresentation = presentation;
+        Init((SpriteRenderer)null);
+    }
     private RAiM.Companion.CompanionActor companion;
     private GameObject canvasObject;
     private Canvas canvas;
@@ -111,8 +117,14 @@ public class SleepZzzEffect : MonoBehaviour
     private void UpdateLetters()
     {
         var cam = Camera.main;
-        if (cam == null || (target == null && companion == null)) return;
-        if (companion != null && !companion.Ready) return;
+        if (cam == null) return;
+        Bounds b;
+        if (avatarPresentation != null) {
+            if (!avatarPresentation.TryGetWorldBounds(out b)) return;
+        } else {
+            if (target == null && companion == null || companion != null && !companion.Ready) return;
+            b = companion != null ? companion.ModelBounds : target.bounds;
+        }
 
         // ライムの大きさに合わせて Z も縮める（Windows のトレイ「ライムの大きさ」）。
         // fontSize・rise は Canvas の単位なので、画面の画素で比べるときは倍率を掛ける
@@ -121,7 +133,6 @@ public class SleepZzzEffect : MonoBehaviour
 
         // 立ち絵の矩形から、頭の右上あたりを画面座標にする。
         // 立ち絵は左右に透明な余白があり、ライムは横の中央に立っている。
-        Bounds b = companion != null ? companion.ModelBounds : target.bounds;
         var headRight = new Vector3(
             b.center.x + b.size.x * rightOfCenter,
             b.max.y - b.size.y * belowTop,

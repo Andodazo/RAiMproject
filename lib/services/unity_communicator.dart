@@ -1,3 +1,5 @@
+import 'package:raim_prototype/models/avatar_mode.dart';
+
 /// Unity との通信を抽象化するインターフェース
 /// 
 /// プラットフォームごとに実装が異なる：
@@ -6,6 +8,9 @@
 abstract class UnityCommunicator {
   /// 通信を開始する（必要に応じて）
   Future<void> start();
+
+  /// キャラクターの表示方式。未接続なら覚え、接続時に送り直す。
+  void setAvatarMode(AvatarMode mode);
 
   /// 感情パラメータを Unity に送信
   void sendEmotion({

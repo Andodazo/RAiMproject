@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using RAiM.Presentation;
 using UnityEngine.Rendering.Universal;
 
 namespace RAiM.NightOffice.Compatible {
@@ -64,6 +65,9 @@ namespace RAiM.NightOffice.Compatible {
                 if(additional) {additional.renderPostProcessing=post;additional.volumeLayerMask=volumeMask;additional.volumeTrigger=volumeTrigger;}
             }
         }
+        AvatarPresentation avatarPresentation;
+        SpriteRenderer roomSprite;
+        RAiM.Companion.CompanionActor roomModel;
         bool roomApplied;
         DisplayMode lastMode;
         CameraState savedCamera;
@@ -78,8 +82,30 @@ namespace RAiM.NightOffice.Compatible {
         Sprite lastSprite;
         int lastScreenWidth,lastScreenHeight;
 
-        void OnEnable() {if(Application.isPlaying)ApplyMode();}
-        void OnDisable() {if(Application.isPlaying)LeaveRoom();}
+        void OnEnable() {
+            if(!Application.isPlaying)return;
+            avatarPresentation=character?character.GetComponent<AvatarPresentation>():
+                (character3D?character3D.GetComponentInParent<AvatarPresentation>():null);
+            if(avatarPresentation)avatarPresentation.Changed+=RefreshAvatar;
+            ApplyMode();
+        }
+        void OnDisable() {
+            if(avatarPresentation)avatarPresentation.Changed-=RefreshAvatar;
+            if(Application.isPlaying)LeaveRoom();
+        }
+        void RestoreAvatarPoses() {
+            // The sprite root is the model's parent. Restore the parent first.
+            if(roomSprite)savedCharacterPose.Restore(roomSprite.transform);
+            if(roomModel)savedCharacter3DPose.Restore(roomModel.transform);
+        }
+        void RefreshAvatar() {
+            if(!roomApplied)return;
+            RestoreAvatarPoses();
+            savedCharacter3D=(!avatarPresentation || avatarPresentation.ActiveMode==AvatarMode.ThreeD)?roomModel:null;
+            savedCharacter=savedCharacter3D?null:roomSprite;
+            placedCharacter3D=false;lastSprite=null;
+            PlaceCharacter();
+        }
         void LateUpdate() {
             if(!Application.isPlaying)return;
             if(mode!=lastMode)ApplyMode();
@@ -123,12 +149,16 @@ namespace RAiM.NightOffice.Compatible {
         void EnterRoom() {
             if(roomApplied)return;
             var camera=mainCamera?mainCamera:Camera.main;
-            var model=character3D;
+            var model=(!avatarPresentation || avatarPresentation.ActiveMode==AvatarMode.ThreeD)?character3D:null;
             var sprite=model?null:character;
             if(!model && !sprite) {var existing=GameObject.Find("character");if(existing)sprite=existing.GetComponent<SpriteRenderer>();}
             if(!ValidateReferences(camera,sprite,model?model.transform:null)) {if(roomContent)roomContent.SetActive(false);return;}
-            savedCamera=new CameraState(camera);savedCharacter=sprite;if(sprite)savedCharacterPose=Pose.Read(sprite.transform);
-            savedCharacter3D=model;if(model)savedCharacter3DPose=Pose.Read(model.transform);placedCharacter3D=false;
+            roomSprite=character?character:sprite;roomModel=character3D;
+            savedCamera=new CameraState(camera);savedCharacter=sprite;
+            if(roomSprite)savedCharacterPose=Pose.Read(roomSprite.transform);
+            savedCharacter3D=model;
+            if(roomModel)savedCharacter3DPose=Pose.Read(roomModel.transform);
+            placedCharacter3D=false;
             savedHidden=(GameObject[])hideWhileRoomVisible.Clone();savedActive=new bool[savedHidden.Length];
             for(int i=0;i<savedHidden.Length;i++)if(savedHidden[i]) {savedActive[i]=savedHidden[i].activeSelf;savedHidden[i].SetActive(false);}
             roomApplied=true;
@@ -205,9 +235,9 @@ namespace RAiM.NightOffice.Compatible {
             if(roomContent)roomContent.SetActive(false);
             if(!roomApplied)return; // Windows Automatic startup never touches an existing camera or sprite.
             roomApplied=false;savedCamera?.Restore();
-            if(savedCharacter)savedCharacterPose.Restore(savedCharacter.transform);
-            if(savedCharacter3D)savedCharacter3DPose.Restore(savedCharacter3D.transform);
+            RestoreAvatarPoses();
             for(int i=0;i<savedHidden.Length;i++)if(savedHidden[i])savedHidden[i].SetActive(savedActive[i]);
+            roomSprite=null;roomModel=null;
             savedCamera=null;savedCharacter=null;savedCharacter3D=null;placedCharacter3D=false;lastSprite=null;savedHidden=Array.Empty<GameObject>();savedActive=Array.Empty<bool>();
         }
     }

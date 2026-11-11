@@ -42,6 +42,7 @@ import 'package:raim_prototype/services/noop_unity_bridge.dart';
 import 'package:raim_prototype/services/windows_unity_bridge.dart';
 import 'package:raim_prototype/services/embed_unity_bridge.dart';
 import 'package:raim_prototype/services/lime_size.dart';
+import 'package:raim_prototype/services/avatar_mode_setting.dart';
 import 'package:raim_prototype/services/mascot_window_service.dart';
 import 'package:raim_prototype/services/tray_service.dart';
 import 'package:raim_prototype/services/mic_stream_service.dart';
@@ -90,6 +91,7 @@ void main() async {
 
   // Unity Bridge
   final UnityCommunicator unityBridge = _createUnityBridge();
+  unityBridge.setAvatarMode(await AvatarModeSetting.load());
 
   // Windows: 前回選ばれたライムの大きさ。Unity がつながったら送られる
   if (!kIsWeb && Platform.isWindows) {
@@ -203,6 +205,11 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _listenUnityEvents();
+    AvatarModeSetting.current.addListener(_syncAvatarMode);
+  }
+
+  void _syncAvatarMode() {
+    widget.unityBridge.setAvatarMode(AvatarModeSetting.current.value);
   }
 
   // ====================================================
@@ -248,6 +255,7 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    AvatarModeSetting.current.removeListener(_syncAvatarMode);
     _unitySub?.cancel();
     widget.authProvider.disposeService();
     unawaited(widget.raimService.dispose());

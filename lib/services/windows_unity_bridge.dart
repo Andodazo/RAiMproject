@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'package:raim_prototype/models/avatar_mode.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -99,6 +100,20 @@ class WindowsUnityBridge implements UnityCommunicator {
 
   /// ライムの大きさ（窓の倍率）。null ならまだ決まっていない
   double? _mascotScale;
+  AvatarMode? _avatarMode;
+
+  String _avatarModeMessage(AvatarMode mode) =>
+      jsonEncode({'type': 'avatar_mode', 'mode': mode.wireValue});
+
+  @override
+  void setAvatarMode(AvatarMode mode) {
+    if (_avatarMode == mode) return;
+    _avatarMode = mode;
+    // 状態の保留キューには積まない。接続時も常に最新1件を使う。
+    for (final client in _clients) {
+      _sendToClient(client, _avatarModeMessage(mode));
+    }
+  }
 
   /// 受信ログを全部出すか。
   ///
@@ -172,6 +187,11 @@ class WindowsUnityBridge implements UnityCommunicator {
 
           // 初回接続・再接続とも、認証成功の通知に続けて新しい時刻を送る。
           _sendToClient(webSocket, _deviceTimeMessage());
+
+          final avatarMode = _avatarMode;
+          if (avatarMode != null) {
+            _sendToClient(webSocket, _avatarModeMessage(avatarMode));
+          }
 
           // 溜まっていた分を流して、接続直後から正しい状態にする
           _flushPending(webSocket);

@@ -30,6 +30,8 @@ public class SpeechBubbleController : MonoBehaviour
 
     [Tooltip("吹き出しの追従先。ライムの Transform を指定する")]
     [SerializeField] private Transform anchorTarget;
+    private RAiM.Presentation.AvatarPresentation avatarPresentation;
+    public void BindAvatar(RAiM.Presentation.AvatarPresentation target) { avatarPresentation = target; }
 
     [Tooltip("しっぽ（三角）の Image。左右反転させる場合に指定。未設定でも動く")]
     [SerializeField] private RectTransform tail;
@@ -449,7 +451,13 @@ public class SpeechBubbleController : MonoBehaviour
 
     private void UpdatePosition()
     {
-        if (anchorTarget == null) return;
+        Vector3 anchorPosition;
+        if (avatarPresentation != null) {
+            if (!avatarPresentation.TryGetSpeechAnchor(out anchorPosition)) return;
+        } else {
+            if (anchorTarget == null) return;
+            anchorPosition = anchorTarget.position;
+        }
 
         // ライムの大きさに合わせて吹き出しも縮める。
         // bubbleWidth・rect の大きさは Canvas の単位なので、画面の画素で比べるときは倍率 s を掛ける。
@@ -460,7 +468,7 @@ public class SpeechBubbleController : MonoBehaviour
         Camera cam = Camera.main;
 
         Vector3 screenPos = cam != null
-            ? cam.WorldToScreenPoint(anchorTarget.position)
+            ? cam.WorldToScreenPoint(anchorPosition)
             : new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f);
 
         // 右に出したときに吹き出しの右端がウィンドウからはみ出すなら左へ反転

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:raim_prototype/models/avatar_mode.dart';
 
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/unity_communicator.dart';
@@ -35,6 +36,9 @@ class NoopUnityBridge implements UnityCommunicator {
 
   @override
   Future<void> ensureUnityRunning() async {}
+
+  @override
+  void setAvatarMode(AvatarMode mode) {}
 
   // 修正（9）: 廃止した展示表示 API の空実装を除去する。
 
