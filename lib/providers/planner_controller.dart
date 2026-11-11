@@ -111,6 +111,14 @@ class PlannerController extends ChangeNotifier {
   List<PlannerItem> get items => _items;
   List<PlannerItem> get events => _items.where((i) => i.isEvent).toList();
 
+  /// メモ（新しい順）
+  List<PlannerItem> get memos =>
+      _items.where((i) => i.isMemo).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  /// リスト（作った順）
+  List<PlannerItem> get lists =>
+      _items.where((i) => i.isList).toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
   /// まだ鳴っていないタイマー（鳴る順）
   List<PlannerItem> get timers {
     final now = _clock().toUtc();
@@ -177,6 +185,72 @@ class PlannerController extends ChangeNotifier {
   /// 予定を直す（直すところだけ）
   Future<void> updateEvent(String itemId, Map<String, String> changes) async {
     await _setItems(await _service.updatePlannerEvent(itemId, changes));
+  }
+
+  /// メモを手で足す
+  Future<void> addMemo(String text) async {
+    await _setItems(await _service.addPlannerMemo(text));
+  }
+
+  /// リストを手で作る
+  Future<void> addList(String title, {List<String> entries = const []}) async {
+    await _setItems(await _service.addPlannerList(title, entries));
+  }
+
+  /// メモの文を直す
+  Future<void> updateMemo(String itemId, String text) async {
+    await _setItems(await _service.updatePlannerItem(itemId, {'text': text}));
+  }
+
+  /// リストの名前を直す
+  Future<void> renameList(String itemId, String title) async {
+    await _setItems(await _service.updatePlannerItem(itemId, {'title': title}));
+  }
+
+  /// リストの項目を入れ替える（足す・消す・チェック）。
+  /// 押した感じが遅れないよう、先に画面を変えてからサーバーへ送る。失敗したら戻す。
+  Future<void> setListEntries(String itemId, List<PlannerListEntry> entries) async {
+    final before = _items;
+    final index = _items.indexWhere((i) => i.itemId == itemId);
+    if (index >= 0) {
+      final next = [..._items];
+      next[index] = next[index].copyWith(entries: entries);
+      _items = List.unmodifiable(next);
+      notifyListeners();
+    }
+    try {
+      await _setItems(await _service.updatePlannerItem(itemId, {
+        'entries': entries.map((e) => e.toJson()).toList(),
+      }));
+    } catch (_) {
+      _items = before;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// リストの項目のチェックを付ける・外す
+  Future<void> toggleEntry(String listId, String entryId, bool checked) async {
+    final list = findItem(listId);
+    if (list == null) return;
+    await setListEntries(listId, [
+      for (final e in list.entries) e.id == entryId ? e.withChecked(checked) : e,
+    ]);
+  }
+
+  /// リストに項目を足す
+  Future<void> addEntry(String listId, String text) async {
+    final list = findItem(listId);
+    final value = text.trim();
+    if (list == null || value.isEmpty) return;
+    await setListEntries(listId, [...list.entries, PlannerListEntry(id: '', text: value)]);
+  }
+
+  /// リストから項目を消す
+  Future<void> removeEntries(String listId, Set<String> entryIds) async {
+    final list = findItem(listId);
+    if (list == null) return;
+    await setListEntries(listId, list.entries.where((e) => !entryIds.contains(e.id)).toList());
   }
 
   /// 予定を消す

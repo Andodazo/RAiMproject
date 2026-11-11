@@ -421,12 +421,32 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   static const Duration plannerCardLifetime = Duration(minutes: 10);
 
   void _collectPlannerCard(String action, Map<String, dynamic> params) {
-    if (action == 'planner.added') {
-      final raw = params['item'];
-      if (raw is! Map) return;
+    PlannerItem? itemOf(Object? raw) {
+      if (raw is! Map) return null;
       final item = PlannerItem.fromJson(raw.map((k, v) => MapEntry(k.toString(), v)));
-      if (item.itemId.isEmpty) return;
+      return item.itemId.isEmpty ? null : item;
+    }
+
+    final addedEntryIds = (params['addedEntryIds'] is List)
+        ? (params['addedEntryIds'] as List).whereType<String>().toList()
+        : const <String>[];
+    if (action == 'planner.added') {
+      // リストを作ったときは、取り消すとリストごと消す（足した項目は渡さない）
+      final item = itemOf(params['item']);
+      if (item == null) return;
       _pendingPlannerCards.add(PlannerCard.added(item, at: _clock()));
+    } else if (action == 'planner.updated' && addedEntryIds.isNotEmpty) {
+      // リストに項目を足した（「取り消す」で足した項目だけ消す）
+      final item = itemOf(params['item']);
+      if (item == null || !item.isList) return;
+      _pendingPlannerCards.add(PlannerCard.added(item, at: _clock(), addedEntryIds: addedEntryIds));
+    } else if (action == 'planner.show') {
+      // 「メモ何あったっけ？」: メモやリストのカード
+      final raw = params['items'];
+      if (raw is! List) return;
+      final items = raw.map(itemOf).whereType<PlannerItem>().toList();
+      if (items.isEmpty) return;
+      _pendingPlannerCards.add(PlannerCard.show(items, at: _clock()));
     } else if (action == 'planner.suggest') {
       final candidate = PlannerCandidate.fromJson(params['candidate']);
       if (candidate == null) return;

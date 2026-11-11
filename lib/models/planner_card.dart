@@ -4,13 +4,16 @@
 //
 //   入れたよカード … ライムが予定を入れたとき（planner.added）。「取り消す」が押せる
 //   「予定に入れる？」 … 話に出ただけの予定（planner.suggest）。押すと入れる
+//   メモのカード   … 「メモ何あったっけ？」（planner.show）。リストはその場でチェックできる
+//   メモ・リストに入れたとき（planner.added / planner.updated）も「入れたよ」カード。
+//   リストに足したときの「取り消す」は、足した項目だけ消す
 //
 // サーバーの会話の記録には残らない（開き直すと消える）。予定そのものは
 // 「予定とメモ」の画面にいつでもある。
 
 import 'package:raim_prototype/models/planner_item.dart';
 
-enum PlannerCardType { added, suggest }
+enum PlannerCardType { added, suggest, show }
 
 enum PlannerCardState {
   /// 押される前
@@ -39,11 +42,25 @@ class PlannerCard {
     this.item,
     this.candidate,
     this.state = PlannerCardState.open,
+    this.addedEntryIds = const [],
+    this.showItems = const [],
   });
 
-  factory PlannerCard.added(PlannerItem item, {DateTime? at}) => PlannerCard._(
+  factory PlannerCard.added(
+    PlannerItem item, {
+    DateTime? at,
+    List<String> addedEntryIds = const [],
+  }) =>
+      PlannerCard._(
         type: PlannerCardType.added,
         item: item,
+        createdAt: at ?? DateTime.now(),
+        addedEntryIds: addedEntryIds,
+      );
+
+  factory PlannerCard.show(List<PlannerItem> items, {DateTime? at}) => PlannerCard._(
+        type: PlannerCardType.show,
+        showItems: items,
         createdAt: at ?? DateTime.now(),
       );
 
@@ -65,12 +82,22 @@ class PlannerCard {
   final PlannerCardState state;
   final DateTime createdAt;
 
+  /// リストに足した項目（「取り消す」で消すもの）
+  final List<String> addedEntryIds;
+
+  /// 見せるメモ・リスト（show のとき）
+  final List<PlannerItem> showItems;
+
+  /// リストに項目を足した（リストそのものを作ったのではない）カードか
+  bool get isListAddition => item?.isList == true && addedEntryIds.isNotEmpty;
+
   String get title => item?.title ?? candidate?.title ?? '';
   String get whenLabel => item?.whenLabel ?? candidate?.whenLabel ?? '';
 
-  /// まだ押せるか
+  /// まだ押せるか（メモのカードは押すボタンが無い）
   bool get isActionable =>
-      state == PlannerCardState.open || state == PlannerCardState.failed;
+      type != PlannerCardType.show &&
+      (state == PlannerCardState.open || state == PlannerCardState.failed);
 
   PlannerCard withState(PlannerCardState next) => PlannerCard._(
         type: type,
@@ -78,5 +105,7 @@ class PlannerCard {
         candidate: candidate,
         createdAt: createdAt,
         state: next,
+        addedEntryIds: addedEntryIds,
+        showItems: showItems,
       );
 }
