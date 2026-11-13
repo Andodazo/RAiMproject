@@ -858,6 +858,38 @@ void main() {
       expect(chat.messages.map((m) => m.plannerCard == null ? m.text : 'card'), ['金曜10時に面接入れといて', '入れといたよ', 'card']);
     });
 
+    // 2026-11-13: カードは次に送ったら消す（会話の記録にも残さない）
+    test('次のメッセージを送ったら、前のカードは消える（Windows の入力欄の上からも）', () async {
+      final llm = ScriptedLlm.sequence(const [
+        [
+          {'type': 'metadata'},
+          {
+            'type': 'client_action', 'action': 'planner.added', 'actionId': 'c1',
+            'params': {'item': {'itemId': 'ev_1', 'kind': 'event', 'title': '面接', 'date': '2026-11-14', 'time': '10:00'}},
+          },
+          {'type': 'text_chunk', 'text': '入れといたよ'},
+          {'type': 'chat_end', 'full_text': '入れといたよ'},
+        ],
+        [
+          {'type': 'metadata'},
+          {'type': 'text_chunk', 'text': 'がんばってね'},
+          {'type': 'chat_end', 'full_text': 'がんばってね'},
+        ],
+      ]);
+      final chat = ChatProvider(llm, FakeUnity(), audioQueue: FakeAudioQueue(), clock: () => now);
+      addTearDown(chat.dispose);
+      await chat.sendUserMessage('金曜10時に面接入れといて');
+      final card = chat.activePlannerCard!;
+      expect(chat.messages.where((m) => m.plannerCard != null), hasLength(1));
+
+      await chat.sendUserMessage('緊張する');
+      expect(chat.messages.map((m) => m.plannerCard == null ? m.text : 'card'),
+          ['金曜10時に面接入れといて', '入れといたよ', '緊張する', 'がんばってね']);
+      expect(chat.activePlannerCard, isNull);
+      // 消えたカードを押しても何も起きない
+      expect(chat.updatePlannerCard(card, PlannerCardState.undone), isNull);
+    });
+
     test('返事が失敗したらカードは出さない。「予定に入れる？」も同じ流れで出る', () async {
       final failing = ScriptedLlm(const [
         {

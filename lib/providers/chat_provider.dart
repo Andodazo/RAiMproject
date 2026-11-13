@@ -516,6 +516,10 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     _pendingPlannerCards.clear();
   }
 
+  void _removePlannerCards() {
+    _messages.removeWhere((m) => m.plannerCard != null);
+  }
+
   void _closeCardsForItem(String itemId) {
     for (var i = 0; i < _messages.length; i++) {
       final card = _messages[i].plannerCard;
@@ -1448,6 +1452,9 @@ _toolStatus = null;
     // 生成に数秒かかるため、その1文は新しい音声が届く前に鳴り終わる。
     // 万一残っていてもキューは直列なので、重ならず後ろに並ぶだけ。
     _prepareForReply();
+    // 前の返事に付いていた予定のカードは、次に送ったら消す（2026-11-13）。
+    // カードは会話の記録には残さない
+    _removePlannerCards();
     // ─── 履歴への追加処理を追加 ───
     final userMessage = Message(
       text: text,
