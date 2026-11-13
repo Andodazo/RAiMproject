@@ -793,8 +793,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   }
 
   String _hintText(ChatProvider chat) {
-    if (chat.isOffline) return '接続待ち…';
-    return _statusText(chat) ?? '何でも話してね';
+    return _statusText(chat) ?? chat.connectionNotice ?? '何でも話してね';
   }
 
   Widget _buildBar() {
@@ -824,7 +823,6 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
               builder: (context, heard, _) => TextField(
                 controller: _controller,
                 focusNode: _focusNode,
-                enabled: !chat.isOffline,
                 // 送るのを待っている間に触ったり直したりしたら、送らずに止める
                 onTap: () {
                   // 修正: 展示用の操作時刻更新を廃止した。

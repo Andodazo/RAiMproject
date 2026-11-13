@@ -134,7 +134,19 @@ class RaimServerService
     this.accessTokenGetter,
     this.maxReconnectAttempts = 3,
     this.requestTimeout = const Duration(seconds: 60),
+    this.silentCheckAfter = const Duration(seconds: 15),
+    this.aliveProbeWait = const Duration(seconds: 5),
   }) : _serverUrl = serverUrl;
+
+  /// 送ってからこの間サーバーから何も届かなければ、接続が生きているか確かめる。
+  ///
+  /// Core は要求を受け取るとすぐ「返事を始めた」（metadata）を送るので、
+  /// ふだんは数秒で何か届く。届かないときは、接続が知らないうちに切れていることが多い
+  /// （電波の切り替わりなど。切れたことをアプリが受け取れず、60秒待ってエラーになっていた）。
+  final Duration silentCheckAfter;
+
+  /// 確かめるときに待つ時間。Edge がすぐ返す軽い要求を送り、この間に何か届けば生きている。
+  final Duration aliveProbeWait;
 
   // ─── 内部状態 ───
 
@@ -482,6 +494,9 @@ class RaimServerService
   /// 3.それ以外の metadata / text_chunk / audio_chunk / tool_call / chat_end は
   /// 4._broadcaster に流して ChatProvider 側で処理する。
   void _onMessage(dynamic rawMessage) {
+    // 接続が生きているか確かめている途中なら、何か届いた時点で生きている
+    final waiter = _messageWaiter;
+    if (waiter != null && !waiter.isCompleted) waiter.complete();
     // 何か届いた = 接続は生きている。アプリへ戻ったときの確認中なら、張り直さずに済む
     if (_checkingAlive) {
       RaimLog.d('[RaimServerService] サーバーから届いたので、接続はそのまま使います');
@@ -687,6 +702,63 @@ class RaimServerService
     _aliveTimer = null;
   }
 
+  /// 接続が生きているか確かめている間に、何か届いたら完了する
+  Completer<void>? _messageWaiter;
+
+  /// 今の接続が生きているか確かめる。
+  ///
+  /// Edge が DynamoDB を読んですぐ返す要求（会話の一覧）を送り、
+  /// [aliveProbeWait] の間に何か届けば生きている。
+  /// 返事が遅いだけ（Mantle が重いなど）のときに張り直すと、古い接続あての返事を
+  /// 受け取れなくなるので、張り直す前にこれで確かめる。
+  Future<bool> _probeAlive() async {
+    final channel = _channel;
+    if (channel == null || _state != RaimConnectionState.connected) {
+      return false;
+    }
+    final waiter = Completer<void>();
+    _messageWaiter = waiter;
+    try {
+      channel.sink.add(jsonEncode({
+        'type': 'thread.list',
+        'requestId': newRequestId(),
+      }));
+      await waiter.future.timeout(aliveProbeWait);
+      return true;
+    } on TimeoutException {
+      return false;
+    } catch (_) {
+      return false;
+    } finally {
+      if (identical(_messageWaiter, waiter)) _messageWaiter = null;
+    }
+  }
+
+  /// 送った要求への最初の応答を待つ。接続が切れていたら null を返す。
+  ///
+  /// [silentCheckAfter] の間に何も届かなければ、接続が生きているか確かめる。
+  /// 生きていれば返事が遅いだけなので、[requestTimeout] まで待ち続ける。
+  Future<bool?> _awaitFirstOrDead(Future<bool> next) async {
+    TimeoutException tooSlow() =>
+        TimeoutException('RAiMからの最初の応答が遅すぎます', requestTimeout);
+    if (silentCheckAfter >= requestTimeout) {
+      return next.timeout(requestTimeout, onTimeout: () => throw tooSlow());
+    }
+    try {
+      return await next.timeout(silentCheckAfter);
+    } on TimeoutException {
+      RaimLog.d('[RaimServerService] 返事が来ないので、接続が生きているか確かめます');
+      if (!await _probeAlive()) {
+        RaimLog.d('[RaimServerService] 接続が切れていたので、つなぎ直して送り直します');
+        return null;
+      }
+      return next.timeout(
+        requestTimeout - silentCheckAfter,
+        onTimeout: () => throw tooSlow(),
+      );
+    }
+  }
+
   /// 「寝てるライムを起こす」処理
   /// offline 状態でユーザーがメッセージを送ろうとした時に呼ぶ
   /// リトライカウンタをリセットして再接続を試みる
@@ -858,7 +930,7 @@ class RaimServerService
     _repliesInFlight++;
     // 送信後に返ってくる複数メッセージを順番に受け取るためのIterator
     var iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
-    // TOKEN_EXPIRED で送り直したか（送り直すのは1回だけ）
+    // TOKEN_EXPIRED や接続切れで送り直したか（送り直すのは1回だけ）
     var resent = false;
     // 最初に届いた応答の attempt（サーバーが要求をやり直した回数）。
     // やり直すと1回目の途中までの分と2回目の分が両方届き得るので、
@@ -871,16 +943,34 @@ class RaimServerService
       var firstResponse = iterator.moveNext();
       // WebSocketでサーバーへ送信する
       _channel!.sink.add(jsonEncode(payload));
-      // 最初の応答を待つ
-      var hasResponse = await firstResponse.timeout(
-        requestTimeout,
-        onTimeout: () {
-          throw TimeoutException(
-            'RAiMからの最初の応答が遅すぎます',
-            requestTimeout,
-          );
-        },
-      );
+      // 最初の応答を待つ。しばらく何も来なければ、接続が生きているか確かめる
+      var first = await _awaitFirstOrDead(firstResponse);
+      if (first == null) {
+        // 接続が知らないうちに切れていた。送った文はサーバーに届いていないはずなので、
+        // つなぎ直して同じ requestId で1回だけ送り直す（届いていても Core が二重に返さない）
+        resent = true;
+        await iterator.cancel();
+        await reconnectNow();
+        if (_state != RaimConnectionState.connected) {
+          throw Exception('RAiMに接続できていません: state=$_state');
+        }
+        // つなぎ直すとセッションは新しくなる
+        payload.remove('session_id');
+        if (_sessionId != null) payload['session_id'] = _sessionId;
+        iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
+        firstResponse = iterator.moveNext();
+        _channel!.sink.add(jsonEncode(payload));
+        first = await firstResponse.timeout(
+          requestTimeout,
+          onTimeout: () {
+            throw TimeoutException(
+              'RAiMからの最初の応答が遅すぎます',
+              requestTimeout,
+            );
+          },
+        );
+      }
+      var hasResponse = first;
       // text_chunk / audio_chunk / tool_call などを順番に返す
       while (hasResponse) {
         final response = iterator.current;
