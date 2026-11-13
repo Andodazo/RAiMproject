@@ -80,6 +80,7 @@ class RaimServerService
         GreetingService,
         ReminderService,
         BriefService,
+        ServerPushService,
         MemoryService,
         PlannerService {
   // ─── 設定値（コンストラクタで受け取る） ───
@@ -200,6 +201,7 @@ class RaimServerService
 
   /// サーバーから来る全メッセージを購読するための Stream
   /// 将来の proactive_message（ライム発信）を受信するために公開
+  @override
   Stream<LLMResponse> get incomingStream {
     _broadcaster ??= StreamController<LLMResponse>.broadcast();
     return _broadcaster!.stream;

@@ -195,6 +195,41 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     _audioQueue.onItemStarted = _bubbleSync.audioStarted;
     _audioQueue.onItemFinished = _bubbleSync.audioFinished;
     _bindConnectionState();
+    _listenServerPush();
+  }
+
+  /// 返事の終わりのあとに届く操作（「予定に入れる？」、予定の知らせる文ができた など）
+  StreamSubscription<LLMResponse>? _pushSubscription;
+
+  /// 返事の終わりのあとに届く操作を受け取る。
+  ///
+  /// 以前のサーバーは、予定の知らせる文や「予定に入れる？」を作り終えるまで返事の終わりを
+  /// 送らず、そのあいだ入力欄が「考えているよ」のままだった（最大8秒）。今は返事の終わりを
+  /// 先に送り、カードはそのあとに届く。送信ごとの受信待ちは chat_end で終わるので、
+  /// 全体の受信から拾う。返事の途中に届いた分もここに来るが、actionId で1回だけ扱う
+  /// （ID の無い古いサーバーの分は、これまでどおり送信ごとの受信待ちだけで扱う）。
+  void _listenServerPush() {
+    final Object service = _llmService;
+    if (service is! ServerPushService) return;
+    final Stream<LLMResponse> incoming;
+    try {
+      incoming = service.incomingStream;
+    } catch (e) {
+      // テスト用の偽物など、受信を持たないサービスでは送信ごとの受信待ちだけで扱う
+      RaimLog.d('[ChatProvider] 返事のあとの知らせは受け取りません: ${e.runtimeType}');
+      return;
+    }
+    _pushSubscription = incoming.listen((response) {
+      if (!response.isClientAction) return;
+      final actionId = response.actionId;
+      if (actionId == null || actionId.isEmpty) return;
+      _handleClientAction(response);
+      // 返事の途中なら、これまでどおり返事を出し終えたときに並べる
+      if (!_isLoading && _pendingPlannerCards.isNotEmpty) {
+        _flushPlannerCards();
+        notifyListeners();
+      }
+    });
   }
   //メッセージの中身を編集されないようにするため。(読み取り専用)
   List<Message> get messages => List.unmodifiable(_messages);
@@ -1348,6 +1383,7 @@ _toolStatus = null;
   @override
   void dispose() {
     _stateSubscription?.cancel();
+    _pushSubscription?.cancel();
     unawaited(_clientActions.close());
     _audioAssembler.dispose();
     _bubbleSync.dispose();

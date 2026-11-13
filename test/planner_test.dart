@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:raim_prototype/models/llm_response.dart';
+import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/models/planner_card.dart';
 import 'package:raim_prototype/models/planner_item.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
@@ -187,6 +188,30 @@ class BriefLlm extends ScriptedLlm implements GreetingService, BriefService {
       {'type': 'chat_end', 'full_text': '今日は15時からバイトだね'},
     ]) {
       yield LLMResponse.fromJson(raw);
+    }
+  }
+}
+
+/// 本物の RaimServerService と同じく、届いたものを全部 incomingStream にも流す会話サービス
+class PushLlm extends ScriptedLlm implements ServerPushService {
+  PushLlm(super.script);
+
+  final StreamController<LLMResponse> incoming = StreamController<LLMResponse>.broadcast();
+
+  @override
+  Stream<LLMResponse> get incomingStream => incoming.stream;
+
+  @override
+  Stream<LLMResponse> sendMessage(
+    String userInput, {
+    List<Message> history = const [],
+    List<Map<String, dynamic>>? images,
+    String? requestId,
+    String? threadId,
+  }) async* {
+    await for (final response in super.sendMessage(userInput, history: history, images: images)) {
+      incoming.add(response);
+      yield response;
     }
   }
 }
@@ -791,6 +816,46 @@ void main() {
       final busy = chat.updatePlannerCard(card, PlannerCardState.busy)!;
       chat.updatePlannerCard(busy, PlannerCardState.undone);
       expect(chat.messages.last.plannerCard!.state, PlannerCardState.undone);
+    });
+
+    // 2026-11-13: サーバーは返事の終わりを先に送り、「予定に入れる？」はそのあとに送るようにした
+    test('返事の終わりのあとに届いた「予定に入れる？」も、返事のあとにカードで出る', () async {
+      final llm = PushLlm(const [
+        {'type': 'metadata'},
+        {'type': 'text_chunk', 'text': 'いいね'},
+        {'type': 'chat_end', 'full_text': 'いいね'},
+      ]);
+      final chat = ChatProvider(llm, FakeUnity(), audioQueue: FakeAudioQueue(), clock: () => now);
+      addTearDown(chat.dispose);
+      await chat.sendUserMessage('土曜に映画なんだ');
+      expect(chat.isLoading, isFalse);
+      expect(chat.messages.where((m) => m.plannerCard != null), isEmpty);
+
+      llm.incoming.add(LLMResponse.fromJson(const {
+        'type': 'client_action', 'action': 'planner.suggest', 'actionId': 'r1_action_0',
+        'params': {'candidate': {'title': '映画', 'date': '2026-11-14'}},
+      }));
+      await Future<void>.delayed(Duration.zero);
+      expect(chat.messages.map((m) => m.plannerCard == null ? m.text : 'card'), ['土曜に映画なんだ', 'いいね', 'card']);
+      expect(chat.messages.last.plannerCard!.type, PlannerCardType.suggest);
+    });
+
+    test('返事の途中に届いた操作は、受信が2つの道で届いてもカードは1つ', () async {
+      final llm = PushLlm(const [
+        {'type': 'metadata'},
+        {
+          'type': 'client_action', 'action': 'planner.added', 'actionId': 'r2_action_0',
+          'params': {'item': {'itemId': 'ev_1', 'kind': 'event', 'title': '面接', 'date': '2026-11-14', 'time': '10:00'}},
+        },
+        {'type': 'text_chunk', 'text': '入れといたよ'},
+        {'type': 'chat_end', 'full_text': '入れといたよ'},
+      ]);
+      final chat = ChatProvider(llm, FakeUnity(), audioQueue: FakeAudioQueue(), clock: () => now);
+      addTearDown(chat.dispose);
+      await chat.sendUserMessage('金曜10時に面接入れといて');
+      await Future<void>.delayed(Duration.zero);
+      // カードは返事より前に出ない
+      expect(chat.messages.map((m) => m.plannerCard == null ? m.text : 'card'), ['金曜10時に面接入れといて', '入れといたよ', 'card']);
     });
 
     test('返事が失敗したらカードは出さない。「予定に入れる？」も同じ流れで出る', () async {
