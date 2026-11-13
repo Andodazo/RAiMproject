@@ -49,6 +49,14 @@ abstract class BriefService {
   Stream<LLMResponse> sendBrief({String? threadId});
 }
 
+/// 返事が終わったあとにも、サーバーからの知らせを受け取れるサービス。
+///
+/// サーバーは返事の終わり（chat_end）を先に送り、予定の「予定に入れる？」などは
+/// そのあとに送る。送信ごとの受信待ちは chat_end で終わるので、全体の受信を渡す。
+abstract class ServerPushService {
+  Stream<LLMResponse> get incomingStream;
+}
+
 // ─────────────────────────────────────────────
 // MockLLMService（テスト用、Stream対応）
 // ─────────────────────────────────────────────
