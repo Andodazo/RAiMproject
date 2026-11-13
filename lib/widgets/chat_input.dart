@@ -6,6 +6,7 @@ import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:raim_prototype/widgets/reconnecting_spinner.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
@@ -192,6 +193,8 @@ class _ChatInputState extends State<ChatInput> {
     // つなぎ直している・つながらないときは、入力欄にそれを出す
     final connection =
         context.select<ChatProvider, String?>((c) => c.connectionNotice);
+    final reconnecting =
+        context.select<ChatProvider, bool>((c) => c.showsReconnectingSpinner);
 
     return TapRegion(
       // 追加：入力欄の外を押したときにキーボードを閉じる
@@ -264,6 +267,10 @@ class _ChatInputState extends State<ChatInput> {
                       cursorColor: Colors.white,
                       decoration: InputDecoration(
                         hintText: _hint(voice, heard, connection),
+                        // つなぎ直している間は、左にぐるぐるを出す（文字は hintText。2026-11-13）
+                        prefixIcon: reconnecting
+                            ? const ReconnectingSpinner()
+                            : null,
 
                         // マイクボタン。押して話し、もう一度押すか黙ると送る
                         suffixIcon: !manualMic && !talking

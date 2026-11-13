@@ -28,6 +28,7 @@ import 'package:raim_prototype/widgets/memory_panel.dart';
 import 'package:raim_prototype/widgets/planner_card_view.dart';
 import 'package:raim_prototype/widgets/planner_panel.dart';
 import 'package:raim_prototype/widgets/raim_calling_overlay.dart';
+import 'package:raim_prototype/widgets/reconnecting_spinner.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/config/raim_config.dart';
 
@@ -625,7 +626,13 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     final plannerCard = context.select<ChatProvider, PlannerCard?>(
       (chat) => chat.activePlannerCard,
     );
-    _syncImageStripHeight(hasImages || plannerCard != null);
+    // つながらないときは、同じ列におやすみのカードを出す（2026-11-13）
+    final sleepScreen = context.select<ChatProvider, RaimSleepScreen>(
+      (chat) => chat.sleepScreen,
+    );
+    _syncImageStripHeight(
+      hasImages || plannerCard != null || sleepScreen != RaimSleepScreen.none,
+    );
 
     // Unity の起動待ちの間は「発信中」を出す
     return ValueListenableBuilder<bool>(
@@ -690,8 +697,25 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                       _PanelMode.none => const SizedBox.shrink(),
                     },
                   ),
-                // 修正: 入力中の文字があっても上限通知が見えるよう、プレースホルダに頼らず表示する。
+                // つながらないとき：寝顔と「おやすみ中…」。話しかけたら「発信中…」（2026-11-13）。
+                // 入力欄は使えるままにする（送ると起こす）
                 if (_showImageStrip &&
+                    context.read<ChatProvider>().sleepScreen != RaimSleepScreen.none)
+                  SizedBox(
+                    height: MascotWindowService.imageStripHeight,
+                    child: Center(
+                      child: RaimCallingCard(
+                        connected: false,
+                        sleeping: context.read<ChatProvider>().sleepScreen ==
+                            RaimSleepScreen.sleeping,
+                        horizontal: true,
+                        faceSize: MascotWindowService.imageStripHeight / 2 - 2,
+                        showTitle: false,
+                      ),
+                    ),
+                  )
+                // 修正: 入力中の文字があっても上限通知が見えるよう、プレースホルダに頼らず表示する。
+                else if (_showImageStrip &&
                     !context.read<CameraProvider>().hasImage &&
                     context.read<ChatProvider>().activePlannerCard != null)
                   SizedBox(
@@ -836,6 +860,17 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                 cursorColor: _lime,
                 decoration: InputDecoration(
                   isDense: true,
+                  // つなぎ直している間は、左にぐるぐるを出す（文字はプレースホルダ。2026-11-13）
+                  prefixIcon: chat.showsReconnectingSpinner
+                      ? const ReconnectingSpinner(
+                          size: 12,
+                          padding: EdgeInsets.only(left: 10, right: 2),
+                        )
+                      : null,
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 0,
+                    minHeight: 0,
+                  ),
                   // マスコットモードには状態表示の場所が無いため、
                   // プレースホルダを状態表示に兼用する。
                   // 「〇〇を調べています」はチャット画面（message_list）に

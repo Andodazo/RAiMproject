@@ -482,6 +482,9 @@ void main() {
         ChatProvider.reconnectingNoticeDelay + const Duration(milliseconds: 300),
       );
       expect(chat.connectionNotice, 'つなぎ直しているよ…');
+      // つなぎ直しているだけのときは、ぐるぐるだけで、おやすみ画面は出さない
+      expect(chat.showsReconnectingSpinner, isTrue);
+      expect(chat.sleepScreen, RaimSleepScreen.none);
     });
 
     test('つながらない（寝ている）ときは、すぐ出す', () async {
@@ -491,6 +494,28 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(chat.isOffline, isTrue);
       expect(chat.connectionNotice, 'つながらないよ。話しかけたら起こすね');
+    });
+
+    test('寝ているときはおやすみ画面。話しかけたら「発信中」、だめならまた寝る', () async {
+      final (_, chat) = await open(0);
+      await edge.stop();
+      await edge.dropAll();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(chat.sleepScreen, RaimSleepScreen.sleeping);
+      expect(chat.showsReconnectingSpinner, isFalse);
+
+      final seen = <RaimSleepScreen>[];
+      void record() {
+        if (seen.isEmpty || seen.last != chat.sleepScreen) seen.add(chat.sleepScreen);
+      }
+      chat.addListener(record);
+      await chat.sendUserMessage('起きて');
+      // 起こせなかったら、つなぎ直しを何回か試すあいだは「発信中」のまま、そのあとまた寝る
+      for (var i = 0; i < 50 && !chat.isOffline; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      chat.removeListener(record);
+      expect(seen, [RaimSleepScreen.sleeping, RaimSleepScreen.waking, RaimSleepScreen.sleeping]);
     });
   });
 }
