@@ -31,6 +31,18 @@ import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/models/image_attachment.dart';
 import 'package:raim_prototype/services/aws_image_service.dart';
 
+/// おやすみ画面の出し方（ChatProvider.sleepScreen）
+enum RaimSleepScreen {
+  /// 出さない（つながっている、またはつなぎ直しているだけ）
+  none,
+
+  /// 寝顔と「おやすみ中…」（3回つなぎ直してもつながらない）
+  sleeping,
+
+  /// 寝ているときに話しかけたので「発信中…」
+  waking,
+}
+
 class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // ============================================================
   // 外部サービス
@@ -332,6 +344,28 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     }
   }
 
+  /// つなぎ直していて、入力欄にぐるぐるを出すか（2026-11-13）。
+  /// 出す時期は [connectionNotice] の「つなぎ直しているよ…」と同じ
+  bool get showsReconnectingSpinner =>
+      (_connectionState == RaimConnectionState.connecting ||
+          _connectionState == RaimConnectionState.disconnected) &&
+      _reconnectingShown;
+
+  /// 寝ているところを話しかけて起こしている途中か
+  bool _waking = false;
+
+  /// おやすみ画面に何を出すか（2026-11-13）。
+  ///
+  /// つなぎ直しているだけのときは出さない（入力欄の一言とぐるぐるだけ）。
+  /// 3回つなぎ直してもだめだった（offline）ら寝顔、寝ているときに話しかけたら「発信中…」。
+  RaimSleepScreen get sleepScreen {
+    if (_connectionState == RaimConnectionState.offline) {
+      return RaimSleepScreen.sleeping;
+    }
+    if (_waking) return RaimSleepScreen.waking;
+    return RaimSleepScreen.none;
+  }
+
   /// 接続の状態が変わったときに、つなぎ直しの表示を出すか決める
   void _updateReconnectingNotice(
     RaimConnectionState previous,
@@ -342,6 +376,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
       _reconnectingTimer?.cancel();
       _reconnectingTimer = null;
       _reconnectingShown = false;
+      _waking = false;
       return;
     }
     // 寝ているところを起こしている（話しかけた）ときは、待たずに出す
@@ -349,6 +384,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
       _reconnectingTimer?.cancel();
       _reconnectingTimer = null;
       _reconnectingShown = true;
+      _waking = true;
       return;
     }
     if (_reconnectingShown || (_reconnectingTimer?.isActive ?? false)) return;

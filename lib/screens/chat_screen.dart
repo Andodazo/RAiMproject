@@ -126,6 +126,18 @@ class ChatScreen extends StatelessWidget {
     return const Positioned.fill(child: RaimCallingOverlay());
   }
 
+  /// つながらないときのおやすみ画面（スマホのみ。2026-11-13）。
+  /// 何も出さないときも Positioned で返す（Stack の大きさを 0 にしないため）
+  Widget _buildSleepOverlay() {
+    if (!_isMobile) return const Positioned.fill(child: SizedBox.shrink());
+    return Positioned.fill(
+      child: Selector<ChatProvider, RaimSleepScreen>(
+        selector: (_, chat) => chat.sleepScreen,
+        builder: (_, screen, _) => RaimSleepOverlay(screen: screen),
+      ),
+    );
+  }
+
   /// Unity からのメッセージハンドラ
   ///
   /// 今届くのは、Unity の準備ができたという合図（unity.ready）だけ。
@@ -215,6 +227,9 @@ class ChatScreen extends StatelessWidget {
 
         // Layer 2.5: Unity の準備ができるまでの「発信中」の画面（スマホのみ）
         _buildCallingOverlay(),
+
+        // つながらないときのおやすみ画面（スマホのみ）
+        _buildSleepOverlay(),
 
         // ====================================================
         // Layer 3: UI オーバーレイ
@@ -357,6 +372,7 @@ class ChatScreen extends StatelessWidget {
         _buildCharacterLayer(context),
         if (_isMobile) const SleepingZzz(),
         _buildCallingOverlay(),
+        _buildSleepOverlay(),
 
         // 左上タイトル
         Positioned(
