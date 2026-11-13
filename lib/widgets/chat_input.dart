@@ -352,7 +352,18 @@ class _ChatInputState extends State<ChatInput> {
                       ),
                       IconButton(
                         icon: const Icon(Icons.send, color: Colors.white),
-                        onPressed: _sendMessage,
+                        onPressed: () {
+                          // Androidでは送信ボタンを押した時点でフォーカスを外し、キーボードを閉じる。
+                          if (Platform.isAndroid) {
+                            FocusManager.instance.primaryFocus?.unfocus();
+                            unawaited(
+                              SystemChannels.textInput.invokeMethod<void>(
+                                'TextInput.hide',
+                              ),
+                            );
+                          }
+                          _sendMessage();
+                        },
                       ),
                     ],
                   ),
