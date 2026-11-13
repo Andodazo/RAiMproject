@@ -1103,7 +1103,13 @@ _toolStatus = null;
     if (service is! GreetingService) return;
     if (!_greetOnLaunchEnabled()) return;
     if (_greetedGeneration == _accountGeneration) return;
-    if (_isLoading) return;
+    // 自分から先に話している（返事の途中）なら、そのログインの間はもう話しかけない（2026-11-13）。
+    // 以前は話しかけ済みにせずに戻っていたので、返事が遅くてつなぎ直したときに、
+    // 会話の途中で話しかけていた（開いてすぐ「1分のタイマーかけて」と送ったとき）
+    if (_isLoading) {
+      _greetedGeneration = _accountGeneration;
+      return;
+    }
     // くじを外れたときも引き直さない（つなぎ直すたびに引くと、結局話しかけてしまう）
     _greetedGeneration = _accountGeneration;
     // その日はじめてで今日の予定があれば、くじを引かずに朝のまとめ
