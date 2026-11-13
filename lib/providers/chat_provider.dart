@@ -627,6 +627,12 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   /// 通知を押したとき（[live] が false）は、まだつながっていなければ、つながったときに話す
   /// （そのときの話しかけの代わりにする）。Windows で時刻が来たとき（[live] が true）は待たない
   /// （話せなければ通知を出すので、あとから古い知らせを話さない）。
+  /// 同じ知らせをもう話していたときに、サーバーが返すエラーコード
+  static const reminderAlreadySpokenCode = 'REMINDER_ALREADY_SPOKEN';
+
+  /// 黙って捨てたエラーのコード（speakReminder が「もう話していた」を見分けるのに使う）
+  String? _lastQuietErrorCode;
+
   Future<bool> speakReminder(String itemId, String slot, {bool live = false}) async {
     final Object service = _llmService;
     if (service is! ReminderService) return false;
@@ -637,13 +643,21 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     if (_isLoading) return false;
     // 予定の一言を話したら、アプリを開いたときの話しかけはしない
     _greetedGeneration = _accountGeneration;
-    return _speakFirst(
+    _lastQuietErrorCode = null;
+    final spoke = await _speakFirst(
       () => service.sendReminder(
         itemId: itemId,
         slot: slot,
         threadId: _currentThreadId,
       ),
     );
+    // ほかの端末などで、この知らせはもう話していた（2026-11-13）。
+    // 話したのと同じ扱いにして、Windows で通知を出し直さない
+    if (!spoke && _lastQuietErrorCode == reminderAlreadySpokenCode) {
+      RaimLog.d('[ChatProvider] この知らせはもう話していました: $slot');
+      return true;
+    }
+    return spoke;
   }
 
   //音声Base64を再生キューに入れる処理
@@ -1665,7 +1679,8 @@ _toolStatus = null;
       if (generation != _conversationGeneration) return false;
 
       if (quietErrors && response.isError) {
-        RaimLog.d('[ChatProvider] 返事を作れませんでした: ${response.raw['code']}');
+        _lastQuietErrorCode = response.raw['code']?.toString();
+        RaimLog.d('[ChatProvider] 返事を作れませんでした: $_lastQuietErrorCode');
         return false;
       }
 
