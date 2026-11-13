@@ -218,7 +218,10 @@ class PushLlm extends ScriptedLlm implements ServerPushService {
 }
 
 class ReminderLlm extends ScriptedLlm implements GreetingService, ReminderService {
-  ReminderLlm(super.script);
+  ReminderLlm(super.script, {this.reminderReply});
+
+  /// 知らせへの返事を差し替える（無ければ歯医者の一言）
+  final List<Map<String, dynamic>>? reminderReply;
 
   final List<String> reminders = [];
   int greetings = 0;
@@ -232,7 +235,7 @@ class ReminderLlm extends ScriptedLlm implements GreetingService, ReminderServic
   @override
   Stream<LLMResponse> sendReminder({required String itemId, required String slot, String? threadId}) async* {
     reminders.add('$itemId:$slot');
-    for (final json in const [
+    for (final json in reminderReply ?? const [
       {'type': 'text_chunk', 'text': 'このあと15時に歯医者だよ'},
       {'type': 'chat_end', 'full_text': 'このあと15時に歯医者だよ'},
     ]) {
@@ -485,7 +488,8 @@ void main() {
       actions.add(const AppNotificationAction(payload: 'planner:tm_a:timer', actionId: 'stop'));
       actions.add(const AppNotificationAction(payload: 'planner:tm_a:timer', actionId: 'snooze'));
       await Future<void>.delayed(Duration.zero);
-      expect(spoken, ['timer', 'timer']);
+      // 「もう一回」の通知は snooze のまま送る（サーバーは snooze なら何回でも話す。2026-11-13）
+      expect(spoken, ['timer', 'snooze']);
       final snooze = notifier.snoozed.single;
       expect(snooze.slot, 'snooze');
       expect(snooze.at, now.toUtc().add(const Duration(minutes: 5)));
@@ -985,6 +989,26 @@ void main() {
       expect(chat.messages.single.text, contains('歯医者'));
       await chat.greetOnLaunch();
       expect(llm.greetings, 0);
+    });
+
+    // Windows が話したあとスマホの通知を押すと、同じタイマーの話を2回していた（2026-11-13）
+    test('もう話した知らせは、話したのと同じ扱い（何も出さず、通知も出し直さない）', () async {
+      final llm = ReminderLlm(const [], reminderReply: const [
+        {'type': 'error', 'code': 'REMINDER_ALREADY_SPOKEN', 'text': 'already'},
+      ]);
+      final chat = ChatProvider(llm, FakeUnity(), audioQueue: FakeAudioQueue());
+      addTearDown(chat.dispose);
+      expect(await chat.speakReminder('tm_1', 'timer', live: true), isTrue);
+      expect(chat.messages, isEmpty);
+
+      // ほかのエラーは失敗のまま（Windows は通知を出す）
+      final broken = ReminderLlm(const [], reminderReply: const [
+        {'type': 'error', 'code': 'LLM_TIMEOUT', 'text': 'timeout'},
+      ]);
+      final chat2 = ChatProvider(broken, FakeUnity(), audioQueue: FakeAudioQueue());
+      addTearDown(chat2.dispose);
+      expect(await chat2.speakReminder('tm_1', 'timer', live: true), isFalse);
+      expect(chat2.messages, isEmpty);
     });
   });
 

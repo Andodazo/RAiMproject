@@ -336,8 +336,9 @@ class PlannerController extends ChangeNotifier {
     if (parsed == null) return;
     final speak = _speak;
     if (speak == null) return;
-    // 「もう一回」の通知も、ライムにはタイマーとして話してもらう
-    final slot = PlannerSlot.isTimer(parsed.slot) ? PlannerSlot.timer : parsed.slot;
+    // 「もう一回」の通知は snooze のまま送る（2026-11-13）。
+    // サーバーは同じ知らせを2回話さないが、「もう一回」は本人が頼んだので何回でも話す
+    final slot = parsed.slot;
     RaimLog.d('[Planner] 予定の通知が押されました: $slot');
     unawaited(speak(parsed.itemId, slot));
   }
