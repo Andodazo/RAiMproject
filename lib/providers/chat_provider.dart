@@ -306,6 +306,62 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
 
   /// 「寝てる」状態か（UI で立ち絵切替などに使用予定）
   bool get isOffline => _connectionState == RaimConnectionState.offline;
+
+  /// つなぎ直しの表示を出すまで待つ時間。
+  ///
+  /// アプリに戻ったときの張り直しなどは1秒ほどで終わるので、すぐ出すとチカチカする。
+  static const Duration reconnectingNoticeDelay = Duration(seconds: 2);
+
+  /// つなぎ直しが長引いていて、表示を出しているか
+  bool _reconnectingShown = false;
+  Timer? _reconnectingTimer;
+
+  /// つながっていないときに入力欄などへ出す一言。つながっていれば null。
+  ///
+  /// 以前は、つなぎ直している間は何も出ず、寝ている（offline）ときも
+  /// スマホの Zzz と Windows の「接続待ち…」だけで、止まっているのか分かりにくかった。
+  String? get connectionNotice {
+    switch (_connectionState) {
+      case RaimConnectionState.connected:
+        return null;
+      case RaimConnectionState.offline:
+        return 'つながらないよ。話しかけたら起こすね';
+      case RaimConnectionState.connecting:
+      case RaimConnectionState.disconnected:
+        return _reconnectingShown ? 'つなぎ直しているよ…' : null;
+    }
+  }
+
+  /// 接続の状態が変わったときに、つなぎ直しの表示を出すか決める
+  void _updateReconnectingNotice(
+    RaimConnectionState previous,
+    RaimConnectionState next,
+  ) {
+    if (next == RaimConnectionState.connected ||
+        next == RaimConnectionState.offline) {
+      _reconnectingTimer?.cancel();
+      _reconnectingTimer = null;
+      _reconnectingShown = false;
+      return;
+    }
+    // 寝ているところを起こしている（話しかけた）ときは、待たずに出す
+    if (previous == RaimConnectionState.offline) {
+      _reconnectingTimer?.cancel();
+      _reconnectingTimer = null;
+      _reconnectingShown = true;
+      return;
+    }
+    if (_reconnectingShown || (_reconnectingTimer?.isActive ?? false)) return;
+    _reconnectingTimer = Timer(reconnectingNoticeDelay, () {
+      _reconnectingTimer = null;
+      if (_connectionState == RaimConnectionState.connected ||
+          _connectionState == RaimConnectionState.offline) {
+        return;
+      }
+      _reconnectingShown = true;
+      notifyListeners();
+    });
+  }
   void _bindConnectionState() {
     // RaimServerService の場合のみ接続状態を購読
     //websocketだから変更箇所をリアルタイムで確認するため
@@ -313,8 +369,10 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
       final service = _llmService;
       _connectionState = service.state;
       _stateSubscription = service.stateStream.listen((newState) {
-        final wasConnected = _connectionState == RaimConnectionState.connected;
+        final previous = _connectionState;
+        final wasConnected = previous == RaimConnectionState.connected;
         _connectionState = newState;
+        _updateReconnectingNotice(previous, newState);
         // つながらない間は、ライムを寝ている立ち絵にする
         _unityBridge.sendSleeping(newState == RaimConnectionState.offline);
         if (newState != RaimConnectionState.connected) {
@@ -1393,6 +1451,7 @@ _toolStatus = null;
   @override
   void dispose() {
     _stateSubscription?.cancel();
+    _reconnectingTimer?.cancel();
     _pushSubscription?.cancel();
     unawaited(_clientActions.close());
     _audioAssembler.dispose();

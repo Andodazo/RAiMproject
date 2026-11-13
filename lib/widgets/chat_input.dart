@@ -96,12 +96,13 @@ class _ChatInputState extends State<ChatInput> {
   }
 
   /// 入力欄のプレースホルダ。聞き取り中は途中経過を出す。
-  String _hint(VoiceController voice, String heard) {
+  String _hint(VoiceController voice, String heard, String? connection) {
     if (voice.isTranscribing) return heard.isEmpty ? '聞いてるよ…' : heard;
     final notice = voice.sttNotice;
     if (notice != null) return notice;
     final error = voice.sttError;
     if (error != null) return '聞き取れませんでした（$error）';
+    if (connection != null) return connection;
     return '何でも話してね';
   }
 
@@ -188,6 +189,9 @@ class _ChatInputState extends State<ChatInput> {
     final voice = context.watch<VoiceController>();
     final manualMic = context.watch<VoiceSettingsProvider>().manualMicEnabled;
     final talking = voice.isTranscribing;
+    // つなぎ直している・つながらないときは、入力欄にそれを出す
+    final connection =
+        context.select<ChatProvider, String?>((c) => c.connectionNotice);
 
     return TapRegion(
       // 追加：入力欄の外を押したときにキーボードを閉じる
@@ -259,7 +263,7 @@ class _ChatInputState extends State<ChatInput> {
                       style: const TextStyle(color: Colors.white, fontSize: 15),
                       cursorColor: Colors.white,
                       decoration: InputDecoration(
-                        hintText: _hint(voice, heard),
+                        hintText: _hint(voice, heard, connection),
 
                         // マイクボタン。押して話し、もう一度押すか黙ると送る
                         suffixIcon: !manualMic && !talking
