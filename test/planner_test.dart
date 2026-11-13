@@ -15,6 +15,7 @@ import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/planner_controller.dart';
 import 'package:raim_prototype/services/app_notifications.dart';
 import 'package:raim_prototype/services/llm_service.dart';
+import 'package:raim_prototype/services/planner/device_calendar.dart';
 import 'package:raim_prototype/services/planner/planner_notifications.dart';
 import 'package:raim_prototype/services/planner/planner_reminder_runner.dart';
 import 'package:raim_prototype/services/planner/planner_schedule.dart';
@@ -706,6 +707,59 @@ void main() {
       await tester.pump();
       expect(controller.lists.single.entries.single.checked, isTrue);
       await tester.pump(const Duration(milliseconds: 400));
+    });
+  });
+
+  // 2026-11-13: スマホの「カレンダーにも入れる」
+  group('カレンダーにも入れる', () {
+    test('時刻のある予定は日本時間で1時間、日付だけなら終日', () {
+      final timed = deviceCalendarEntryFor(
+        const PlannerItem(itemId: 'ev_1', kind: 'event', title: '面接', date: '2026-11-14', time: '10:00', note: 'スーツ'),
+      )!;
+      expect(timed.title, '面接');
+      expect(timed.description, 'スーツ');
+      expect(timed.allDay, isFalse);
+      expect(timed.start, DateTime.utc(2026, 11, 14, 1, 0));
+      expect(timed.end, DateTime.utc(2026, 11, 14, 2, 0));
+
+      final allDay = deviceCalendarEntryFor(event('ev_2', '2026-11-15'))!;
+      expect(allDay.allDay, isTrue);
+      expect([allDay.start.year, allDay.start.month, allDay.start.day], [2026, 11, 15]);
+      expect(allDay.end, allDay.start);
+
+      expect(deviceCalendarEntryFor(event('ev_3', 'あした')), isNull);
+    });
+
+    testWidgets('「入れたよ」のカードに出る。取り消したら・タイマー・Windows では出ない', (tester) async {
+      Future<void> show(PlannerCard card, {bool compact = false}) => tester.pumpWidget(MaterialApp(
+            home: Scaffold(body: PlannerCardView(card: card, compact: compact, showCalendarButton: true)),
+          ));
+      final added = PlannerCard.added(event('ev_1', '2026-11-14', time: '10:00', title: '面接'), at: now);
+      await show(added);
+      expect(find.text('カレンダーにも入れる'), findsOneWidget);
+
+      await show(added.withState(PlannerCardState.undone));
+      expect(find.text('カレンダーにも入れる'), findsNothing);
+
+      await show(added, compact: true);
+      expect(find.text('カレンダーにも入れる'), findsNothing);
+
+      final timer = PlannerItem.fromJson(const {
+        'itemId': 'tm_1', 'kind': 'timer', 'title': 'タイマー', 'endsAt': '2026-11-11T02:33:00Z', 'durationSec': 180,
+      });
+      await show(PlannerCard.added(timer, at: now));
+      expect(find.text('カレンダーにも入れる'), findsNothing);
+
+      // 「予定に入れる？」は、入れたあとに出る
+      final suggest = PlannerCard.suggest(const PlannerCandidate(title: '映画', date: '2026-11-14'), at: now);
+      await show(suggest);
+      expect(find.text('カレンダーにも入れる'), findsNothing);
+      await show(suggest.withState(PlannerCardState.accepted));
+      expect(find.text('カレンダーにも入れる'), findsOneWidget);
+
+      // テストの端末（スマホではない）では、省略すると出ない
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: PlannerCardView(card: added))));
+      expect(find.text('カレンダーにも入れる'), findsNothing);
     });
   });
 

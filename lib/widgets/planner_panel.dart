@@ -18,6 +18,7 @@ import 'package:provider/provider.dart';
 
 import 'package:raim_prototype/models/planner_item.dart';
 import 'package:raim_prototype/providers/planner_controller.dart';
+import 'package:raim_prototype/services/planner/device_calendar.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/widgets/planner_memo_panel.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
@@ -711,6 +712,15 @@ class _PlannerEditorState extends State<_PlannerEditor> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
+              // 入っている予定を押したとき（スマホだけ）: OS のカレンダーに写す
+              if (widget.initial != null && canAddToDeviceCalendar) ...[
+                TextButton.icon(
+                  onPressed: widget.busy ? null : () => openDeviceCalendarFor(widget.initial!),
+                  icon: Icon(Icons.edit_calendar_outlined, size: 15, color: _p.accent),
+                  label: Text('カレンダーにも入れる', style: TextStyle(color: _p.accent, fontSize: 12.5 * _fs)),
+                ),
+                const Spacer(),
+              ],
               TextButton(
                 onPressed: widget.busy ? null : widget.onCancel,
                 child: Text('やめる', style: TextStyle(color: _p.muted, fontSize: 12.5 * _fs)),

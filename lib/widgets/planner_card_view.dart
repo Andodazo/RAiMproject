@@ -14,6 +14,7 @@ import 'package:raim_prototype/models/planner_card.dart';
 import 'package:raim_prototype/models/planner_item.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/planner_controller.dart';
+import 'package:raim_prototype/services/planner/device_calendar.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/widgets/planner_memo_panel.dart';
 
@@ -29,7 +30,11 @@ class PlannerCardView extends StatelessWidget {
     this.borderColor = const Color(0xFFCFE3A8),
     this.onOpenMemos,
     this.onOpenedTalk,
+    this.showCalendarButton,
   });
+
+  /// 「カレンダーにも入れる」を出すか（省略時はスマホだけ。テストで変える）
+  final bool? showCalendarButton;
 
   /// メモのカードで「開く」を押したとき（Windows は入力欄の上で中身を出せないので、メモタブを開く）
   final VoidCallback? onOpenMemos;
@@ -78,6 +83,31 @@ class PlannerCardView extends StatelessWidget {
         child: content,
       );
     }
+    final calendarItem = _calendarItem();
+    final body = calendarItem == null
+        ? content
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              content,
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => openDeviceCalendarFor(calendarItem),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: Icon(Icons.edit_calendar_outlined, size: 15, color: accentColor),
+                  label: Text(
+                    'カレンダーにも入れる',
+                    style: TextStyle(color: accentColor, fontSize: 12.5, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          );
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -89,9 +119,31 @@ class PlannerCardView extends StatelessWidget {
           border: Border.all(color: borderColor),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: content,
+        child: body,
       ),
     );
+  }
+
+  /// 「入れたよ」のカードなら、カレンダーに写す予定。それ以外は null
+  PlannerItem? _calendarItem() {
+    if (!(showCalendarButton ?? canAddToDeviceCalendar)) return null;
+    final item = card.item;
+    if (card.type == PlannerCardType.added) {
+      if (item == null || !item.isEvent) return null;
+      return card.state == PlannerCardState.undone ? null : item;
+    }
+    if (card.type == PlannerCardType.suggest && card.state == PlannerCardState.accepted) {
+      final candidate = card.candidate;
+      if (candidate == null) return null;
+      return PlannerItem(
+        itemId: '',
+        kind: 'event',
+        title: candidate.title,
+        date: candidate.date,
+        time: candidate.time,
+      );
+    }
+    return null;
   }
 
   String _message() {

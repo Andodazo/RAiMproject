@@ -60,6 +60,10 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSCalendarsUsageDescription</key>
+	<string>ライムと決めた予定を、カレンダーにも入れるために使用します。</string>
+	<key>NSContactsUsageDescription</key>
+	<string>カレンダーに予定を入れる画面で、場所や参加する人を選べるようにするために使用します。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>ライムに写真を見せるために、カメラを使用します。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
