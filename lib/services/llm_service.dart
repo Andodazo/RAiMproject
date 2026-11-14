@@ -30,6 +30,33 @@ abstract class GreetingService {
   Stream<LLMResponse> sendGreeting({String? threadId});
 }
 
+/// 予定を知らせる時刻に、ライムから予定の一言を話してもらえるサービス。
+///
+/// GreetingService と同じ理由で分けている（話しかけのテスト用の偽物に手を入れずに済む）。
+abstract class ReminderService {
+  /// [slot] は 'eve'（前の日の夜）/ 'before'（1時間前）/ 'morning'（当日の朝）
+  Stream<LLMResponse> sendReminder({
+    required String itemId,
+    required String slot,
+    String? threadId,
+  });
+}
+
+/// その日はじめての話しかけで、今日の予定をまとめてもらえるサービス（朝のまとめ）。
+///
+/// GreetingService と同じ理由で分けている。サーバーは今日の予定が無ければ普段の話しかけにする。
+abstract class BriefService {
+  Stream<LLMResponse> sendBrief({String? threadId});
+}
+
+/// 返事が終わったあとにも、サーバーからの知らせを受け取れるサービス。
+///
+/// サーバーは返事の終わり（chat_end）を先に送り、予定の「予定に入れる？」などは
+/// そのあとに送る。送信ごとの受信待ちは chat_end で終わるので、全体の受信を渡す。
+abstract class ServerPushService {
+  Stream<LLMResponse> get incomingStream;
+}
+
 // ─────────────────────────────────────────────
 // MockLLMService（テスト用、Stream対応）
 // ─────────────────────────────────────────────

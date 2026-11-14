@@ -17,7 +17,11 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
+          # stable の最新を使っていたら、Flutter 3.50 で package:flutter/material.dart が
+          # 非推奨になり、全ファイルの import が analyze で落ちるようになった（2026-11-13〜）。
+          # 手元と同じ版に固定する。上げるときは material_ui への移行と一緒に
           channel: stable
+          flutter-version: 3.47.9
           cache: true
 
       - name: 依存関係を取得

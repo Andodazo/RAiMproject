@@ -8,11 +8,13 @@ import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 // 【追加・課題1】ログアウト時に会話と選択画像を消すために使う。
 import 'package:raim_prototype/providers/chat_provider.dart';
+import 'package:raim_prototype/providers/planner_controller.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/services/app_exit_service.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
 import 'package:raim_prototype/widgets/memory_panel.dart';
+import 'package:raim_prototype/widgets/planner_panel.dart';
 import 'package:raim_prototype/widgets/message_list.dart';
 import 'package:raim_prototype/widgets/chat_input.dart';
 import 'package:raim_prototype/widgets/client_action_listener.dart';
@@ -124,6 +126,18 @@ class ChatScreen extends StatelessWidget {
     return const Positioned.fill(child: RaimCallingOverlay());
   }
 
+  /// つながらないときのおやすみ画面（スマホのみ。2026-11-13）。
+  /// 何も出さないときも Positioned で返す（Stack の大きさを 0 にしないため）
+  Widget _buildSleepOverlay() {
+    if (!_isMobile) return const Positioned.fill(child: SizedBox.shrink());
+    return Positioned.fill(
+      child: Selector<ChatProvider, RaimSleepScreen>(
+        selector: (_, chat) => chat.sleepScreen,
+        builder: (_, screen, _) => RaimSleepOverlay(screen: screen),
+      ),
+    );
+  }
+
   /// Unity からのメッセージハンドラ
   ///
   /// 今届くのは、Unity の準備ができたという合図（unity.ready）だけ。
@@ -148,6 +162,7 @@ class ChatScreen extends StatelessWidget {
             context,
             context.read<RaimServerService>(),
           ),
+          onPlanner: () => showPlannerSheet(context),
           onLogout: () {
             _confirmLogoutAndClose(context);
           },
@@ -212,6 +227,9 @@ class ChatScreen extends StatelessWidget {
 
         // Layer 2.5: Unity の準備ができるまでの「発信中」の画面（スマホのみ）
         _buildCallingOverlay(),
+
+        // つながらないときのおやすみ画面（スマホのみ）
+        _buildSleepOverlay(),
 
         // ====================================================
         // Layer 3: UI オーバーレイ
@@ -313,6 +331,7 @@ class ChatScreen extends StatelessWidget {
               context,
               context.read<RaimServerService>(),
             ),
+            onPlanner: () => showPlannerSheet(context),
             onLogout: () {
               _confirmLogoutAndClose(context);
             },
@@ -353,6 +372,7 @@ class ChatScreen extends StatelessWidget {
         _buildCharacterLayer(context),
         if (_isMobile) const SleepingZzz(),
         _buildCallingOverlay(),
+        _buildSleepOverlay(),
 
         // 左上タイトル
         Positioned(
@@ -457,6 +477,7 @@ class ChatScreen extends StatelessWidget {
     // 【追加】終了できない端末でも、前の人の状態を残さない。
     // 非同期のログアウトを待つ前に、表示と選択画像を消す。
     context.read<ChatProvider>().resetForSignOut();
+    unawaited(context.read<PlannerController>().resetForSignOut());
     context.read<CameraProvider>().clearImage();
 
     try {

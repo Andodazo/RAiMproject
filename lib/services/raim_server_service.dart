@@ -43,6 +43,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
@@ -50,6 +51,7 @@ import 'package:raim_prototype/models/raim_memory.dart';
 import 'package:raim_prototype/models/llm_response.dart';
 import 'package:raim_prototype/models/conversation_thread.dart';
 import 'package:raim_prototype/models/message.dart';
+import 'package:raim_prototype/models/planner_item.dart';
 import 'package:raim_prototype/services/llm_service.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/config/raim_config.dart';
@@ -73,7 +75,15 @@ enum RaimConnectionState {
   offline,
 }
 
-class RaimServerService implements LLMService, GreetingService, MemoryService {
+class RaimServerService
+    implements
+        LLMService,
+        GreetingService,
+        ReminderService,
+        BriefService,
+        ServerPushService,
+        MemoryService,
+        PlannerService {
   // ─── 設定値（コンストラクタで受け取る） ───
   
   /// サーバーの URL
@@ -125,7 +135,19 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
     this.accessTokenGetter,
     this.maxReconnectAttempts = 3,
     this.requestTimeout = const Duration(seconds: 60),
+    this.silentCheckAfter = const Duration(seconds: 15),
+    this.aliveProbeWait = const Duration(seconds: 5),
   }) : _serverUrl = serverUrl;
+
+  /// 送ってからこの間サーバーから何も届かなければ、接続が生きているか確かめる。
+  ///
+  /// Core は要求を受け取るとすぐ「返事を始めた」（metadata）を送るので、
+  /// ふだんは数秒で何か届く。届かないときは、接続が知らないうちに切れていることが多い
+  /// （電波の切り替わりなど。切れたことをアプリが受け取れず、60秒待ってエラーになっていた）。
+  final Duration silentCheckAfter;
+
+  /// 確かめるときに待つ時間。Edge がすぐ返す軽い要求を送り、この間に何か届けば生きている。
+  final Duration aliveProbeWait;
 
   // ─── 内部状態 ───
 
@@ -192,6 +214,7 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
 
   /// サーバーから来る全メッセージを購読するための Stream
   /// 将来の proactive_message（ライム発信）を受信するために公開
+  @override
   Stream<LLMResponse> get incomingStream {
     _broadcaster ??= StreamController<LLMResponse>.broadcast();
     return _broadcaster!.stream;
@@ -202,6 +225,11 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
   void _setState(RaimConnectionState newState) {
     if (_state == newState) return;
     _state = newState;
+    if (!_disposed &&
+        (newState == RaimConnectionState.connected ||
+            newState == RaimConnectionState.offline)) {
+      redialing.value = false;
+    }
     if (!_stateController.isClosed) {
       _stateController.add(newState);
     }
@@ -459,6 +487,7 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
     if (!_stateController.isClosed) {
       await _stateController.close();
     }
+    redialing.dispose();
   }
 
   // ─────────────────────────────────────────────
@@ -472,6 +501,9 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
   /// 3.それ以外の metadata / text_chunk / audio_chunk / tool_call / chat_end は
   /// 4._broadcaster に流して ChatProvider 側で処理する。
   void _onMessage(dynamic rawMessage) {
+    // 接続が生きているか確かめている途中なら、何か届いた時点で生きている
+    final waiter = _messageWaiter;
+    if (waiter != null && !waiter.isCompleted) waiter.complete();
     // 何か届いた = 接続は生きている。アプリへ戻ったときの確認中なら、張り直さずに済む
     if (_checkingAlive) {
       RaimLog.d('[RaimServerService] サーバーから届いたので、接続はそのまま使います');
@@ -651,12 +683,12 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
   Future<void> handleAppResumed({required bool longAway}) async {
     if (_state != RaimConnectionState.connected) {
       // 寝ている・再接続待ちなら、待たずにすぐ試す
-      await reconnectNow();
+      await _redial();
       return;
     }
     if (!longAway) return;
     if (_repliesInFlight == 0) {
-      await reconnectNow();
+      await _redial();
       return;
     }
 
@@ -671,10 +703,88 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
     });
   }
 
+  /// アプリに戻ったときにつなぎ直している間 true（スマホは「発信中…」を出す。2026-11-13）。
+  ///
+  /// つながるか、つながらずに寝る（offline）まで true のまま。
+  /// 30秒未満で戻ったときなど、つなぎ直さないときは変わらない。
+  final ValueNotifier<bool> redialing = ValueNotifier<bool>(false);
+
+  /// アプリに戻ったときのつなぎ直し
+  Future<void> _redial() async {
+    redialing.value = true;
+    try {
+      await reconnectNow();
+    } finally {
+      // 寝ているときのつなぎ直しは状態を変えずに終わるので、ここでも下ろす
+      if (!_disposed &&
+          (_state == RaimConnectionState.connected ||
+              _state == RaimConnectionState.offline)) {
+        redialing.value = false;
+      }
+    }
+  }
+
   void _stopAliveCheck() {
     _checkingAlive = false;
     _aliveTimer?.cancel();
     _aliveTimer = null;
+  }
+
+  /// 接続が生きているか確かめている間に、何か届いたら完了する
+  Completer<void>? _messageWaiter;
+
+  /// 今の接続が生きているか確かめる。
+  ///
+  /// Edge が DynamoDB を読んですぐ返す要求（会話の一覧）を送り、
+  /// [aliveProbeWait] の間に何か届けば生きている。
+  /// 返事が遅いだけ（Mantle が重いなど）のときに張り直すと、古い接続あての返事を
+  /// 受け取れなくなるので、張り直す前にこれで確かめる。
+  Future<bool> _probeAlive() async {
+    final channel = _channel;
+    if (channel == null || _state != RaimConnectionState.connected) {
+      return false;
+    }
+    final waiter = Completer<void>();
+    _messageWaiter = waiter;
+    try {
+      channel.sink.add(jsonEncode({
+        'type': 'thread.list',
+        'requestId': newRequestId(),
+      }));
+      await waiter.future.timeout(aliveProbeWait);
+      return true;
+    } on TimeoutException {
+      return false;
+    } catch (_) {
+      return false;
+    } finally {
+      if (identical(_messageWaiter, waiter)) _messageWaiter = null;
+    }
+  }
+
+  /// 送った要求への最初の応答を待つ。接続が切れていたら null を返す。
+  ///
+  /// [silentCheckAfter] の間に何も届かなければ、接続が生きているか確かめる。
+  /// 生きていれば返事が遅いだけなので、[requestTimeout] まで待ち続ける。
+  Future<bool?> _awaitFirstOrDead(Future<bool> next) async {
+    TimeoutException tooSlow() =>
+        TimeoutException('RAiMからの最初の応答が遅すぎます', requestTimeout);
+    if (silentCheckAfter >= requestTimeout) {
+      return next.timeout(requestTimeout, onTimeout: () => throw tooSlow());
+    }
+    try {
+      return await next.timeout(silentCheckAfter);
+    } on TimeoutException {
+      RaimLog.d('[RaimServerService] 返事が来ないので、接続が生きているか確かめます');
+      if (!await _probeAlive()) {
+        RaimLog.d('[RaimServerService] 接続が切れていたので、つなぎ直して送り直します');
+        return null;
+      }
+      return next.timeout(
+        requestTimeout - silentCheckAfter,
+        onTimeout: () => throw tooSlow(),
+      );
+    }
   }
 
   /// 「寝てるライムを起こす」処理
@@ -712,7 +822,9 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
     return response.isThreadList ||
         response.isThreadHistory ||
         response.isThreadDeleted ||
-        response.isMemory;
+        response.isMemory ||
+        response.isPlanner ||
+        response.isPlannerChanged;
   }
 
   /// 要求に付ける ID を作る。サーバーの形式（英数字・-・_、64文字まで）に合う。
@@ -751,12 +863,38 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
     return _send('', threadId: threadId, greeting: true);
   }
 
+  /// 予定を知らせる時刻に、ライムからその予定の一言を話してもらう。
+  ///
+  /// 話しかけ（greeting）と同じ流れで、どの予定のどの時刻かを付けて送る。
+  /// Windows で知らせる時刻が来たときと、スマホで予定の通知を押して開いたときに使う。
+  @override
+  Stream<LLMResponse> sendReminder({
+    required String itemId,
+    required String slot,
+    String? threadId,
+  }) {
+    return _send(
+      '',
+      threadId: threadId,
+      greeting: true,
+      reminder: {'itemId': itemId, 'slot': slot},
+    );
+  }
+
+  /// その日はじめての話しかけ（朝のまとめ）。今日の予定はサーバーが読み直す
+  @override
+  Stream<LLMResponse> sendBrief({String? threadId}) {
+    return _send('', threadId: threadId, greeting: true, brief: true);
+  }
+
   Stream<LLMResponse> _send(
     String userInput, {
     List<Map<String, dynamic>>? images,
     String? requestId,
     String? threadId,
     bool greeting = false,
+    Map<String, String>? reminder,
+    bool brief = false,
   }) async* {
     // オフラインまたは切断中なら、送信前に再接続を試す
     if (_state == RaimConnectionState.offline ||
@@ -782,6 +920,8 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
     // ライムから話しかけてもらう要求。本文は持たない
     if (greeting) {
       payload['type'] = 'greeting';
+      if (reminder != null) payload['reminder'] = reminder;
+      if (brief) payload['brief'] = true;
     }
     // 画像がある場合は、S3参照形式を追加する。
     if (!greeting && images != null && images.isNotEmpty) {
@@ -818,7 +958,7 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
     _repliesInFlight++;
     // 送信後に返ってくる複数メッセージを順番に受け取るためのIterator
     var iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
-    // TOKEN_EXPIRED で送り直したか（送り直すのは1回だけ）
+    // TOKEN_EXPIRED や接続切れで送り直したか（送り直すのは1回だけ）
     var resent = false;
     // 最初に届いた応答の attempt（サーバーが要求をやり直した回数）。
     // やり直すと1回目の途中までの分と2回目の分が両方届き得るので、
@@ -831,16 +971,34 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
       var firstResponse = iterator.moveNext();
       // WebSocketでサーバーへ送信する
       _channel!.sink.add(jsonEncode(payload));
-      // 最初の応答を待つ
-      var hasResponse = await firstResponse.timeout(
-        requestTimeout,
-        onTimeout: () {
-          throw TimeoutException(
-            'RAiMからの最初の応答が遅すぎます',
-            requestTimeout,
-          );
-        },
-      );
+      // 最初の応答を待つ。しばらく何も来なければ、接続が生きているか確かめる
+      var first = await _awaitFirstOrDead(firstResponse);
+      if (first == null) {
+        // 接続が知らないうちに切れていた。送った文はサーバーに届いていないはずなので、
+        // つなぎ直して同じ requestId で1回だけ送り直す（届いていても Core が二重に返さない）
+        resent = true;
+        await iterator.cancel();
+        await reconnectNow();
+        if (_state != RaimConnectionState.connected) {
+          throw Exception('RAiMに接続できていません: state=$_state');
+        }
+        // つなぎ直すとセッションは新しくなる
+        payload.remove('session_id');
+        if (_sessionId != null) payload['session_id'] = _sessionId;
+        iterator = StreamIterator<LLMResponse>(_broadcaster!.stream);
+        firstResponse = iterator.moveNext();
+        _channel!.sink.add(jsonEncode(payload));
+        first = await firstResponse.timeout(
+          requestTimeout,
+          onTimeout: () {
+            throw TimeoutException(
+              'RAiMからの最初の応答が遅すぎます',
+              requestTimeout,
+            );
+          },
+        );
+      }
+      var hasResponse = first;
       // text_chunk / audio_chunk / tool_call などを順番に返す
       while (hasResponse) {
         final response = iterator.current;
@@ -1020,6 +1178,111 @@ class RaimServerService implements LLMService, GreetingService, MemoryService {
       label: 'memory.forget',
     );
     return RaimMemory.fromJson(response);
+  }
+
+  // ==========================================================================
+  // 予定とメモ
+  // ==========================================================================
+  //
+  // 一覧・手で足す・直す・消すは、Edge Lambda が DynamoDB を読み書きしてすぐ返す
+  // （覚えていることと同じ）。どれも、変えたあとの一覧が丸ごと返る。
+
+  @override
+  Future<List<PlannerItem>> fetchPlanner() async {
+    final response = await _requestOnce(
+      payload: {'type': 'planner.list'},
+      matches: (r) => r.isPlanner,
+      label: 'planner.list',
+    );
+    return _plannerItems(response);
+  }
+
+  /// 予定を手で足す。[source] は 'manual' か 'suggest'（「予定に入れる？」で入れた）
+  @override
+  Future<List<PlannerItem>> addPlannerEvent({
+    required String title,
+    required String date,
+    String time = '',
+    String note = '',
+    String source = 'manual',
+    String followUpId = '',
+  }) async {
+    final response = await _requestOnce(
+      payload: {
+        'type': 'planner.add',
+        'source': source,
+        // 「予定に入れる？」で入れたら、サーバーが持っていた「あとで聞くこと」を消してもらう
+        if (followUpId.isNotEmpty) 'followUpId': followUpId,
+        'item': {'title': title, 'date': date, 'time': time, 'note': note},
+      },
+      matches: (r) => r.isPlanner,
+      label: 'planner.add',
+    );
+    return _plannerItems(response);
+  }
+
+  /// 予定を直す。[changes] は直すところだけ（title / date / time / note）
+  @override
+  Future<List<PlannerItem>> updatePlannerEvent(
+    String itemId,
+    Map<String, String> changes,
+  ) async {
+    final response = await _requestOnce(
+      payload: {'type': 'planner.update', 'itemId': itemId, 'changes': changes},
+      matches: (r) => r.isPlanner,
+      label: 'planner.update',
+    );
+    return _plannerItems(response);
+  }
+
+  @override
+  Future<List<PlannerItem>> deletePlannerItem(String itemId) async {
+    final response = await _requestOnce(
+      payload: {'type': 'planner.delete', 'itemId': itemId},
+      matches: (r) => r.isPlanner,
+      label: 'planner.delete',
+    );
+    return _plannerItems(response);
+  }
+
+  @override
+  Future<List<PlannerItem>> addPlannerMemo(String text) => _plannerAdd({'kind': 'memo', 'text': text});
+
+  @override
+  Future<List<PlannerItem>> addPlannerList(String title, List<String> entries) =>
+      _plannerAdd({'kind': 'list', 'title': title, 'entries': entries});
+
+  Future<List<PlannerItem>> _plannerAdd(Map<String, dynamic> item) async {
+    final response = await _requestOnce(
+      payload: {'type': 'planner.add', 'item': item},
+      matches: (r) => r.isPlanner,
+      label: 'planner.add',
+    );
+    return _plannerItems(response);
+  }
+
+  /// メモやリストを直す（リストの項目は全部送って入れ替える）
+  @override
+  Future<List<PlannerItem>> updatePlannerItem(
+    String itemId,
+    Map<String, dynamic> changes,
+  ) async {
+    final response = await _requestOnce(
+      payload: {'type': 'planner.update', 'itemId': itemId, 'changes': changes},
+      matches: (r) => r.isPlanner,
+      label: 'planner.update',
+    );
+    return _plannerItems(response);
+  }
+
+  static List<PlannerItem> _plannerItems(Map<String, dynamic> response) {
+    final raw = response['items'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((m) => PlannerItem.fromJson(m.map((k, v) => MapEntry(k.toString(), v))))
+        .where((item) => item.itemId.isNotEmpty)
+        .toList();
   }
 
   Future<Map<String, dynamic>> _requestOnce({

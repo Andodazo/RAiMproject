@@ -4,12 +4,16 @@
 // 手元に小さな WebSocket サーバーを立てて、つなぎ直して送り直すかを確かめる。
 // （ws:// の接続先なのでトークンは付かない。送り直しの流れだけを見る）
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:raim_prototype/models/llm_response.dart';
+import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/services/raim_server_service.dart';
+
+import 'review/support/fakes.dart';
 
 /// テスト用の JWT（署名は見ないので中身だけ）
 String _jwt(Map<String, dynamic> payload) {
@@ -33,17 +37,35 @@ class _FakeEdge {
   late ({List<Map<String, dynamic>> replies, bool close}) Function(
       int connection, Map<String, dynamic> request) onRequest;
 
+  /// 返す前に待つ時間（返事が遅いサーバーのまね）
+  Duration Function(int connection, Map<String, dynamic> request) delayFor =
+      (_, _) => Duration.zero;
+
+  /// 開いている接続
+  final _sockets = <WebSocket>[];
+
   String get url => 'ws://127.0.0.1:${_server.port}';
+
+  /// サーバー側から全部の接続を切る
+  Future<void> dropAll() async {
+    for (final socket in List.of(_sockets)) {
+      await socket.close();
+    }
+    _sockets.clear();
+  }
 
   Future<void> start() async {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     _server.listen((request) async {
       final socket = await WebSocketTransformer.upgrade(request);
       final connection = ++connections;
+      _sockets.add(socket);
       socket.listen((raw) async {
         final body = jsonDecode(raw as String) as Map<String, dynamic>;
         received.add((connection, body));
         final result = onRequest(connection, body);
+        final delay = delayFor(connection, body);
+        if (delay > Duration.zero) await Future<void>.delayed(delay);
         for (final reply in result.replies) {
           // 本物のサーバーと同じく、要求の requestId を付けて返す
           // （テストで別の ID を返したいときは reply 側に書く）
@@ -330,6 +352,238 @@ void main() {
         service.fetchThreadHistory('t1'),
         throwsA(isA<Exception>()),
       );
+    });
+  });
+
+  group('送ったあと返事が来ないとき', () {
+    late _FakeEdge edge;
+    late RaimServerService service;
+
+    const reply = (
+      replies: [
+        {'type': 'text_chunk', 'text': 'おはよう'},
+        {'type': 'chat_end'},
+      ],
+      close: false,
+    );
+    const silent = (replies: <Map<String, dynamic>>[], close: false);
+
+    setUp(() async {
+      edge = _FakeEdge();
+      await edge.start();
+      service = RaimServerService(
+        serverUrl: edge.url,
+        requestTimeout: const Duration(milliseconds: 1500),
+        silentCheckAfter: const Duration(milliseconds: 300),
+        aliveProbeWait: const Duration(milliseconds: 300),
+      );
+      await service.connect();
+    });
+
+    tearDown(() async {
+      await service.dispose();
+      await edge.stop();
+    });
+
+    test('接続が切れていたら、つなぎ直して同じ requestId で送り直す', () async {
+      // 1本目の接続は何も返さない（知らないうちに切れている接続のまね）
+      edge.onRequest =
+          (connection, request) => connection == 1 ? silent : reply;
+
+      final responses = await service.sendMessage('おはよう').toList();
+
+      expect(responses.map((r) => r.type), ['text_chunk', 'chat_end']);
+      expect(edge.connections, 2);
+      final chats =
+          edge.received.where((r) => r.$2['type'] != 'thread.list').toList();
+      expect(chats.map((r) => r.$1), [1, 2]);
+      expect(chats[0].$2['requestId'], chats[1].$2['requestId']);
+      // 張り直す前に、生きているか確かめている
+      expect(
+        edge.received.where((r) => r.$1 == 1).map((r) => r.$2['type']),
+        contains('thread.list'),
+      );
+    });
+
+    test('返事が遅いだけなら、つなぎ直さずに待つ', () async {
+      edge.onRequest = (connection, request) =>
+          request['type'] == 'thread.list'
+              ? (replies: [
+                  {'type': 'thread_list', 'threads': <Object>[]},
+                ], close: false)
+              : reply;
+      edge.delayFor = (connection, request) =>
+          request['type'] == 'thread.list'
+              ? Duration.zero
+              : const Duration(milliseconds: 800);
+
+      final responses = await service.sendMessage('おはよう').toList();
+
+      expect(responses.map((r) => r.type), ['text_chunk', 'chat_end']);
+      expect(edge.connections, 1);
+    });
+
+    test('送り直しても返事が来なければ、1回だけでやめてエラーにする', () async {
+      edge.onRequest = (connection, request) => silent;
+
+      await expectLater(
+        service.sendMessage('おはよう').toList(),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(edge.connections, 2);
+      expect(
+        edge.received.where((r) => r.$2['type'] != 'thread.list'),
+        hasLength(2),
+      );
+    });
+  });
+
+  group('つながっていないときの一言', () {
+    late _FakeEdge edge;
+
+    setUp(() async {
+      edge = _FakeEdge();
+      edge.onRequest = (connection, request) =>
+          (replies: <Map<String, dynamic>>[], close: false);
+      await edge.start();
+    });
+
+    tearDown(() => edge.stop());
+
+    Future<(RaimServerService, ChatProvider)> open(int maxAttempts) async {
+      final service = RaimServerService(
+        serverUrl: edge.url,
+        maxReconnectAttempts: maxAttempts,
+      );
+      final chat = ChatProvider(service, FakeUnity(), audioQueue: FakeAudioQueue());
+      addTearDown(() async {
+        chat.dispose();
+        await service.dispose();
+      });
+      await service.connect();
+      await Future<void>.delayed(Duration.zero);
+      return (service, chat);
+    }
+
+    test('つながっている間は何も出さない', () async {
+      final (_, chat) = await open(3);
+      expect(chat.connectionNotice, isNull);
+    });
+
+    test('切れてすぐは出さず、つなぎ直しが長引いたら出す', () async {
+      final (_, chat) = await open(3);
+      // つなぎ直しても失敗するよう、先にサーバーを止めてから切る
+      await edge.stop();
+      await edge.dropAll();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(chat.connectionNotice, isNull);
+
+      await Future<void>.delayed(
+        ChatProvider.reconnectingNoticeDelay + const Duration(milliseconds: 300),
+      );
+      expect(chat.connectionNotice, 'つなぎ直しているよ…');
+      // つなぎ直しているだけのときは、ぐるぐるだけで、おやすみ画面は出さない
+      expect(chat.showsReconnectingSpinner, isTrue);
+      expect(chat.sleepScreen, RaimSleepScreen.none);
+    });
+
+    test('つながらない（寝ている）ときは、すぐ出す', () async {
+      final (_, chat) = await open(0);
+      await edge.stop();
+      await edge.dropAll();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(chat.isOffline, isTrue);
+      expect(chat.connectionNotice, 'つながらないよ。話しかけたら起こすね');
+    });
+
+    test('寝ているときはおやすみ画面。話しかけたら「発信中」、だめならまた寝る', () async {
+      final (_, chat) = await open(0);
+      await edge.stop();
+      await edge.dropAll();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(chat.sleepScreen, RaimSleepScreen.sleeping);
+      expect(chat.showsReconnectingSpinner, isFalse);
+
+      final seen = <RaimSleepScreen>[];
+      void record() {
+        if (seen.isEmpty || seen.last != chat.sleepScreen) seen.add(chat.sleepScreen);
+      }
+      chat.addListener(record);
+      await chat.sendUserMessage('起きて');
+      // 起こせなかったら、つなぎ直しを何回か試すあいだは「発信中」のまま、そのあとまた寝る
+      for (var i = 0; i < 50 && !chat.isOffline; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      chat.removeListener(record);
+      expect(seen, [RaimSleepScreen.sleeping, RaimSleepScreen.waking, RaimSleepScreen.sleeping]);
+    });
+
+    // アプリに戻ったときのつなぎ直しでも「発信中…」（2026-11-13）
+    group('アプリに戻ったとき', () {
+      // 開いたときの会話の復元（thread.list）が返事待ちのままだと、つなぎ直さないので答えておく
+      void answerThreadList() {
+        edge.onRequest = (connection, request) => (
+              replies: request['type'] == 'thread.list'
+                  ? [
+                      {'type': 'thread_list', 'threads': <Object>[]},
+                    ]
+                  : <Map<String, dynamic>>[],
+              close: false,
+            );
+      }
+
+      List<RaimSleepScreen> watch(ChatProvider chat) {
+        final seen = <RaimSleepScreen>[chat.sleepScreen];
+        void record() {
+          if (seen.last != chat.sleepScreen) seen.add(chat.sleepScreen);
+        }
+        chat.addListener(record);
+        addTearDown(() => chat.removeListener(record));
+        return seen;
+      }
+
+      test('長く裏にいたら、つなぎ直す間は「発信中」。一瞬でつながっても1秒は出す', () async {
+        answerThreadList();
+        final (service, chat) = await open(3);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        final seen = watch(chat);
+        final started = DateTime.now();
+        await service.handleAppResumed(longAway: true);
+        expect(service.state, RaimConnectionState.connected);
+        expect(chat.sleepScreen, RaimSleepScreen.waking);
+        while (chat.sleepScreen != RaimSleepScreen.none) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        expect(
+          DateTime.now().difference(started),
+          greaterThanOrEqualTo(ChatProvider.minRedialShown - const Duration(milliseconds: 50)),
+        );
+        expect(seen, [RaimSleepScreen.none, RaimSleepScreen.waking, RaimSleepScreen.none]);
+      });
+
+      test('すぐ戻ったとき（つなぎ直さない）は何も出さない', () async {
+        answerThreadList();
+        final (service, chat) = await open(3);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        final seen = watch(chat);
+        await service.handleAppResumed(longAway: false);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(seen, [RaimSleepScreen.none]);
+        expect(service.redialing.value, isFalse);
+      });
+
+      test('寝ているときに戻ったら「発信中」、つながらなければまた寝る', () async {
+        final (service, chat) = await open(0);
+        await edge.stop();
+        await edge.dropAll();
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(chat.sleepScreen, RaimSleepScreen.sleeping);
+        final seen = watch(chat);
+        await service.handleAppResumed(longAway: true);
+        expect(service.redialing.value, isFalse);
+        await Future<void>.delayed(ChatProvider.minRedialShown + const Duration(milliseconds: 100));
+        expect(seen, [RaimSleepScreen.sleeping, RaimSleepScreen.waking, RaimSleepScreen.sleeping]);
+      });
     });
   });
 }

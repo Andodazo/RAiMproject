@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:raim_prototype/providers/chat_provider.dart' show RaimSleepScreen;
 import 'package:raim_prototype/services/unity_ready_signal.dart';
 
 /// Unity の準備ができるまで、ライムに電話をかけているような画面を出す（スマホのみ）。
@@ -96,19 +97,128 @@ class _RaimCallingOverlayState extends State<RaimCallingOverlay> {
   }
 }
 
+/// サーバーにつながらないときの、おやすみ画面（スマホのみ。2026-11-13）。
+///
+/// 以前は吹き出しの Zzz と3Dの寝ポーズしかなく、2Dモードや3Dの見え方によっては
+/// つながっているのか分からなかった。
+/// - [RaimSleepScreen.sleeping]：寝顔と「おやすみ中… 話しかけたら起こすね」。輪は止める
+/// - [RaimSleepScreen.waking]：寝ているときに話しかけたので「発信中…」。輪が広がる
+/// - 起こしてつながったら「つながりました」を少し見せてから消す
+///
+/// キャラの上に重ねるだけで、会話の履歴と入力欄はこの画面より手前にある。
+/// つなぎ直しているだけのときは出さない（入力欄の一言とぐるぐるだけ）。
+class RaimSleepOverlay extends StatefulWidget {
+  const RaimSleepOverlay({super.key, required this.screen});
+
+  final RaimSleepScreen screen;
+
+  @override
+  State<RaimSleepOverlay> createState() => _RaimSleepOverlayState();
+}
+
+class _RaimSleepOverlayState extends State<RaimSleepOverlay> {
+  static const Color _background = Color(0xFF14141F);
+  static const Duration _connectedHold = Duration(milliseconds: 700);
+  static const Duration _fadeDuration = Duration(milliseconds: 400);
+
+  /// 最後に出していた画面（消えていく間も同じ絵を出しておく）
+  RaimSleepScreen _shown = RaimSleepScreen.none;
+  bool _connected = false;
+  bool _visible = false;
+  Timer? _holdTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _show(widget.screen);
+  }
+
+  @override
+  void didUpdateWidget(RaimSleepOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.screen == widget.screen) return;
+    if (widget.screen != RaimSleepScreen.none) {
+      _show(widget.screen);
+      return;
+    }
+    // 起こしている途中でつながった：「つながりました」を見せてから消す
+    if (oldWidget.screen == RaimSleepScreen.waking) {
+      _holdTimer?.cancel();
+      setState(() => _connected = true);
+      _holdTimer = Timer(_connectedHold, () {
+        if (mounted) setState(() => _visible = false);
+      });
+      return;
+    }
+    // 寝ていたけれど裏のつなぎ直しでつながった：そのまま消す
+    setState(() => _visible = false);
+  }
+
+  void _show(RaimSleepScreen screen) {
+    _holdTimer?.cancel();
+    if (screen == RaimSleepScreen.none) return;
+    _shown = screen;
+    _connected = false;
+    _visible = true;
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onFadeEnd() {
+    if (_visible || !mounted) return;
+    setState(() => _shown = RaimSleepScreen.none);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_shown == RaimSleepScreen.none) return const SizedBox.shrink();
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        opacity: _visible ? 1 : 0,
+        duration: _fadeDuration,
+        onEnd: _onFadeEnd,
+        child: ColoredBox(
+          color: _background,
+          child: Align(
+            alignment: const Alignment(0, -0.2),
+            child: RaimCallingCard(
+              connected: _connected,
+              sleeping: _shown == RaimSleepScreen.sleeping && !_connected,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// ライムの顔のまわりに輪が広がり、「発信中...」と出る部品。
 ///
 /// スマホの起動待ち（縦並び）と、Windows の入力小窓（横並び）で使う。
+/// [sleeping] なら寝顔で輪を止めた、おやすみ中の形になる。
 class RaimCallingCard extends StatefulWidget {
   const RaimCallingCard({
     super.key,
     required this.connected,
+    this.sleeping = false,
     this.horizontal = false,
     this.faceSize = 120,
+    this.showTitle = true,
   });
+
+  /// false なら「RAiM」の文字を出さない（Windows の入力窓の細い列に出すとき）
+  final bool showTitle;
 
   /// true なら「つながりました」を出す
   final bool connected;
+
+  /// true なら寝顔にして輪を止め、「おやすみ中…」を出す（サーバーにつながらないとき。2026-11-13）
+  final bool sleeping;
 
   /// true なら顔と文字を横に並べる（Windows の小窓用）
   final bool horizontal;
@@ -127,7 +237,27 @@ class _RaimCallingCardState extends State<RaimCallingCard>
   late final AnimationController _pulse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1800),
-  )..repeat();
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.sleeping) _pulse.repeat();
+  }
+
+  @override
+  void didUpdateWidget(RaimCallingCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sleeping == widget.sleeping) return;
+    // 寝ている間は輪を止める。起こしたら（発信中）また広げる
+    if (widget.sleeping) {
+      _pulse
+        ..stop()
+        ..value = 0;
+    } else {
+      _pulse.repeat();
+    }
+  }
 
   @override
   void dispose() {
@@ -147,11 +277,13 @@ class _RaimCallingCardState extends State<RaimCallingCard>
       child: AnimatedBuilder(
         animation: _pulse,
         builder: (context, child) => CustomPaint(
-          painter: _RingsPainter(
-            progress: _pulse.value,
-            innerRadius: faceSize / 2,
-            color: RaimCallingCard.accent,
-          ),
+          painter: widget.sleeping
+              ? null
+              : _RingsPainter(
+                  progress: _pulse.value,
+                  innerRadius: faceSize / 2,
+                  color: RaimCallingCard.accent,
+                ),
           child: child,
         ),
         child: Center(child: _buildFace(faceSize)),
@@ -164,16 +296,18 @@ class _RaimCallingCardState extends State<RaimCallingCard>
           ? CrossAxisAlignment.start
           : CrossAxisAlignment.center,
       children: [
-        Text(
-          'RAiM',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 28 * scale,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 4 * scale,
+        if (widget.showTitle) ...[
+          Text(
+            'RAiM',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28 * scale,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 4 * scale,
+            ),
           ),
-        ),
-        SizedBox(height: 8 * scale),
+          SizedBox(height: 8 * scale),
+        ],
         AnimatedBuilder(
           animation: _pulse,
           builder: (context, _) => Text(
@@ -185,6 +319,16 @@ class _RaimCallingCardState extends State<RaimCallingCard>
             ),
           ),
         ),
+        if (widget.sleeping) ...[
+          SizedBox(height: 4 * scale),
+          Text(
+            '話しかけたら起こすね',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 13 * scale,
+            ),
+          ),
+        ],
       ],
     );
 
@@ -207,11 +351,19 @@ class _RaimCallingCardState extends State<RaimCallingCard>
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: const Color(0xFF1E2024),
-        border: Border.all(color: RaimCallingCard.accent, width: 2),
+        // 寝ている間は縁の色も落とす
+        border: Border.all(
+          color: widget.sleeping
+              ? RaimCallingCard.accent.withValues(alpha: 0.35)
+              : RaimCallingCard.accent,
+          width: 2,
+        ),
       ),
       child: ClipOval(
         child: Image.asset(
-          'assets/images/raim_call_face.png',
+          widget.sleeping
+              ? 'assets/images/raim_sleep_face.png'
+              : 'assets/images/raim_call_face.png',
           fit: BoxFit.cover,
         ),
       ),
@@ -220,6 +372,7 @@ class _RaimCallingCardState extends State<RaimCallingCard>
 
   String _statusText() {
     if (widget.connected) return 'つながりました';
+    if (widget.sleeping) return 'おやすみ中…';
     // 「発信中.」「発信中..」「発信中...」を順に出す
     final dots = (_pulse.value * 3).floor() % 3 + 1;
     return '発信中${'.' * dots}';

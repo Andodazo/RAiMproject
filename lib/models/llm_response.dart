@@ -277,6 +277,12 @@ class LLMResponse {
   /// 覚えていること（memory.get / memory.forget への応答）
   bool get isMemory => type == 'memory';
 
+  /// 予定とメモの一覧（planner.list / add / update / delete への応答）
+  bool get isPlanner => type == 'planner';
+
+  /// ほかの端末で予定が変わった知らせ（読み直してほしい）
+  bool get isPlannerChanged => type == 'planner.changed';
+
   /// 通常応答か（UI に吹き出し追加するべきか）
   bool get isChat => type == 'chat';
 

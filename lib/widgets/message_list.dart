@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/widgets/message_bubble.dart';
+import 'package:raim_prototype/widgets/planner_card_view.dart';
 import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 
@@ -42,6 +43,34 @@ class _MessageListState extends State<MessageList> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
       _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
+  }
+
+  /// 前の会話のカードで開いた発言（focusSerial）。処理したものは繰り返さない
+  int _handledFocus = 0;
+  final GlobalKey _focusKey = GlobalKey();
+
+  /// 開いた発言まで送る。ListView.builder は画面外の行を作らないので、
+  /// まず位置の見当で飛んでから、行ができたら ensureVisible で合わせる
+  void _scheduleFocus(int rawIndex, int itemCount) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      final ratio = itemCount <= 1 ? 0.0 : rawIndex / (itemCount - 1);
+      _scrollController.jumpTo((position.maxScrollExtent * ratio).clamp(0.0, position.maxScrollExtent));
+      _ensureFocusVisible(3);
+    });
+  }
+
+  void _ensureFocusVisible(int triesLeft) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final focusContext = _focusKey.currentContext;
+      if (focusContext != null) {
+        Scrollable.ensureVisible(focusContext, alignment: 0.3);
+      } else if (triesLeft > 0) {
+        _ensureFocusVisible(triesLeft - 1);
+      }
     });
   }
 
@@ -103,17 +132,23 @@ class _MessageListState extends State<MessageList> {
         // 判定は再描画の「前」の位置で行う。
         // 「もっと見る」で先頭に差し込んだ直後はユーザーが上にいるので、
         // 追従せず読んでいる位置が保たれる。
-        if (_isNearBottom) {
+        final itemCount = loadOlderOffset +
+            messages.length +
+            (hasToolStatus ? 1 : 0) +
+            (showThinking ? 1 : 0);
+        final focusIndex = provider.focusIndex;
+        if (provider.focusSerial != _handledFocus && focusIndex != null) {
+          // 前の会話のカードで開いたときは、最新ではなくその発言へ
+          _handledFocus = provider.focusSerial;
+          _scheduleFocus(focusIndex + loadOlderOffset, itemCount);
+        } else if (_isNearBottom) {
           _scheduleFollow();
         }
 
         return ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.all(8),
-          itemCount: loadOlderOffset +
-              messages.length +
-              (hasToolStatus ? 1 : 0) +
-              (showThinking ? 1 : 0),
+          itemCount: itemCount,
           itemBuilder: (context, rawIndex) {
             // 先頭の「もっと見る」
             if (showLoadOlder && rawIndex == 0) {
@@ -174,13 +209,28 @@ class _MessageListState extends State<MessageList> {
 
             final message = messages[index];
 
+            // 予定のカード（入れたよ・予定に入れる？）
+            final plannerCard = message.plannerCard;
+            if (plannerCard != null) {
+              return PlannerCardView(card: plannerCard);
+            }
+
             // MessageBubble と同じ判定方法に変更
             final isUser = message.role == MessageRole.user;
 
             // Messageモデル内の画像パスプロパティ名に合わせる
             final hasImages = message.selectedImagePaths != null && message.selectedImagePaths!.isNotEmpty;
 
-            return Column(
+            final focused = focusIndex == index;
+            return Container(
+              key: focused ? _focusKey : null,
+              decoration: focused
+                  ? BoxDecoration(
+                      border: Border.all(color: const Color(0xFFB4E61D).withValues(alpha: 0.6)),
+                      borderRadius: BorderRadius.circular(14),
+                    )
+                  : null,
+              child: Column(
               crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -221,6 +271,7 @@ class _MessageListState extends State<MessageList> {
                   //各メッセージを吹き出し表示。※ユーザーなら右・AIなら左の処理はmessage_bubbleが担当
                   MessageBubble(message: messages[index]),
               ],
+              ),
             );
           },
         );

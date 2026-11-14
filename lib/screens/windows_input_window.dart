@@ -11,6 +11,7 @@ import 'package:raim_prototype/models/message.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
 import 'package:raim_prototype/providers/auth_provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
+import 'package:raim_prototype/providers/planner_controller.dart';
 import 'package:raim_prototype/providers/voice_controller.dart';
 import 'package:raim_prototype/providers/voice_settings_provider.dart';
 import 'package:raim_prototype/services/lime_size.dart';
@@ -22,8 +23,12 @@ import 'package:raim_prototype/services/unity_communicator.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/services/passkey_registration.dart';
 import 'package:raim_prototype/services/voice/delayed_send.dart';
+import 'package:raim_prototype/models/planner_card.dart';
 import 'package:raim_prototype/widgets/memory_panel.dart';
+import 'package:raim_prototype/widgets/planner_card_view.dart';
+import 'package:raim_prototype/widgets/planner_panel.dart';
 import 'package:raim_prototype/widgets/raim_calling_overlay.dart';
+import 'package:raim_prototype/widgets/reconnecting_spinner.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
 import 'package:raim_prototype/config/raim_config.dart';
 
@@ -43,7 +48,7 @@ class WindowsInputWindow extends StatefulWidget {
   State<WindowsInputWindow> createState() => _WindowsInputWindowState();
 }
 
-enum _PanelMode { none, menu, log, credits, settings, memory }
+enum _PanelMode { none, menu, log, credits, settings, memory, planner }
 
 class _WindowsInputWindowState extends State<WindowsInputWindow>
         // 修正: 展示専用のライフサイクル監視を廃止した。
@@ -66,6 +71,9 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   final DelayedSend _delayed = DelayedSend();
 
   _PanelMode _mode = _PanelMode.none;
+
+  /// 「予定とメモ」を開いたときのタブ（メモのカードの「開く」ならメモ）
+  PlannerTab _plannerTab = PlannerTab.schedule;
 
   /// 窓を伸ばしている最中の、これから開くパネル。
   _PanelMode? _pendingMode;
@@ -369,6 +377,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     // 修正: 展示用タイマー・ライフサイクル監視の後始末も廃止した。
     trayManager.removeListener(this);
     _callingTimer?.cancel();
+    _logScroll.dispose();
     _unitySub?.cancel();
     _wakeSub?.cancel();
     _utteranceSub?.cancel();
@@ -409,6 +418,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         case _PanelMode.credits:
         case _PanelMode.settings:
         case _PanelMode.memory:
+        case _PanelMode.planner:
         case _PanelMode.none:
           await _mascot.expandPanel();
       }
@@ -611,7 +621,18 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   @override
   Widget build(BuildContext context) {
     // 修正: 展示用の表示分岐を削除し、選択した画像に合わせて小窓の高さを変える。
-    _syncImageStripHeight(context.watch<CameraProvider>().hasImage);
+    // 予定のカード（入れたよ・予定に入れる？）も、画像の列と同じ場所に出す
+    final hasImages = context.watch<CameraProvider>().hasImage;
+    final plannerCard = context.select<ChatProvider, PlannerCard?>(
+      (chat) => chat.activePlannerCard,
+    );
+    // つながらないときは、同じ列におやすみのカードを出す（2026-11-13）
+    final sleepScreen = context.select<ChatProvider, RaimSleepScreen>(
+      (chat) => chat.sleepScreen,
+    );
+    _syncImageStripHeight(
+      hasImages || plannerCard != null || sleepScreen != RaimSleepScreen.none,
+    );
 
     // Unity の起動待ちの間は「発信中」を出す
     return ValueListenableBuilder<bool>(
@@ -672,11 +693,53 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                       _PanelMode.credits => _buildCredits(),
                       _PanelMode.settings => _buildSettings(),
                       _PanelMode.memory => _buildMemory(),
+                      _PanelMode.planner => _buildPlanner(),
                       _PanelMode.none => const SizedBox.shrink(),
                     },
                   ),
+                // つながらないとき：寝顔と「おやすみ中…」。話しかけたら「発信中…」（2026-11-13）。
+                // 入力欄は使えるままにする（送ると起こす）
+                if (_showImageStrip &&
+                    context.read<ChatProvider>().sleepScreen != RaimSleepScreen.none)
+                  SizedBox(
+                    height: MascotWindowService.imageStripHeight,
+                    child: Center(
+                      child: RaimCallingCard(
+                        connected: false,
+                        sleeping: context.read<ChatProvider>().sleepScreen ==
+                            RaimSleepScreen.sleeping,
+                        horizontal: true,
+                        faceSize: MascotWindowService.imageStripHeight / 2 - 2,
+                        showTitle: false,
+                      ),
+                    ),
+                  )
                 // 修正: 入力中の文字があっても上限通知が見えるよう、プレースホルダに頼らず表示する。
-                if (_showImageStrip)
+                else if (_showImageStrip &&
+                    !context.read<CameraProvider>().hasImage &&
+                    context.read<ChatProvider>().activePlannerCard != null)
+                  SizedBox(
+                    height: MascotWindowService.imageStripHeight,
+                    child: Center(
+                      child: PlannerCardView(
+                        card: context.read<ChatProvider>().activePlannerCard!,
+                        compact: true,
+                        textColor: _text,
+                        mutedColor: _mut,
+                        accentColor: _lime,
+                        onOpenMemos: () {
+                          // 朝のまとめのカードは予定タブ、メモのカードはメモタブ
+                          final card = context.read<ChatProvider>().activePlannerCard;
+                          final events = card?.showItems.any((i) => i.isEvent) ?? false;
+                          setState(() => _plannerTab = events ? PlannerTab.schedule : PlannerTab.memo);
+                          _setMode(_PanelMode.planner);
+                        },
+                        // 前の会話を開いたら、会話ログでその発言を見せる
+                        onOpenedTalk: () => _setMode(_PanelMode.log),
+                      ),
+                    ),
+                  )
+                else if (_showImageStrip)
                   _imageLimitNote == null
                       ? const _SelectedImageStrip()
                       : SizedBox(
@@ -754,8 +817,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
   }
 
   String _hintText(ChatProvider chat) {
-    if (chat.isOffline) return '接続待ち…';
-    return _statusText(chat) ?? '何でも話してね';
+    return _statusText(chat) ?? chat.connectionNotice ?? '何でも話してね';
   }
 
   Widget _buildBar() {
@@ -785,7 +847,6 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
               builder: (context, heard, _) => TextField(
                 controller: _controller,
                 focusNode: _focusNode,
-                enabled: !chat.isOffline,
                 // 送るのを待っている間に触ったり直したりしたら、送らずに止める
                 onTap: () {
                   // 修正: 展示用の操作時刻更新を廃止した。
@@ -799,6 +860,17 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                 cursorColor: _lime,
                 decoration: InputDecoration(
                   isDense: true,
+                  // つなぎ直している間は、左にぐるぐるを出す（文字はプレースホルダ。2026-11-13）
+                  prefixIcon: chat.showsReconnectingSpinner
+                      ? const ReconnectingSpinner(
+                          size: 12,
+                          padding: EdgeInsets.only(left: 10, right: 2),
+                        )
+                      : null,
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 0,
+                    minHeight: 0,
+                  ),
                   // マスコットモードには状態表示の場所が無いため、
                   // プレースホルダを状態表示に兼用する。
                   // 「〇〇を調べています」はチャット画面（message_list）に
@@ -1000,6 +1072,14 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
           () => _setMode(_PanelMode.settings),
         ),
         _menuRow(
+          Icons.event_note_outlined,
+          '予定とメモ',
+          () {
+            setState(() => _plannerTab = PlannerTab.schedule);
+            _setMode(_PanelMode.planner);
+          },
+        ),
+        _menuRow(
           Icons.psychology_outlined,
           'ライムが覚えていること',
           () => _setMode(_PanelMode.memory),
@@ -1150,6 +1230,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
     // 【追加】ウィンドウ操作や通信を待つ前に、状態を消す。
     context.read<ChatProvider>().resetForSignOut();
+    unawaited(context.read<PlannerController>().resetForSignOut());
     context.read<CameraProvider>().clearImage();
 
     await _closeWindow();
@@ -1345,6 +1426,57 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
     );
   }
 
+  /// 会話の記録に出す、予定のカードの1行
+  static String _plannerLogText(PlannerCard card) {
+    final item = card.item;
+    if (card.type == PlannerCardType.talk) return '💬 ${card.talk?.label ?? '前の会話'}';
+    if (card.type == PlannerCardType.show) {
+      final first = card.showItems.first;
+      if (first.isEvent) return '📅 今日の予定 ${card.showItems.length}件';
+      return first.isList ? '📝 ${first.title}' : '📝 メモ ${card.showItems.length}件';
+    }
+    if (item != null && item.isTimer) return '⏱ ${card.title}（${card.whenLabel}）';
+    if (item != null && item.isMemo) return '📝 ${item.text}';
+    if (item != null && item.isList) return '📝 ${item.title}';
+    return '📅 ${card.whenLabel} ${card.title}';
+  }
+
+  Widget _buildPlanner() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _sectionLabel('予定とメモ')),
+            IconButton(
+              icon: const Icon(Icons.close, size: 15),
+              color: _mut,
+              splashRadius: 15,
+              onPressed: () => _setMode(_PanelMode.menu),
+            ),
+          ],
+        ),
+        Expanded(
+          child: PlannerPanel(
+            // タブを変えて開き直したときに作り直す
+            key: ValueKey(_plannerTab),
+            initialTab: _plannerTab,
+            palette: const VoiceSettingsPalette(
+              text: _text,
+              muted: _mut,
+              accent: _lime,
+              error: Color(0xFFE06C6C),
+              line: _line,
+              surface: _bg2,
+            ),
+            fontScale: 0.95,
+            swipeToDelete: false,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSettings() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1379,8 +1511,42 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
 
   // ---------- 会話ログ ----------
 
+  /// 前の会話のカードで開いた発言（ChatProvider.focusSerial）。処理したものは繰り返さない
+  int _handledLogFocus = 0;
+  final ScrollController _logScroll = ScrollController();
+  final GlobalKey _logFocusKey = GlobalKey();
+
+  /// 会話ログを開いた発言まで送る（新しい順に並べた reverse の一覧なので、下からの位置で見当をつける）
+  void _scheduleLogFocus(int reversedIndex, int count) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_logScroll.hasClients) return;
+      final position = _logScroll.position;
+      final ratio = count <= 1 ? 0.0 : reversedIndex / (count - 1);
+      _logScroll.jumpTo((position.maxScrollExtent * ratio).clamp(0.0, position.maxScrollExtent));
+      void ensure(int triesLeft) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final focusContext = _logFocusKey.currentContext;
+          if (focusContext != null) {
+            Scrollable.ensureVisible(focusContext, alignment: 0.5);
+          } else if (triesLeft > 0) {
+            ensure(triesLeft - 1);
+          }
+        });
+      }
+
+      ensure(3);
+    });
+  }
+
   Widget _buildLog() {
-    final messages = context.watch<ChatProvider>().messages;
+    final chat = context.watch<ChatProvider>();
+    final messages = chat.messages;
+    final focusIndex = chat.focusIndex;
+    if (chat.focusSerial != _handledLogFocus && focusIndex != null) {
+      _handledLogFocus = chat.focusSerial;
+      _scheduleLogFocus(messages.length - 1 - focusIndex, messages.length);
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1405,13 +1571,16 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                   ),
                 )
               : ListView.builder(
+                  controller: _logScroll,
                   reverse: true,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   itemCount: messages.length,
                   itemBuilder: (_, i) {
                     final m = messages[messages.length - 1 - i];
                     final isUser = m.role == MessageRole.user;
+                    final focused = focusIndex == messages.length - 1 - i;
                     return Padding(
+                      key: focused ? _logFocusKey : null,
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Align(
                         alignment: isUser
@@ -1426,9 +1595,14 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                           decoration: BoxDecoration(
                             color: isUser ? const Color(0xFF2E4A1E) : _bg2,
                             borderRadius: BorderRadius.circular(8),
+                            // 前の会話のカードで開いた発言
+                            border: focused ? Border.all(color: _lime) : null,
                           ),
                           child: Text(
-                            m.text,
+                            // 予定のカードは本文が無いので、何を入れたかを出す
+                            m.plannerCard == null
+                                ? m.text
+                                : _plannerLogText(m.plannerCard!),
                             style: const TextStyle(
                               color: _text,
                               fontSize: 12.5,

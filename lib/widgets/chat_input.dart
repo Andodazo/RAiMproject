@@ -6,6 +6,7 @@ import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:raim_prototype/widgets/reconnecting_spinner.dart';
 import 'package:provider/provider.dart';
 import 'package:raim_prototype/providers/chat_provider.dart';
 import 'package:raim_prototype/providers/camera_provider.dart';
@@ -96,12 +97,13 @@ class _ChatInputState extends State<ChatInput> {
   }
 
   /// 入力欄のプレースホルダ。聞き取り中は途中経過を出す。
-  String _hint(VoiceController voice, String heard) {
+  String _hint(VoiceController voice, String heard, String? connection) {
     if (voice.isTranscribing) return heard.isEmpty ? '聞いてるよ…' : heard;
     final notice = voice.sttNotice;
     if (notice != null) return notice;
     final error = voice.sttError;
     if (error != null) return '聞き取れませんでした（$error）';
+    if (connection != null) return connection;
     return '何でも話してね';
   }
 
@@ -188,6 +190,11 @@ class _ChatInputState extends State<ChatInput> {
     final voice = context.watch<VoiceController>();
     final manualMic = context.watch<VoiceSettingsProvider>().manualMicEnabled;
     final talking = voice.isTranscribing;
+    // つなぎ直している・つながらないときは、入力欄にそれを出す
+    final connection =
+        context.select<ChatProvider, String?>((c) => c.connectionNotice);
+    final reconnecting =
+        context.select<ChatProvider, bool>((c) => c.showsReconnectingSpinner);
 
     return TapRegion(
       // 追加：入力欄の外を押したときにキーボードを閉じる
@@ -259,7 +266,11 @@ class _ChatInputState extends State<ChatInput> {
                       style: const TextStyle(color: Colors.white, fontSize: 15),
                       cursorColor: Colors.white,
                       decoration: InputDecoration(
-                        hintText: _hint(voice, heard),
+                        hintText: _hint(voice, heard, connection),
+                        // つなぎ直している間は、左にぐるぐるを出す（文字は hintText。2026-11-13）
+                        prefixIcon: reconnecting
+                            ? const ReconnectingSpinner()
+                            : null,
 
                         // マイクボタン。押して話し、もう一度押すか黙ると送る
                         suffixIcon: !manualMic && !talking
@@ -458,6 +469,7 @@ class ChatMenuButton extends StatefulWidget {
     required this.onLogout,
     this.onStationAlarm,
     this.onMemory,
+    this.onPlanner,
     this.isWide = false,
   });
 
@@ -469,6 +481,9 @@ class ChatMenuButton extends StatefulWidget {
 
   /// ライムが覚えていることを開く。null ならメニューに出さない
   final VoidCallback? onMemory;
+
+  /// 予定とメモを開く。null ならメニューに出さない
+  final VoidCallback? onPlanner;
   final bool isWide;
   @override
   State<ChatMenuButton> createState() => _ChatMenuButtonState();
@@ -571,6 +586,9 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
           case 'memory':
             widget.onMemory?.call();
             break;
+          case 'planner':
+            widget.onPlanner?.call();
+            break;
           case 'logout':
             widget.onLogout();
             break;
@@ -619,6 +637,17 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
             ],
           ),
         ),
+        if (widget.onPlanner != null)
+          const PopupMenuItem(
+            value: 'planner',
+            child: Row(
+              children: [
+                Icon(Icons.event_note_outlined, color: Colors.white70),
+                SizedBox(width: 12),
+                Text('予定とメモ', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+          ),
         if (widget.onMemory != null)
           const PopupMenuItem(
             value: 'memory',

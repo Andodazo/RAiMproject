@@ -10,8 +10,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:raim_prototype/models/client_action.dart';
 import 'package:raim_prototype/models/message.dart';
+import 'package:raim_prototype/models/planner_card.dart';
+import 'package:raim_prototype/models/planner_item.dart';
 import 'package:raim_prototype/models/llm_response.dart';
 import 'package:raim_prototype/models/conversation_thread.dart';
 import 'package:raim_prototype/services/llm_service.dart';
@@ -27,6 +30,18 @@ import 'package:raim_prototype/config/raim_config.dart';
 import 'package:raim_prototype/services/raim_log.dart';
 import 'package:raim_prototype/models/image_attachment.dart';
 import 'package:raim_prototype/services/aws_image_service.dart';
+
+/// おやすみ画面の出し方（ChatProvider.sleepScreen）
+enum RaimSleepScreen {
+  /// 出さない（つながっている、またはつなぎ直しているだけ）
+  none,
+
+  /// 寝顔と「おやすみ中…」（3回つなぎ直してもつながらない）
+  sleeping,
+
+  /// 寝ているときに話しかけたので「発信中…」
+  waking,
+}
 
 class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   // ============================================================
@@ -136,6 +151,13 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   int _conversationGeneration = 0;
   RaimConnectionState _connectionState = RaimConnectionState.connected;
   StreamSubscription<RaimConnectionState>? _stateSubscription;
+
+  /// アプリに戻ったときのつなぎ直し（RaimServerService.redialing）
+  ValueNotifier<bool>? _redialSource;
+  void _redialListener() {
+    final source = _redialSource;
+    if (source != null) _onRedialingChanged(source.value);
+  }
   //ここは使わない
   ChatProvider(
     this._llmService,
@@ -147,6 +169,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     // テストでは、話しかけるかのくじと今の時刻を決め打ちにできる。
     double Function()? greetDice,
     DateTime Function()? clock,
+    // 今日これからの予定があるか（朝のまとめ）。PlannerController があとから入れる
+    bool Function()? hasPlansToday,
     // 【追加】テストでは、音声プラグインを使わない偽物のキューを渡せる。
     AudioPlayQueue? audioQueue,
   })  : _audioQueue = audioQueue ?? AudioPlayQueue(),
@@ -156,6 +180,7 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
         _isSpeechMuted = isSpeechMuted ?? (() => false),
         _greetOnLaunchEnabled = greetOnLaunchEnabled ?? (() => false),
         _greetDice = greetDice ?? Random().nextDouble,
+        hasPlansToday = hasPlansToday ?? (() => false),
         _clock = clock ?? DateTime.now {
     _audioAssembler = AudioChunkAssembler(
       onAudioReady: (audio) {
@@ -189,6 +214,41 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     _audioQueue.onItemStarted = _bubbleSync.audioStarted;
     _audioQueue.onItemFinished = _bubbleSync.audioFinished;
     _bindConnectionState();
+    _listenServerPush();
+  }
+
+  /// 返事の終わりのあとに届く操作（「予定に入れる？」、予定の知らせる文ができた など）
+  StreamSubscription<LLMResponse>? _pushSubscription;
+
+  /// 返事の終わりのあとに届く操作を受け取る。
+  ///
+  /// 以前のサーバーは、予定の知らせる文や「予定に入れる？」を作り終えるまで返事の終わりを
+  /// 送らず、そのあいだ入力欄が「考えているよ」のままだった（最大8秒）。今は返事の終わりを
+  /// 先に送り、カードはそのあとに届く。送信ごとの受信待ちは chat_end で終わるので、
+  /// 全体の受信から拾う。返事の途中に届いた分もここに来るが、actionId で1回だけ扱う
+  /// （ID の無い古いサーバーの分は、これまでどおり送信ごとの受信待ちだけで扱う）。
+  void _listenServerPush() {
+    final Object service = _llmService;
+    if (service is! ServerPushService) return;
+    final Stream<LLMResponse> incoming;
+    try {
+      incoming = service.incomingStream;
+    } catch (e) {
+      // テスト用の偽物など、受信を持たないサービスでは送信ごとの受信待ちだけで扱う
+      RaimLog.d('[ChatProvider] 返事のあとの知らせは受け取りません: ${e.runtimeType}');
+      return;
+    }
+    _pushSubscription = incoming.listen((response) {
+      if (!response.isClientAction) return;
+      final actionId = response.actionId;
+      if (actionId == null || actionId.isEmpty) return;
+      _handleClientAction(response);
+      // 返事の途中なら、これまでどおり返事を出し終えたときに並べる
+      if (!_isLoading && _pendingPlannerCards.isNotEmpty) {
+        _flushPlannerCards();
+        notifyListeners();
+      }
+    });
   }
   //メッセージの中身を編集されないようにするため。(読み取り専用)
   List<Message> get messages => List.unmodifiable(_messages);
@@ -265,15 +325,137 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
 
   /// 「寝てる」状態か（UI で立ち絵切替などに使用予定）
   bool get isOffline => _connectionState == RaimConnectionState.offline;
+
+  /// つなぎ直しの表示を出すまで待つ時間。
+  ///
+  /// アプリに戻ったときの張り直しなどは1秒ほどで終わるので、すぐ出すとチカチカする。
+  static const Duration reconnectingNoticeDelay = Duration(seconds: 2);
+
+  /// つなぎ直しが長引いていて、表示を出しているか
+  bool _reconnectingShown = false;
+  Timer? _reconnectingTimer;
+
+  /// つながっていないときに入力欄などへ出す一言。つながっていれば null。
+  ///
+  /// 以前は、つなぎ直している間は何も出ず、寝ている（offline）ときも
+  /// スマホの Zzz と Windows の「接続待ち…」だけで、止まっているのか分かりにくかった。
+  String? get connectionNotice {
+    switch (_connectionState) {
+      case RaimConnectionState.connected:
+        return null;
+      case RaimConnectionState.offline:
+        return 'つながらないよ。話しかけたら起こすね';
+      case RaimConnectionState.connecting:
+      case RaimConnectionState.disconnected:
+        return _reconnectingShown ? 'つなぎ直しているよ…' : null;
+    }
+  }
+
+  /// つなぎ直していて、入力欄にぐるぐるを出すか（2026-11-13）。
+  /// 出す時期は [connectionNotice] の「つなぎ直しているよ…」と同じ
+  bool get showsReconnectingSpinner =>
+      (_connectionState == RaimConnectionState.connecting ||
+          _connectionState == RaimConnectionState.disconnected) &&
+      _reconnectingShown;
+
+  /// 寝ているところを話しかけて起こしている途中か
+  bool _waking = false;
+
+  /// アプリに戻ったときのつなぎ直しで「発信中…」を出しているか（2026-11-13）
+  bool _redialShown = false;
+  DateTime? _redialShownAt;
+  Timer? _redialHideTimer;
+
+  /// 「発信中…」を出しておく最短の時間。つなぎ直しが一瞬で終わってもチカチカしないように
+  static const Duration minRedialShown = Duration(seconds: 1);
+
+  void _onRedialingChanged(bool redialing) {
+    if (redialing) {
+      _redialHideTimer?.cancel();
+      _redialHideTimer = null;
+      if (!_redialShown) {
+        _redialShown = true;
+        _redialShownAt = _clock();
+        notifyListeners();
+      }
+      return;
+    }
+    if (!_redialShown) return;
+    final shownFor = _clock().difference(_redialShownAt ?? _clock());
+    final rest = minRedialShown - shownFor;
+    if (rest <= Duration.zero) {
+      _redialShown = false;
+      notifyListeners();
+      return;
+    }
+    _redialHideTimer?.cancel();
+    _redialHideTimer = Timer(rest, () {
+      _redialHideTimer = null;
+      _redialShown = false;
+      notifyListeners();
+    });
+  }
+
+  /// おやすみ画面に何を出すか（2026-11-13）。
+  ///
+  /// つなぎ直しているだけのときは出さない（入力欄の一言とぐるぐるだけ）。
+  /// 3回つなぎ直してもだめだった（offline）ら寝顔、寝ているときに話しかけたら「発信中…」。
+  /// アプリに戻ってつなぎ直すとき（30秒以上裏にいた・切れていた）も「発信中…」。
+  RaimSleepScreen get sleepScreen {
+    // アプリに戻ってつなぎ直している間は、寝ていても「発信中…」
+    if (_redialShown) return RaimSleepScreen.waking;
+    if (_connectionState == RaimConnectionState.offline) {
+      return RaimSleepScreen.sleeping;
+    }
+    if (_waking) return RaimSleepScreen.waking;
+    return RaimSleepScreen.none;
+  }
+
+  /// 接続の状態が変わったときに、つなぎ直しの表示を出すか決める
+  void _updateReconnectingNotice(
+    RaimConnectionState previous,
+    RaimConnectionState next,
+  ) {
+    if (next == RaimConnectionState.connected ||
+        next == RaimConnectionState.offline) {
+      _reconnectingTimer?.cancel();
+      _reconnectingTimer = null;
+      _reconnectingShown = false;
+      _waking = false;
+      return;
+    }
+    // 寝ているところを起こしている（話しかけた）ときは、待たずに出す
+    if (previous == RaimConnectionState.offline) {
+      _reconnectingTimer?.cancel();
+      _reconnectingTimer = null;
+      _reconnectingShown = true;
+      _waking = true;
+      return;
+    }
+    if (_reconnectingShown || (_reconnectingTimer?.isActive ?? false)) return;
+    _reconnectingTimer = Timer(reconnectingNoticeDelay, () {
+      _reconnectingTimer = null;
+      if (_connectionState == RaimConnectionState.connected ||
+          _connectionState == RaimConnectionState.offline) {
+        return;
+      }
+      _reconnectingShown = true;
+      notifyListeners();
+    });
+  }
   void _bindConnectionState() {
     // RaimServerService の場合のみ接続状態を購読
     //websocketだから変更箇所をリアルタイムで確認するため
     if (_llmService is RaimServerService) {
       final service = _llmService;
       _connectionState = service.state;
+      service.redialing.addListener(_redialListener);
+      _redialSource = service.redialing;
       _stateSubscription = service.stateStream.listen((newState) {
-        final wasConnected = _connectionState == RaimConnectionState.connected;
+        final previous = _connectionState;
+        final wasConnected = previous == RaimConnectionState.connected;
         _connectionState = newState;
+        _updateReconnectingNotice(previous, newState);
         // つながらない間は、ライムを寝ている立ち絵にする
         _unityBridge.sendSleeping(newState == RaimConnectionState.offline);
         if (newState != RaimConnectionState.connected) {
@@ -343,6 +525,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
 
     // ストリーミング中メッセージを終了扱いにする
     _currentStreamingMessage = null;
+    // 返事のあとに、予定のカードを並べる
+    _flushPlannerCards();
     // 検索中表示を消す
     _toolStatus = null;
     // AI返答待ち状態を解除する
@@ -401,6 +585,162 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
         ClientAction(action: action, params: response.actionParams),
       );
     }
+    _collectPlannerCard(action, response.actionParams);
+  }
+
+  // ============================================================
+  // 予定のカード
+  // ============================================================
+  // ライムが予定を入れたら「入れたよ（取り消す）」、話に出ただけの予定なら
+  // 「予定に入れる？」をチャットに出す。返事の途中に届くので、返事を出し終えたら
+  // （chat_end で）返事のあとに並べる。返事が失敗したら出さない。
+
+  final List<PlannerCard> _pendingPlannerCards = [];
+
+  /// カードを出しておく時間（Windows の入力欄の上に出すもの）
+  static const Duration plannerCardLifetime = Duration(minutes: 10);
+
+  void _collectPlannerCard(String action, Map<String, dynamic> params) {
+    PlannerItem? itemOf(Object? raw) {
+      if (raw is! Map) return null;
+      final item = PlannerItem.fromJson(raw.map((k, v) => MapEntry(k.toString(), v)));
+      return item.itemId.isEmpty ? null : item;
+    }
+
+    final addedEntryIds = (params['addedEntryIds'] is List)
+        ? (params['addedEntryIds'] as List).whereType<String>().toList()
+        : const <String>[];
+    if (action == 'planner.added') {
+      // リストを作ったときは、取り消すとリストごと消す（足した項目は渡さない）
+      final item = itemOf(params['item']);
+      if (item == null) return;
+      _pendingPlannerCards.add(PlannerCard.added(item, at: _clock()));
+    } else if (action == 'planner.updated' && addedEntryIds.isNotEmpty) {
+      // リストに項目を足した（「取り消す」で足した項目だけ消す）
+      final item = itemOf(params['item']);
+      if (item == null || !item.isList) return;
+      _pendingPlannerCards.add(PlannerCard.added(item, at: _clock(), addedEntryIds: addedEntryIds));
+    } else if (action == 'planner.show') {
+      // 「メモ何あったっけ？」: メモやリストのカード
+      final raw = params['items'];
+      if (raw is! List) return;
+      final items = raw.map(itemOf).whereType<PlannerItem>().toList();
+      if (items.isEmpty) return;
+      _pendingPlannerCards.add(PlannerCard.show(items, at: _clock()));
+    } else if (action == 'history.found') {
+      // 「この前話したお店なんだっけ」: 見つけた会話を開くカード
+      final talk = PastTalkRef.fromJson(params);
+      if (talk == null) return;
+      _pendingPlannerCards.add(PlannerCard.talk(talk, at: _clock()));
+    } else if (action == 'planner.suggest') {
+      final candidate = PlannerCandidate.fromJson(params['candidate']);
+      if (candidate == null) return;
+      _pendingPlannerCards.add(PlannerCard.suggest(candidate, at: _clock()));
+    } else if (action == 'planner.deleted') {
+      // 入れた予定をライムが消したら、その予定のカードはもう押せない
+      final raw = params['item'];
+      final itemId = raw is Map ? raw['itemId'] : null;
+      if (itemId is String) _closeCardsForItem(itemId);
+    }
+  }
+
+  void _flushPlannerCards() {
+    if (_pendingPlannerCards.isEmpty) return;
+    for (final card in _pendingPlannerCards) {
+      _messages.add(Message(
+        text: '',
+        role: MessageRole.assistant,
+        timestamp: card.createdAt,
+        plannerCard: card,
+      ));
+    }
+    _pendingPlannerCards.clear();
+  }
+
+  void _removePlannerCards() {
+    _messages.removeWhere((m) => m.plannerCard != null);
+  }
+
+  void _closeCardsForItem(String itemId) {
+    for (var i = 0; i < _messages.length; i++) {
+      final card = _messages[i].plannerCard;
+      if (card?.item?.itemId == itemId && card!.isActionable) {
+        _messages[i] = _messages[i].copyWith(
+          plannerCard: card.withState(PlannerCardState.undone),
+        );
+      }
+    }
+  }
+
+  /// カードの状態を変える（取り消した・入れた・閉じた など）。変えたあとのカードを返す。
+  /// 会話を切り替えるなどでカードが無くなっていたら null
+  PlannerCard? updatePlannerCard(PlannerCard card, PlannerCardState state) {
+    final index = _messages.indexWhere((m) => identical(m.plannerCard, card));
+    if (index < 0) return null;
+    final next = card.withState(state);
+    _messages[index] = _messages[index].copyWith(plannerCard: next);
+    notifyListeners();
+    return next;
+  }
+
+  /// まだ押せる、いちばん新しいカード（Windows の入力欄の上に出す）。
+  /// 古くなったもの・押し終わったものは出さない
+  PlannerCard? get activePlannerCard {
+    final now = _clock();
+    for (final m in _messages.reversed) {
+      final card = m.plannerCard;
+      if (card == null) continue;
+      if (now.difference(card.createdAt) > plannerCardLifetime) return null;
+      if (card.state == PlannerCardState.dismissed) return null;
+      return card;
+    }
+    return null;
+  }
+
+  // ============================================================
+  // 予定を知らせる一言
+  // ============================================================
+
+  /// つながる前に頼まれた、予定の一言（通知を押して起動したとき）
+  ({String itemId, String slot})? _pendingReminder;
+
+  /// 予定を知らせる時刻に、ライムからその予定の一言を話してもらう。話せたら true。
+  ///
+  /// Windows で時刻が来たときと、予定の通知を押して開いたときに呼ぶ。
+  /// 通知を押したとき（[live] が false）は、まだつながっていなければ、つながったときに話す
+  /// （そのときの話しかけの代わりにする）。Windows で時刻が来たとき（[live] が true）は待たない
+  /// （話せなければ通知を出すので、あとから古い知らせを話さない）。
+  /// 同じ知らせをもう話していたときに、サーバーが返すエラーコード
+  static const reminderAlreadySpokenCode = 'REMINDER_ALREADY_SPOKEN';
+
+  /// 黙って捨てたエラーのコード（speakReminder が「もう話していた」を見分けるのに使う）
+  String? _lastQuietErrorCode;
+
+  Future<bool> speakReminder(String itemId, String slot, {bool live = false}) async {
+    final Object service = _llmService;
+    if (service is! ReminderService) return false;
+    if (_connectionState != RaimConnectionState.connected) {
+      if (!live) _pendingReminder = (itemId: itemId, slot: slot);
+      return false;
+    }
+    if (_isLoading) return false;
+    // 予定の一言を話したら、アプリを開いたときの話しかけはしない
+    _greetedGeneration = _accountGeneration;
+    _lastQuietErrorCode = null;
+    final spoke = await _speakFirst(
+      () => service.sendReminder(
+        itemId: itemId,
+        slot: slot,
+        threadId: _currentThreadId,
+      ),
+    );
+    // ほかの端末などで、この知らせはもう話していた（2026-11-13）。
+    // 話したのと同じ扱いにして、Windows で通知を出し直さない
+    if (!spoke && _lastQuietErrorCode == reminderAlreadySpokenCode) {
+      RaimLog.d('[ChatProvider] この知らせはもう話していました: $slot');
+      return true;
+    }
+    return spoke;
   }
 
   //音声Base64を再生キューに入れる処理
@@ -579,6 +919,7 @@ _toolStatus = null;
     _unityBridge.sendChatEnd();
     _messages.removeWhere(_pendingResponseMessages.contains);
     _pendingResponseMessages.clear();
+    _pendingPlannerCards.clear();
     _currentStreamingMessage = null;
     _isThinking = false;
     _isUsingTool = false;
@@ -597,6 +938,7 @@ _toolStatus = null;
     // 今回の返答だけを削除する。過去の返答やユーザーの発言は残す。
     _messages.removeWhere(_pendingResponseMessages.contains);
     _pendingResponseMessages.clear();
+    _pendingPlannerCards.clear();
 
     _currentStreamingMessage = null;
     _isLoading = false;
@@ -735,6 +1077,8 @@ _toolStatus = null;
       _currentThreadId = threadId;
       _messages.clear();
       _currentStreamingMessage = null;
+      // 前の会話のカードで送った先は、開き直したら目立たせない
+      _focusAt = null;
 
       if (history != null) {
         _historyCursor = history.hasMore ? history.startIndex : null;
@@ -758,6 +1102,57 @@ _toolStatus = null;
         notifyListeners();
       }
     }
+  }
+
+  // ==========================================================================
+  // 前の会話を開く（「この前話したお店なんだっけ」のカード）
+  // ==========================================================================
+
+  int _focusSerial = 0;
+  DateTime? _focusAt;
+
+  /// 送り先の発言が変わるたびに増える（画面はこれを見てスクロールする）
+  int get focusSerial => _focusSerial;
+
+  /// 送り先の発言の時刻（目立たせる）
+  DateTime? get focusAt => _focusAt;
+
+  /// 送り先の発言の位置。見つからなければ null
+  int? get focusIndex {
+    final at = _focusAt;
+    if (at == null) return null;
+    final index = _messages.indexWhere((m) => m.plannerCard == null && _sameMoment(m.timestamp, at));
+    return index < 0 ? null : index;
+  }
+
+  static bool _sameMoment(DateTime a, DateTime b) => a.difference(b).inMilliseconds.abs() <= 1000;
+
+  bool _hasMessageAt(DateTime at) =>
+      _messages.any((m) => m.plannerCard == null && _sameMoment(m.timestamp, at));
+
+  /// 前の会話を開いて、その発言まで送る。開けて発言も見つかったら true。
+  ///
+  /// サーバーは新しい方から少しずつしか返さないので、見つかるまで古い方を読み足す（上限あり）。
+  Future<bool> openPastTalk(PastTalkRef talk) async {
+    final target = DateTime.tryParse(talk.at);
+    if (target == null) return false;
+    if (talk.threadId != _currentThreadId) {
+      await switchThread(talk.threadId);
+      if (_currentThreadId != talk.threadId) return false;
+    }
+    for (var i = 0; i < 10 && !_hasMessageAt(target) && _hasMoreHistory; i++) {
+      final before = _messages.length;
+      await loadOlderMessages();
+      if (_messages.length == before) break;
+    }
+    if (!_hasMessageAt(target)) {
+      RaimLog.d('[ChatProvider] 前の会話は開けたが、その発言が見つかりませんでした');
+      return false;
+    }
+    _focusAt = target;
+    _focusSerial++;
+    notifyListeners();
+    return true;
   }
 
   /// スレッドを削除する
@@ -839,6 +1234,13 @@ _toolStatus = null;
     final generation = _accountGeneration;
     await _restoreLastThread();
     if (generation != _accountGeneration) return;
+    // 予定の通知を押して開いたなら、話しかけの代わりにその予定の一言を話す
+    final reminder = _pendingReminder;
+    if (reminder != null) {
+      _pendingReminder = null;
+      await speakReminder(reminder.itemId, reminder.slot);
+      return;
+    }
     await greetOnLaunch();
   }
 
@@ -856,21 +1258,80 @@ _toolStatus = null;
     if (service is! GreetingService) return;
     if (!_greetOnLaunchEnabled()) return;
     if (_greetedGeneration == _accountGeneration) return;
-    if (_isLoading) return;
+    // 自分から先に話している（返事の途中）なら、そのログインの間はもう話しかけない（2026-11-13）。
+    // 以前は話しかけ済みにせずに戻っていたので、返事が遅くてつなぎ直したときに、
+    // 会話の途中で話しかけていた（開いてすぐ「1分のタイマーかけて」と送ったとき）
+    if (_isLoading) {
+      _greetedGeneration = _accountGeneration;
+      return;
+    }
     // くじを外れたときも引き直さない（つなぎ直すたびに引くと、結局話しかけてしまう）
     _greetedGeneration = _accountGeneration;
+    // その日はじめてで今日の予定があれば、くじを引かずに朝のまとめ
+    if (service is BriefService && await _wantsBrief()) {
+      final brief = service as BriefService;
+      final ended = await _speakFirst(() => brief.sendBrief(threadId: _currentThreadId));
+      if (ended) await _rememberBrief();
+      return;
+    }
     if (!_shouldGreet()) {
       RaimLog.d('[ChatProvider] 今回は話しかけない');
       return;
     }
 
+    await _speakFirst(() => service.sendGreeting(threadId: _currentThreadId));
+  }
+
+  // ============================================================
+  // 朝のまとめ
+  // ============================================================
+  // その日はじめて開いたとき、今日これからの予定があれば、くじを引かずに
+  // 話しかけを「今日の予定のまとめ」にする（安藤さんと決めた）。
+  // 「その日はじめて」は端末ごとに覚えておく。予定はサーバーが読み直すので、
+  // 端末の控えが古くても、予定が無ければ普段の話しかけになる。
+
+  /// 今日これからの予定があるか（main.dart で PlannerController につなぐ）
+  bool Function() hasPlansToday;
+
+  static const String _lastBriefKey = 'planner.lastBriefDay';
+
+  /// 日本時間の今日「YYYY-MM-DD」
+  String _todayJst() {
+    final jst = _clock().toUtc().add(const Duration(hours: 9));
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${jst.year}-${two(jst.month)}-${two(jst.day)}';
+  }
+
+  /// 今日まだまとめていなくて、今日これからの予定があるか
+  Future<bool> _wantsBrief() async {
+    try {
+      if (!hasPlansToday()) return false;
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_lastBriefKey) != _todayJst();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _rememberBrief() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_lastBriefKey, _todayJst());
+    } catch (_) {
+      // 覚えられなくても、次に開いたときにもう一度まとめるだけ
+    }
+  }
+
+  /// ライムから先に話す（話しかけ・予定の一言）。最後まで受け取れたら true。
+  Future<bool> _speakFirst(Stream<LLMResponse> Function() send) async {
     final generation = _conversationGeneration;
     _prepareForReply();
     _isLoading = true;
     notifyListeners();
+    var ended = false;
     try {
-      final ended = await _receiveReply(
-        service.sendGreeting(threadId: _currentThreadId),
+      ended = await _receiveReply(
+        send(),
         generation,
         // 古いサーバーは話しかけを知らず、本文が無いので入力不正で断る。
         // 利用者は何も頼んでいないので、そのときもエラーは出さない
@@ -883,6 +1344,7 @@ _toolStatus = null;
       }
     } catch (e) {
       RaimLog.d('[ChatProvider] 話しかけに失敗: $e');
+      ended = false;
       if (generation == _conversationGeneration) _discardCurrentResponse();
     } finally {
       if (generation == _conversationGeneration) {
@@ -891,6 +1353,7 @@ _toolStatus = null;
         notifyListeners();
       }
     }
+    return ended;
   }
 
   /// 話しかけるか。開いている会話の最後のメッセージから、どれだけ空いたかで決める。
@@ -1027,6 +1490,8 @@ _toolStatus = null;
 
     // 会話本文・会話ID・会話一覧を消す。
     _messages.clear();
+    _pendingPlannerCards.clear();
+    _pendingReminder = null;
     _currentThreadId = null;
     _threads = [];
 
@@ -1083,6 +1548,15 @@ _toolStatus = null;
   @override
   void dispose() {
     _stateSubscription?.cancel();
+    try {
+      _redialSource?.removeListener(_redialListener);
+    } catch (_) {
+      // サービスが先に片付いていたら、もう外す必要はない
+    }
+    _redialSource = null;
+    _redialHideTimer?.cancel();
+    _reconnectingTimer?.cancel();
+    _pushSubscription?.cancel();
     unawaited(_clientActions.close());
     _audioAssembler.dispose();
     _bubbleSync.dispose();
@@ -1147,6 +1621,9 @@ _toolStatus = null;
     // 生成に数秒かかるため、その1文は新しい音声が届く前に鳴り終わる。
     // 万一残っていてもキューは直列なので、重ならず後ろに並ぶだけ。
     _prepareForReply();
+    // 前の返事に付いていた予定のカードは、次に送ったら消す（2026-11-13）。
+    // カードは会話の記録には残さない
+    _removePlannerCards();
     // ─── 履歴への追加処理を追加 ───
     final userMessage = Message(
       text: text,
@@ -1269,6 +1746,7 @@ _toolStatus = null;
     _currentStreamingMessage = null;
     // 【追加】今回の返答の記録を新しく始める。
     _pendingResponseMessages.clear();
+    _pendingPlannerCards.clear();
     _toolStatus = null;
     // ここに追加
     _isThinking = false;
@@ -1291,7 +1769,8 @@ _toolStatus = null;
       if (generation != _conversationGeneration) return false;
 
       if (quietErrors && response.isError) {
-        RaimLog.d('[ChatProvider] 返事を作れませんでした: ${response.raw['code']}');
+        _lastQuietErrorCode = response.raw['code']?.toString();
+        RaimLog.d('[ChatProvider] 返事を作れませんでした: $_lastQuietErrorCode');
         return false;
       }
 

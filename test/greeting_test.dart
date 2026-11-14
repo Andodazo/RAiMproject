@@ -78,6 +78,29 @@ void main() {
     expect(llm.greetings, 2);
   });
 
+  // 2026-11-13: 開いてすぐ送ったあと、返事が遅くてつなぎ直したときに、会話の途中で話しかけていた
+  test('返事の途中で話しかけの番が来たら、そのあとつなぎ直しても話しかけない', () async {
+    final llm = GreetingLlm(reply, chat: const [
+      {'type': 'text_chunk', 'text': '3分ね'},
+      {'type': 'chat_end', 'full_text': '3分ね'},
+    ]);
+    final chat = ChatProvider(
+      llm,
+      FakeUnity(),
+      audioQueue: FakeAudioQueue(),
+      greetOnLaunchEnabled: () => true,
+    );
+    addTearDown(chat.dispose);
+
+    // 開いてすぐ送り、返事の途中で話しかけの番が来る
+    final sending = chat.sendUserMessage('3分計って');
+    await chat.greetOnLaunch();
+    await sending;
+    // 返事が遅くてつなぎ直したときにも呼ばれる
+    await chat.greetOnLaunch();
+    expect(llm.greetings, 0);
+  });
+
   test('設定で切っているときは話しかけない', () async {
     final llm = GreetingLlm(reply);
     final chat = ChatProvider(
