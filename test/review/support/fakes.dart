@@ -130,6 +130,9 @@ class FakeRaimServer implements RaimServerService {
   Stream<RaimConnectionState> get stateStream => _states.stream;
 
   @override
+  final ValueNotifier<bool> redialing = ValueNotifier<bool>(false);
+
+  @override
   Future<List<ThreadSummary>> fetchThreadList() => onThreadList();
 
   @override

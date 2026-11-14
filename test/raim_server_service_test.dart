@@ -517,5 +517,73 @@ void main() {
       chat.removeListener(record);
       expect(seen, [RaimSleepScreen.sleeping, RaimSleepScreen.waking, RaimSleepScreen.sleeping]);
     });
+
+    // アプリに戻ったときのつなぎ直しでも「発信中…」（2026-11-13）
+    group('アプリに戻ったとき', () {
+      // 開いたときの会話の復元（thread.list）が返事待ちのままだと、つなぎ直さないので答えておく
+      void answerThreadList() {
+        edge.onRequest = (connection, request) => (
+              replies: request['type'] == 'thread.list'
+                  ? [
+                      {'type': 'thread_list', 'threads': <Object>[]},
+                    ]
+                  : <Map<String, dynamic>>[],
+              close: false,
+            );
+      }
+
+      List<RaimSleepScreen> watch(ChatProvider chat) {
+        final seen = <RaimSleepScreen>[chat.sleepScreen];
+        void record() {
+          if (seen.last != chat.sleepScreen) seen.add(chat.sleepScreen);
+        }
+        chat.addListener(record);
+        addTearDown(() => chat.removeListener(record));
+        return seen;
+      }
+
+      test('長く裏にいたら、つなぎ直す間は「発信中」。一瞬でつながっても1秒は出す', () async {
+        answerThreadList();
+        final (service, chat) = await open(3);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        final seen = watch(chat);
+        final started = DateTime.now();
+        await service.handleAppResumed(longAway: true);
+        expect(service.state, RaimConnectionState.connected);
+        expect(chat.sleepScreen, RaimSleepScreen.waking);
+        while (chat.sleepScreen != RaimSleepScreen.none) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        expect(
+          DateTime.now().difference(started),
+          greaterThanOrEqualTo(ChatProvider.minRedialShown - const Duration(milliseconds: 50)),
+        );
+        expect(seen, [RaimSleepScreen.none, RaimSleepScreen.waking, RaimSleepScreen.none]);
+      });
+
+      test('すぐ戻ったとき（つなぎ直さない）は何も出さない', () async {
+        answerThreadList();
+        final (service, chat) = await open(3);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        final seen = watch(chat);
+        await service.handleAppResumed(longAway: false);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(seen, [RaimSleepScreen.none]);
+        expect(service.redialing.value, isFalse);
+      });
+
+      test('寝ているときに戻ったら「発信中」、つながらなければまた寝る', () async {
+        final (service, chat) = await open(0);
+        await edge.stop();
+        await edge.dropAll();
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(chat.sleepScreen, RaimSleepScreen.sleeping);
+        final seen = watch(chat);
+        await service.handleAppResumed(longAway: true);
+        expect(service.redialing.value, isFalse);
+        await Future<void>.delayed(ChatProvider.minRedialShown + const Duration(milliseconds: 100));
+        expect(seen, [RaimSleepScreen.sleeping, RaimSleepScreen.waking, RaimSleepScreen.sleeping]);
+      });
+    });
   });
 }

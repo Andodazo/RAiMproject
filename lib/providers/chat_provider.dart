@@ -151,6 +151,13 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   int _conversationGeneration = 0;
   RaimConnectionState _connectionState = RaimConnectionState.connected;
   StreamSubscription<RaimConnectionState>? _stateSubscription;
+
+  /// アプリに戻ったときのつなぎ直し（RaimServerService.redialing）
+  ValueNotifier<bool>? _redialSource;
+  void _redialListener() {
+    final source = _redialSource;
+    if (source != null) _onRedialingChanged(source.value);
+  }
   //ここは使わない
   ChatProvider(
     this._llmService,
@@ -354,11 +361,49 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   /// 寝ているところを話しかけて起こしている途中か
   bool _waking = false;
 
+  /// アプリに戻ったときのつなぎ直しで「発信中…」を出しているか（2026-11-13）
+  bool _redialShown = false;
+  DateTime? _redialShownAt;
+  Timer? _redialHideTimer;
+
+  /// 「発信中…」を出しておく最短の時間。つなぎ直しが一瞬で終わってもチカチカしないように
+  static const Duration minRedialShown = Duration(seconds: 1);
+
+  void _onRedialingChanged(bool redialing) {
+    if (redialing) {
+      _redialHideTimer?.cancel();
+      _redialHideTimer = null;
+      if (!_redialShown) {
+        _redialShown = true;
+        _redialShownAt = _clock();
+        notifyListeners();
+      }
+      return;
+    }
+    if (!_redialShown) return;
+    final shownFor = _clock().difference(_redialShownAt ?? _clock());
+    final rest = minRedialShown - shownFor;
+    if (rest <= Duration.zero) {
+      _redialShown = false;
+      notifyListeners();
+      return;
+    }
+    _redialHideTimer?.cancel();
+    _redialHideTimer = Timer(rest, () {
+      _redialHideTimer = null;
+      _redialShown = false;
+      notifyListeners();
+    });
+  }
+
   /// おやすみ画面に何を出すか（2026-11-13）。
   ///
   /// つなぎ直しているだけのときは出さない（入力欄の一言とぐるぐるだけ）。
   /// 3回つなぎ直してもだめだった（offline）ら寝顔、寝ているときに話しかけたら「発信中…」。
+  /// アプリに戻ってつなぎ直すとき（30秒以上裏にいた・切れていた）も「発信中…」。
   RaimSleepScreen get sleepScreen {
+    // アプリに戻ってつなぎ直している間は、寝ていても「発信中…」
+    if (_redialShown) return RaimSleepScreen.waking;
     if (_connectionState == RaimConnectionState.offline) {
       return RaimSleepScreen.sleeping;
     }
@@ -404,6 +449,8 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
     if (_llmService is RaimServerService) {
       final service = _llmService;
       _connectionState = service.state;
+      service.redialing.addListener(_redialListener);
+      _redialSource = service.redialing;
       _stateSubscription = service.stateStream.listen((newState) {
         final previous = _connectionState;
         final wasConnected = previous == RaimConnectionState.connected;
@@ -1501,6 +1548,13 @@ _toolStatus = null;
   @override
   void dispose() {
     _stateSubscription?.cancel();
+    try {
+      _redialSource?.removeListener(_redialListener);
+    } catch (_) {
+      // サービスが先に片付いていたら、もう外す必要はない
+    }
+    _redialSource = null;
+    _redialHideTimer?.cancel();
     _reconnectingTimer?.cancel();
     _pushSubscription?.cancel();
     unawaited(_clientActions.close());
