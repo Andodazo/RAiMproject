@@ -43,6 +43,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as ws_status;
@@ -224,6 +225,11 @@ class RaimServerService
   void _setState(RaimConnectionState newState) {
     if (_state == newState) return;
     _state = newState;
+    if (!_disposed &&
+        (newState == RaimConnectionState.connected ||
+            newState == RaimConnectionState.offline)) {
+      redialing.value = false;
+    }
     if (!_stateController.isClosed) {
       _stateController.add(newState);
     }
@@ -481,6 +487,7 @@ class RaimServerService
     if (!_stateController.isClosed) {
       await _stateController.close();
     }
+    redialing.dispose();
   }
 
   // ─────────────────────────────────────────────
@@ -676,12 +683,12 @@ class RaimServerService
   Future<void> handleAppResumed({required bool longAway}) async {
     if (_state != RaimConnectionState.connected) {
       // 寝ている・再接続待ちなら、待たずにすぐ試す
-      await reconnectNow();
+      await _redial();
       return;
     }
     if (!longAway) return;
     if (_repliesInFlight == 0) {
-      await reconnectNow();
+      await _redial();
       return;
     }
 
@@ -694,6 +701,27 @@ class RaimServerService
       _stopAliveCheck();
       unawaited(reconnectNow());
     });
+  }
+
+  /// アプリに戻ったときにつなぎ直している間 true（スマホは「発信中…」を出す。2026-11-13）。
+  ///
+  /// つながるか、つながらずに寝る（offline）まで true のまま。
+  /// 30秒未満で戻ったときなど、つなぎ直さないときは変わらない。
+  final ValueNotifier<bool> redialing = ValueNotifier<bool>(false);
+
+  /// アプリに戻ったときのつなぎ直し
+  Future<void> _redial() async {
+    redialing.value = true;
+    try {
+      await reconnectNow();
+    } finally {
+      // 寝ているときのつなぎ直しは状態を変えずに終わるので、ここでも下ろす
+      if (!_disposed &&
+          (_state == RaimConnectionState.connected ||
+              _state == RaimConnectionState.offline)) {
+        redialing.value = false;
+      }
+    }
   }
 
   void _stopAliveCheck() {
