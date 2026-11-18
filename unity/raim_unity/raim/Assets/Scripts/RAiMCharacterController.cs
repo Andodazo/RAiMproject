@@ -94,6 +94,7 @@ public class RAiMCharacterController : MonoBehaviour
     // 8765 は誰でも接続できるので、Flutter と共有の合言葉で相互に確認する。
     // Flutter が起動時にファイルへ書き、Unity がそれを読む。
     private string bridgeToken = "";
+    private string bridgeTokenFile = "bridge_token";
 
     // auth.ok を受け取るまでは、届いたメッセージを一切処理しない。
     private bool authenticated = false;
@@ -163,6 +164,12 @@ public class RAiMCharacterController : MonoBehaviour
 #elif UNITY_STANDALONE_WIN
         // Windows版UnityはWebSocket経由
         useWebSocket = true;
+        if (int.TryParse(Environment.GetEnvironmentVariable("RAIM_UNITY_BRIDGE_PORT"), out int bridgePort)
+            && bridgePort > 0 && bridgePort <= 65535)
+        {
+            serverUrl = $"ws://127.0.0.1:{bridgePort}";
+            bridgeTokenFile = $"bridge_token_{bridgePort}";
+        }
         Debug.Log("Windows版: WebSocket有効");
 #endif
 
@@ -1109,7 +1116,7 @@ public class RAiMCharacterController : MonoBehaviour
         {
             var baseDir = Environment.GetFolderPath(
                 Environment.SpecialFolder.LocalApplicationData);
-            var path = Path.Combine(baseDir, "RAiM", "bridge_token");
+            var path = Path.Combine(baseDir, "RAiM", bridgeTokenFile);
 
             if (!File.Exists(path))
             {

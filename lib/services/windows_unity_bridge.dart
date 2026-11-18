@@ -24,6 +24,9 @@ class WindowsUnityBridge implements UnityCommunicator {
 
   final Set<WebSocketChannel> _clients = {};
   HttpServer? _server;
+  int? _fallbackPort;
+  String get _tokenFileName =>
+      _fallbackPort == null ? 'bridge_token' : 'bridge_token_$_fallbackPort';
   Process? _unityProcess;
 
   /// Unity との相互確認に使う合言葉。
@@ -247,7 +250,7 @@ class WindowsUnityBridge implements UnityCommunicator {
     final dir = Directory('$baseDir${sep}RAiM');
 
     await dir.create(recursive: true);
-    await File('${dir.path}${sep}bridge_token').writeAsString(_token, flush: true);
+    await File('${dir.path}${sep}$_tokenFileName').writeAsString(_token, flush: true);
   }
 
   /// 合言葉ファイルを消す。終了後に残しても意味がないため。
@@ -256,7 +259,7 @@ class WindowsUnityBridge implements UnityCommunicator {
       final sep = Platform.pathSeparator;
       final baseDir =
           Platform.environment['LOCALAPPDATA'] ?? Directory.systemTemp.path;
-      final file = File('$baseDir${sep}RAiM${sep}bridge_token');
+      final file = File('$baseDir${sep}RAiM${sep}$_tokenFileName');
       if (await file.exists()) {
         await file.delete();
       }
@@ -287,19 +290,25 @@ class WindowsUnityBridge implements UnityCommunicator {
       allowedOrigins: const <String>[],
     );
 
-    // Unity が起動直後に読むので、サーバーより先に書いておく。
-    await _writeTokenFile();
-
     try {
       _server = await shelf_io.serve(originGuardedHandler, 'localhost', port);
-    } catch (e) {
-      // ポートが既に使われている（RAiM の二重起動、他プロセスが占有）。
-      // 以前はここで例外が main() まで抜け、UI が出ないまま落ちていた。
-      RaimLog.e('WebSocketサーバーを起動できません (port=$port)', e);
+    } on SocketException catch (e) {
+      // Windows がポートを予約済みの場合だけ、自動起動する Unity に別の接続先を渡す。
+      if (!Platform.isWindows || !autoLaunchUnity || e.osError?.errorCode != 10013) {
+        rethrow;
+      }
+      _server = await shelf_io.serve(originGuardedHandler, InternetAddress.loopbackIPv4, 0);
+      _fallbackPort = _server!.port;
+    }
+    try {
+      await _writeTokenFile();
+    } catch (_) {
+      await _server!.close(force: true);
+      _server = null;
+      _fallbackPort = null;
       rethrow;
     }
-
-    RaimLog.d('WebSocketサーバー起動: ws://localhost:$port');
+    RaimLog.d('WebSocketサーバー起動: ws://localhost:${_server!.port}');
 
     _startDeviceClock();
 
@@ -345,10 +354,10 @@ class WindowsUnityBridge implements UnityCommunicator {
     _unityProcess?.kill();
     _unityProcess = null;
 
+    if (_server != null) await _deleteTokenFile();
     await _server?.close();
     _server = null;
-
-    await _deleteTokenFile();
+    _fallbackPort = null;
 
     await _events.close();
   }
@@ -393,6 +402,9 @@ class WindowsUnityBridge implements UnityCommunicator {
       _unityProcess = await Process.start(
         exePath,
         const <String>[],
+        environment: {
+          if (_fallbackPort != null) 'RAIM_UNITY_BRIDGE_PORT': '$_fallbackPort',
+        },
         // Flutter 側が Unity の標準出力を握り続けないよう分離する。
         // Unity はログを大量に吐くため。終了は stop() の kill で行う。
         mode: ProcessStartMode.detached,
