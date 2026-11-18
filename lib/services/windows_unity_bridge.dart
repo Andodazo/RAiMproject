@@ -15,7 +15,14 @@ import 'package:raim_prototype/services/raim_log.dart';
 /// FlutterはWebSocketサーバーとして動作し、Unityがクライアントとして接続する。
 /// Flutter が先にサーバーを立ててから Unity を起動するので、
 /// 起動順は常に正しくなる。
-class WindowsUnityBridge implements UnityCommunicator {
+class WindowsUnityBridge with PortraitMotionBridge implements UnityCommunicator {
+  @override
+  void deliverMotionState(String message) {
+    for (final client in _clients) {
+      _sendToClient(client, message);
+    }
+  }
+
   final int port;
 
   /// Unity を自動起動するか。
@@ -195,6 +202,8 @@ class WindowsUnityBridge implements UnityCommunicator {
 
           // 溜まっていた分を流して、接続直後から正しい状態にする
           _flushPending(webSocket);
+          final motion = motionSnapshot;
+          if (motion != null) _sendToClient(webSocket, motion);
           // 修正（9）: 接続後に展示表示の切り替えメッセージを送らない。
           final mascotScale = _mascotScale;
           if (mascotScale != null) {

@@ -401,6 +401,15 @@ public class RAiMCharacterController : MonoBehaviour
         {
             var typeData = JsonUtility.FromJson<MessageType>(json);
 
+            if (typeData?.type == "portrait_state") {
+                companion?.ReceiveState(json);
+                return;
+            }
+            if (typeData?.type == "portrait_discovery") {
+                companion?.React("discovery");
+                return;
+            }
+
             if (typeData != null && typeData.type == "avatar_mode") {
                 ReceiveAvatarMode(json);
                 return;
@@ -614,6 +623,7 @@ public class RAiMCharacterController : MonoBehaviour
         socket.OnClose += (closeCode) =>
         {
             isConnecting = false;
+            companion?.Disconnected();
             Debug.Log($"WebSocket切断: {closeCode}");
         };
 
@@ -659,6 +669,7 @@ public class RAiMCharacterController : MonoBehaviour
                     auth.token == bridgeToken)
                 {
                     authenticated = true;
+                    companion?.TransportReset();
                     Debug.Log("Flutter との相互確認に成功しました");
                 }
                 else
@@ -670,6 +681,14 @@ public class RAiMCharacterController : MonoBehaviour
 
             var typeData = JsonUtility.FromJson<MessageType>(json);
 
+            if (typeData != null && typeData.type == "portrait_state") {
+                companion?.ReceiveState(json);
+                return;
+            }
+            if (typeData != null && typeData.type == "portrait_discovery") {
+                companion?.React("discovery");
+                return;
+            }
             if (typeData != null && typeData.type == "avatar_mode") {
                 ReceiveAvatarMode(json);
                 return;

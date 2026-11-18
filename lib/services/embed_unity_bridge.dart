@@ -11,7 +11,7 @@ import 'package:raim_prototype/services/unity_ready_signal.dart';
 ///
 /// `flutter_embed_unity` の `sendToUnity` 関数を使って、
 /// Unity 内の GameObject のメソッドを直接呼びます。
-class EmbedUnityBridge implements UnityCommunicator {
+class EmbedUnityBridge with PortraitMotionBridge implements UnityCommunicator {
   /// Unity 側の GameObject 名
   /// （RAiMCharacterController.cs がアタッチされてる Character オブジェクト）
   static const String gameObjectName = "character";
@@ -51,9 +51,22 @@ class EmbedUnityBridge implements UnityCommunicator {
         jsonEncode({'type': 'avatar_mode', 'mode': mode.wireValue}));
   }
 
+  @override
+  void deliverMotionState(String message) {
+    if (UnityReadySignal.ready.value) {
+      sendToUnity(gameObjectName, 'ReceiveMessage', message);
+    }
+  }
+
+  void _restoreMotionState() {
+    final snapshot = motionSnapshot;
+    if (snapshot != null) deliverMotionState(snapshot);
+  }
+
   void _onResume() {
     _sendDeviceTime();
     _sendAvatarMode();
+    _restoreMotionState();
   }
 
   /// Unity の準備ができる前に送ろうとしたもの。送り先のメソッドごとに最新の1件だけ持つ。
@@ -118,6 +131,7 @@ class EmbedUnityBridge implements UnityCommunicator {
     // 保留が空でも、Unityの準備ができた時点の時刻を送る。
     _sendDeviceTime();
     _sendAvatarMode();
+    _restoreMotionState();
     if (_pending.isEmpty) return;
     final pending = Map<String, String>.of(_pending);
     _pending.clear();

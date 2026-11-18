@@ -67,10 +67,10 @@ namespace RAiM.Companion
             graph.Connect(phrasePlayable,0,mixer,phraseSlot);
         }
         public void NotifyActivity(){standing?.NotifyActivity();}
-        public Vector2 Apply(float[] emotions,BehaviorState state,EmotionProfile profile,float dt,string reaction,float[] selection=null,bool externalWork=false,bool sleeping=false)
+        public Vector2 Apply(float[] emotions,BehaviorState state,EmotionProfile profile,float dt,string reaction,float[] selection=null,bool externalWork=false,bool sleeping=false,CompanionState transport=null,int replyEmotion=-1)
         {
             if(Frozen)dt=0;
-            if(standing!=null)return standing.Apply(selection??emotions,externalWork||state==BehaviorState.Researching,dt,PreviewKey,PreviewTime,sleeping,state==BehaviorState.Idle);
+            if(standing!=null)return standing.Apply(emotions,externalWork||state==BehaviorState.Researching,dt,PreviewKey,PreviewTime,sleeping,state==BehaviorState.Idle,state,reaction,transport,replyEmotion);
             clock+=dt;
             int strongest=1;for(int i=2;i<12;i++)if(emotions[i]>emotions[strongest])strongest=i;
             if(emotions[strongest]<.18f)strongest=0;

@@ -22,12 +22,14 @@ namespace RAiM.Companion
         public bool demoMouth;
         [Range(0, 1)] public float manualBlink;
         public EmotionSnapshot Target { get; private set; } = EmotionSnapshot.Neutral;
+        EmotionSnapshot lastBodyCue = EmotionSnapshot.Neutral;
         public readonly CompanionState State = new CompanionState();
         public readonly float[] Smoothed = new float[12];
         public bool Ready { get; private set; }
         public bool Sleeping { get; private set; }
         private float sleepWeight;
         private bool stateHeartbeat;
+        private int replyEmotion = -1;
         public IReadOnlyDictionary<string, float> Applied => applied;
         public string LastRejection { get; private set; } = "";
         public string ActiveReaction => reaction;
@@ -115,13 +117,24 @@ namespace RAiM.Companion
         public bool ReceiveEmotions(string json)
         {
             if (!EmotionSnapshot.TryParse(json, out var snapshot)) { LastRejection = "Invalid emotion payload (previous snapshot retained)"; return false; }
-            Target = snapshot; lastEmotion = Time.unscaledTime; Performance?.NotifyActivity(); LastRejection = ""; return true;
+            for (int i=0;i<12;i++) {
+                if (Mathf.Abs(snapshot.Effective[i]-lastBodyCue.Effective[i])<.12f) continue;
+                lastBodyCue=snapshot; Performance?.NotifyActivity(); break;
+            }
+            if (State.ReplyId > 0) {
+                int dominant = StandingPortraitPlayer.Dominant(snapshot.Effective);
+                replyEmotion = snapshot.Effective[dominant] >= .55f ? dominant : 0;
+            }
+            Target = snapshot; lastEmotion = Time.unscaledTime; LastRejection = ""; return true;
         }
         public bool ReceiveState(string json)
         {
+            var previous = State.Current;
+            long previousReply = State.ReplyId, previousGeneration = State.Generation;
             if (!State.TryApply(json)) { LastRejection = "Invalid or stale state snapshot"; return false; }
+            if (State.ReplyId != previousReply || State.Generation != previousGeneration) replyEmotion = -1;
             stateHeartbeat = true;
-            if (State.Current != BehaviorState.Idle) Performance?.NotifyActivity();
+            if (State.Current != previous) Performance?.NotifyActivity();
             lastState = Time.unscaledTime; LastRejection = ""; return true;
         }
         public void SetSleeping(bool sleeping)
@@ -142,11 +155,11 @@ namespace RAiM.Companion
             {
                 var j = JObject.Parse(json);
                 if (j["is_using_tool"]?.Type == JTokenType.Boolean)
-                { State.ExternalWork = j["is_using_tool"].Value<bool>(); lastState = Time.unscaledTime; Performance?.NotifyActivity(); }
+                { bool active = j["is_using_tool"].Value<bool>(); if(active!=State.ExternalWork) Performance?.NotifyActivity(); State.ExternalWork = active; lastState = Time.unscaledTime; }
             }
             catch (Newtonsoft.Json.JsonException) { LastRejection = "Invalid tool state"; }
         }
-        public void TransportReset() { State.ResetTransport(); stateHeartbeat = false; reaction = ""; lastState = Time.unscaledTime; }
+        public void TransportReset() { State.ResetTransport(); replyEmotion = -1; stateHeartbeat = false; reaction = ""; lastState = Time.unscaledTime; }
         public void Disconnected() { State.ClearActivity(); reaction = ""; }
         public void NotifyActivity() { Performance?.NotifyActivity(); }
         public bool React(string kind)
@@ -185,7 +198,7 @@ namespace RAiM.Companion
             if(Performance!=null)
             {
                 if (!string.IsNullOrEmpty(reaction)) { reactionClock += dt; if (reactionClock >= 1.8f) reaction = ""; }
-                gaze=Performance.Apply(Smoothed,state,profile,dt,reaction,expression.Normalized,!Sleeping && State.ExternalWork,Sleeping);
+                gaze=Performance.Apply(Smoothed,state,profile,dt,reaction,expression.Normalized,!Sleeping && State.ExternalWork,Sleeping,State,replyEmotion);
                 armClearance?.ApplyRuntime(dt);
             }
             else if (profile.fullBodyActing)
