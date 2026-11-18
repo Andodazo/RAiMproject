@@ -14,6 +14,8 @@ namespace RAiM.Companion
         struct Binding { public SkinnedMeshRenderer renderer; public int index; public string name; }
         readonly List<Binding> bindings = new List<Binding>();
         Eyelid leftLid, rightLid;
+        int smilePose;
+        float smileAge;
         Transform leftEye, rightEye;
         Camera viewCamera;
 #if UNITY_STANDALONE_WIN
@@ -140,9 +142,13 @@ namespace RAiM.Companion
                 foreach (var shape in profile.emotions[i].shapes)
                     values[shape.shape] += effective[i] * shape.amount * profile.faceGain;
             foreach (string name in Names) values[name] = Mathf.Clamp01(values[name]);
+            int requestedSmile = effective[11] >= .60f ? 11 : effective[1] >= .60f ? 1 : 0;
+            if(requestedSmile!=smilePose) { smilePose=requestedSmile; smileAge=0; }
+            smileAge+=deltaTime;
+            bool smileBeat = deltaTime<=0 || (smileAge>=.45f && smileAge<(smilePose==11?.82f:1.25f));
             foreach (string side in new[] { "Left", "Right" })
             {
-                float request = values["EyeBlink" + side];
+                float request = smileBeat ? values["EyeBlink" + side] : 0;
                 float expression = side == "Left" ? leftLid.Evaluate(request, deltaTime) : rightLid.Evaluate(request, deltaTime);
                 // Natural blinks retain their complete continuous curve.
                 float closed = 1 - (1 - Mathf.Clamp01(blink)) * (1 - expression);
