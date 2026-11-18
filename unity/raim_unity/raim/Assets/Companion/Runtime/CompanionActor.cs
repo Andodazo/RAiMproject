@@ -169,10 +169,9 @@ namespace RAiM.Companion
             // State is refreshed by a local heartbeat. Never erase valid live work merely because g=0.
             if (stateHeartbeat && profile.neutralTimeout > 0 && Time.unscaledTime - lastState > profile.neutralTimeout) State.ClearActivity();
             sleepWeight = Mathf.MoveTowards(sleepWeight, Sleeping ? 1 : 0, dt * 3);
-            // main's research portrait uses a focused, open-eyed expression;
-            // retain Target so the previous emotion returns after tool use.
+            // Research owns the hands and gaze; emotion can still color the face.
             bool focusingOnPhone = !Sleeping && (State.ExternalWork || State.Current == BehaviorState.Researching);
-            var expression = Sleeping || focusingOnPhone ? EmotionSnapshot.Neutral : Target;
+            var expression = Sleeping ? EmotionSnapshot.Neutral : Target;
             float alpha = 1 - Mathf.Exp(-profile.smoothing * dt);
             for (int i = 0; i < 12; i++) Smoothed[i] = Mathf.Lerp(Smoothed[i], expression.Effective[i], alpha);
             var state = Sleeping ? BehaviorState.Idle : State.Current;
