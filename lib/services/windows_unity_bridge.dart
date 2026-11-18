@@ -250,7 +250,7 @@ class WindowsUnityBridge implements UnityCommunicator {
     final dir = Directory('$baseDir${sep}RAiM');
 
     await dir.create(recursive: true);
-    await File('${dir.path}${sep}$_tokenFileName').writeAsString(_token, flush: true);
+    await File('${dir.path}$sep$_tokenFileName').writeAsString(_token, flush: true);
   }
 
   /// 合言葉ファイルを消す。終了後に残しても意味がないため。
@@ -259,7 +259,7 @@ class WindowsUnityBridge implements UnityCommunicator {
       final sep = Platform.pathSeparator;
       final baseDir =
           Platform.environment['LOCALAPPDATA'] ?? Directory.systemTemp.path;
-      final file = File('$baseDir${sep}RAiM${sep}$_tokenFileName');
+      final file = File('$baseDir${sep}RAiM$sep$_tokenFileName');
       if (await file.exists()) {
         await file.delete();
       }
