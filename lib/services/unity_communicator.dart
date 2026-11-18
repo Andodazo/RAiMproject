@@ -1,4 +1,36 @@
+import 'dart:convert';
 import 'package:raim_prototype/models/avatar_mode.dart';
+
+/// Keeps reply identity and snapshot ordering consistent across Unity transports.
+mixin PortraitMotionBridge {
+  final int _motionGeneration = DateTime.now().microsecondsSinceEpoch;
+  int _motionSequence = 0;
+  int _replyId = 0;
+  ({bool listening, bool thinking, bool researching, bool speaking, bool replyOpen})? _last;
+  String? _motionSnapshot;
+  String? get motionSnapshot => _motionSnapshot;
+
+  void deliverMotionState(String message);
+
+  void setMotionState({required bool listening, required bool thinking,
+      required bool researching, required bool speaking,
+      required bool replyOpen}) {
+    final flags = (listening: listening, thinking: thinking, researching: researching,
+        speaking: speaking, replyOpen: replyOpen);
+    if (flags == _last) return;
+    // isLoading marks an entire reply, including the silences between audio chunks.
+    if (replyOpen && _last?.replyOpen != true) _replyId++;
+    _last = flags;
+    final message = jsonEncode({'type': 'portrait_state',
+      'generation': _motionGeneration, 'sequence': ++_motionSequence,
+      'listening': listening, 'thinking': thinking, 'external_work': researching,
+      'playing': speaking, 'reply_id': _replyId, 'reply_open': replyOpen});
+    _motionSnapshot = message;
+    deliverMotionState(message);
+  }
+
+  void reportToolCompletion() => deliverMotionState('{"type":"portrait_discovery"}');
+}
 
 /// Unity との通信を抽象化するインターフェース
 /// 

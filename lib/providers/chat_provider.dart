@@ -479,6 +479,9 @@ class ChatProvider extends ChangeNotifier implements ReassembleHandler {
   }
   //返答完了時の後片付け
   void _handleChatEnd(LLMResponse response) {
+    if (_unityBridge case final PortraitMotionBridge bridge when _isUsingTool) {
+      bridge.reportToolCompletion();
+    }
     // 追加: 応答終了時に全ての待機状態を解除する
     _isThinking = false;
     _isUsingTool = false;

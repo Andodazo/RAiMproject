@@ -346,6 +346,26 @@ class _RaimAppState extends State<RaimApp> with WidgetsBindingObserver {
             ),
           ),
         ),
+        if (widget.unityBridge is PortraitMotionBridge)
+          Provider<VoidCallback>(
+            lazy: false,
+            create: (context) {
+              final bridge = widget.unityBridge as PortraitMotionBridge;
+              final chat = context.read<ChatProvider>();
+              final voice = context.read<VoiceController>();
+              final speaking = chat.isSpeaking;
+              void sync() => bridge.setMotionState(
+                listening: voice.isTranscribing, thinking: chat.isThinking,
+                researching: chat.isUsingTool, speaking: speaking.value,
+                replyOpen: chat.isLoading,
+              );
+              final signals = Listenable.merge([chat, voice, speaking]);
+              signals.addListener(sync);
+              sync();
+              return () => signals.removeListener(sync);
+            },
+            dispose: (_, unsubscribe) => unsubscribe(),
+          ),
         // 予定とメモ。一覧を持ち、端末の通知を予約し直す。
         // 予定の通知を押したとき・Windows で時刻が来たときは、ライムが予定の一言を話す。
         // lazy: false にしているのは、画面を開かなくても通知を入れ直すため

@@ -12,6 +12,8 @@ namespace RAiM.Companion
         public long Sequence { get; private set; } = -1;
         public bool Listening, Thinking, ExternalWork, Playing;
         public float Amplitude;
+        public long ReplyId { get; private set; }
+        public bool ReplyOpen { get; private set; }
         public string AudioSource = "none";
         public string AudioChunkId, RequestId;
         public BehaviorState Background => ExternalWork ? BehaviorState.Researching : Thinking ? BehaviorState.Thinking : Listening ? BehaviorState.Listening : BehaviorState.Idle;
@@ -29,6 +31,15 @@ namespace RAiM.Companion
                     if (j[key]?.Type != JTokenType.Boolean) return false;
                 float amplitude = 0;
                 if (j["amplitude"] != null && !EmotionSnapshot.Number(j["amplitude"], out amplitude)) return false;
+                long replyId = 0;
+                bool replyOpen = false;
+                if (j["reply_id"] != null || j["reply_open"] != null) {
+                    if (j["reply_id"]?.Type != JTokenType.Integer || j["reply_open"]?.Type != JTokenType.Boolean) return false;
+                    replyId = j["reply_id"].Value<long>();
+                    if (replyId < 0) return false;
+                    replyOpen = j["reply_open"].Value<bool>();
+                }
+                ReplyId = replyId; ReplyOpen = replyOpen;
                 Generation = generation; Sequence = sequence;
                 Listening = j["listening"].Value<bool>(); Thinking = j["thinking"].Value<bool>();
                 ExternalWork = j["external_work"].Value<bool>(); Playing = j["playing"].Value<bool>();
@@ -40,8 +51,8 @@ namespace RAiM.Companion
             }
             catch (Exception e) when (e is Newtonsoft.Json.JsonException || e is OverflowException || e is ArgumentException) { return false; }
         }
-        public void ClearActivity() { Listening = Thinking = ExternalWork = Playing = false; Amplitude = 0; }
+        public void ClearActivity() { Listening = Thinking = ExternalWork = Playing = false; ReplyOpen = false; Amplitude = 0; }
         // New transport session: allow a freshly launched Flutter's local counters.
-        public void ResetTransport() { Generation = Sequence = -1; ClearActivity(); }
+        public void ResetTransport() { Generation = Sequence = -1; ReplyId = 0; ClearActivity(); }
     }
 }
