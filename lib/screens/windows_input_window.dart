@@ -1545,7 +1545,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
           child: SingleChildScrollView(
             padding: EdgeInsets.symmetric(horizontal: 14),
             child: AccountSettingsPanel(
-              palette: const VoiceSettingsPalette(
+              palette: VoiceSettingsPalette(
                 text: _text,
                 muted: _mut,
                 accent: _lime,
