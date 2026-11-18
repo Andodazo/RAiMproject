@@ -30,6 +30,7 @@ import 'package:raim_prototype/widgets/planner_panel.dart';
 import 'package:raim_prototype/widgets/raim_calling_overlay.dart';
 import 'package:raim_prototype/widgets/reconnecting_spinner.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
+import 'package:raim_prototype/widgets/account_settings_panel.dart';
 import 'package:raim_prototype/config/raim_config.dart';
 
 /// Windows のデスクトップマスコット用の入力小窓。
@@ -48,7 +49,16 @@ class WindowsInputWindow extends StatefulWidget {
   State<WindowsInputWindow> createState() => _WindowsInputWindowState();
 }
 
-enum _PanelMode { none, menu, log, credits, settings, memory, planner }
+enum _PanelMode {
+  none,
+  menu,
+  log,
+  credits,
+  settings,
+  accountSettings,
+  memory,
+  planner,
+}
 
 class _WindowsInputWindowState extends State<WindowsInputWindow>
         // 修正: 展示専用のライフサイクル監視を廃止した。
@@ -417,6 +427,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
         case _PanelMode.menu:
         case _PanelMode.credits:
         case _PanelMode.settings:
+        case _PanelMode.accountSettings:
         case _PanelMode.memory:
         case _PanelMode.planner:
         case _PanelMode.none:
@@ -692,6 +703,7 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                       _PanelMode.log => _buildLog(),
                       _PanelMode.credits => _buildCredits(),
                       _PanelMode.settings => _buildSettings(),
+                      _PanelMode.accountSettings => _buildAccountSettings(),
                       _PanelMode.memory => _buildMemory(),
                       _PanelMode.planner => _buildPlanner(),
                       _PanelMode.none => const SizedBox.shrink(),
@@ -1078,6 +1090,11 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
             setState(() => _plannerTab = PlannerTab.schedule);
             _setMode(_PanelMode.planner);
           },
+        ),
+        _menuRow(
+          Icons.manage_accounts_outlined,
+          'アカウント設定',
+          () => _setMode(_PanelMode.accountSettings),
         ),
         _menuRow(
           Icons.psychology_outlined,
@@ -1503,6 +1520,40 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
               surface: _bg2,
             ),
             fontScale: 0.95,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccountSettings() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _sectionLabel('アカウント設定')),
+            IconButton(
+              icon: const Icon(Icons.close, size: 15),
+              color: _mut,
+              splashRadius: 15,
+              onPressed: () => _setMode(_PanelMode.menu),
+            ),
+          ],
+        ),
+        const Expanded(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(horizontal: 14),
+            child: AccountSettingsPanel(
+              palette: const VoiceSettingsPalette(
+                text: _text,
+                muted: _mut,
+                accent: _lime,
+                error: Color(0xFFFF8A80),
+                line: _line,
+                surface: _bg2,
+              ),
+            ),
           ),
         ),
       ],

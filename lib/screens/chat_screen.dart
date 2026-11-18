@@ -22,6 +22,7 @@ import 'package:raim_prototype/widgets/raim_calling_overlay.dart';
 import 'package:raim_prototype/widgets/sleeping_zzz.dart';
 import 'package:raim_prototype/widgets/thread_selector_menu.dart';
 import 'package:raim_prototype/widgets/voice_settings_panel.dart';
+import 'package:raim_prototype/widgets/account_settings_panel.dart';
 import 'package:raim_prototype/providers/station_alarm_controller.dart';
 import 'package:raim_prototype/screens/station_alarm_screen.dart';
 import 'package:raim_prototype/services/raim_log.dart';
@@ -155,6 +156,7 @@ class ChatScreen extends StatelessWidget {
       children: [
         ChatMenuButton(
           onSettings: () => showVoiceSettingsSheet(context),
+          onAccountSettings: () => showAccountSettingsSheet(context),
           onStationAlarm: StationAlarmController.isSupported
               ? () => StationAlarmScreen.open(context)
               : null,
@@ -324,6 +326,7 @@ class ChatScreen extends StatelessWidget {
           child: ChatMenuButton(
             isWide: true,
             onSettings: () => showVoiceSettingsSheet(context),
+            onAccountSettings: () => showAccountSettingsSheet(context),
             onStationAlarm: StationAlarmController.isSupported
                 ? () => StationAlarmScreen.open(context)
                 : null,

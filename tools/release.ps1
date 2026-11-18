@@ -18,20 +18,23 @@
 
 .EXAMPLE
   # 手元で作るだけ（dist\ にできる）
-  .\tools\release.ps1
+  .\tools\release.ps1 -PasswordChangeApiUrl 'https://<API Gateway>/account/password'
 
 .EXAMPLE
   # 作って公開する
-  .\tools\release.ps1 -Publish
+  .\tools\release.ps1 -PasswordChangeApiUrl 'https://<API Gateway>/account/password' -Publish
 
 .EXAMPLE
   # Android だけ作り直して公開する
-  .\tools\release.ps1 -SkipWindows -Publish
+  .\tools\release.ps1 -SkipWindows -PasswordChangeApiUrl 'https://<API Gateway>/account/password' -Publish
 #>
 param(
   [switch]$SkipWindows,
   [switch]$SkipAndroid,
   [switch]$Publish,
+  # ログイン後のパスワード変更API。省略時はアプリの既定値を使う
+  [Alias('InitialPasswordApiUrl')]
+  [string]$PasswordChangeApiUrl = '',
   # リリースノート。省略すると前回のリリースからのコミット・PR から自動で作る
   [string]$Notes = ''
 )
@@ -92,6 +95,24 @@ if ($Publish) {
 }
 
 $defines = @()
+
+$passwordApiUrl = $PasswordChangeApiUrl.Trim()
+if (-not $passwordApiUrl) {
+  $passwordApiUrl = [Environment]::GetEnvironmentVariable('RAIM_PASSWORD_CHANGE_API_URL')
+  if (-not $passwordApiUrl) {
+    # 旧環境変数は移行期間だけ読み取り、新しいdart-defineへ変換する。
+    $passwordApiUrl = [Environment]::GetEnvironmentVariable('RAIM_INITIAL_PASSWORD_API_URL')
+  }
+  if ($null -ne $passwordApiUrl) { $passwordApiUrl = $passwordApiUrl.Trim() }
+}
+if ($passwordApiUrl) {
+  $passwordApiUri = $null
+  if (-not [Uri]::TryCreate($passwordApiUrl, [UriKind]::Absolute, [ref]$passwordApiUri) -or
+      $passwordApiUri.Scheme -ne 'https' -or [string]::IsNullOrWhiteSpace($passwordApiUri.Host)) {
+    Fail 'パスワード変更APIのURLは HTTPS の絶対URLで指定してください（例: https://<API Gateway>/account/password）'
+  }
+  $defines += "--dart-define=RAIM_PASSWORD_CHANGE_API_URL=$passwordApiUrl"
+}
 
 $dist = Join-Path $repoRoot 'dist'
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }

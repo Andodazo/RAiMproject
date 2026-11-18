@@ -175,10 +175,8 @@ class AuthService {
 
   /// 今ログインしている人が、この端末でパスキーを登録したことがあるか。
   ///
-  // 修正: 以前は Cognito の ListWebAuthnCredentials で確かめていた。この API には
-  // aws.cognito.signin.user.admin の scope が要るが、App Client が許可していない
-  // ため #76 で scope を戻し、毎回失敗するようになった。端末の記録だけを見る。
-  // 別の端末で登録した場合や、Cognito 側で消した場合は分からない。
+  // Cognito側の登録一覧を取得する代わりに、端末の登録記録だけを見る。
+  // 別の端末で登録した場合や、Cognito側で削除した場合は分からない。
   Future<bool> hasRegisteredPasskey() async {
     final sub = await _currentUserSub();
     if (sub == null) return false;
@@ -650,6 +648,107 @@ class AuthService {
   Future<String?> getValidIdToken() async {
     final tokens = await loadValidTokens();
     return tokens?.idToken;
+  }
+
+  /// 認証済みバックエンド経由でCognitoのChangePasswordを実行します。
+  ///
+  /// このAPIはIAM権限ではなく、`aws.cognito.signin.user.admin` を含む
+  /// Cognitoアクセストークンで認証します。
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final accessToken = await getValidAccessToken();
+    if (accessToken == null || accessToken.isEmpty) {
+      throw Exception('ログインが必要です。');
+    }
+
+    final endpoint = _passwordChangeEndpoint();
+    final response = await http
+        .post(
+          endpoint,
+          headers: {
+            'Authorization': 'Bearer $accessToken',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'previousPassword': currentPassword,
+            'proposedPassword': newPassword,
+          }),
+        )
+        .timeout(_httpTimeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        _passwordOperationMessage(response.statusCode, response.body),
+      );
+    }
+  }
+
+  Uri _passwordChangeEndpoint() {
+    final uri = Uri.tryParse(RaimConfig.passwordChangeApiUrl);
+    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+      throw Exception(
+        'パスワード変更APIが未設定です。'
+        'ビルド時に --dart-define=RAIM_PASSWORD_CHANGE_API_URL='
+        'https://<API Gateway>/account/password を指定してください。',
+      );
+    }
+    return uri;
+  }
+
+  String _passwordOperationMessage(int statusCode, [String? responseBody]) {
+    final serverMessage = _readPasswordApiMessage(responseBody);
+    if (serverMessage == 'Current password is invalid.') {
+      return '現在のパスワードが正しくありません。';
+    }
+    if (serverMessage == 'Password change permission is required.') {
+      return 'パスワード変更の権限がありません。ログアウトして再ログインしてください。';
+    }
+    if (serverMessage == 'A valid current password is required.') {
+      return '現在のパスワードを入力してください。';
+    }
+    if (serverMessage == 'A valid new password is required.') {
+      return '新しいパスワードを入力してください。';
+    }
+    if (serverMessage == 'Password does not meet the user pool policy.') {
+      return '新しいパスワードがポリシーを満たしていません。';
+    }
+    if (serverMessage == 'Recent authentication is required.') {
+      return '再認証が必要です。Cognitoのログイン画面で認証を完了してから、もう一度お試しください。';
+    }
+    if (serverMessage == 'Unauthorized.') {
+      return '認証に失敗しました。User Pool・App Clientの設定を確認して、再ログインしてください。';
+    }
+    if (statusCode == 401) {
+      return '認証に失敗しました。再ログインしてやり直してください。';
+    }
+    if (statusCode == 403) {
+      return 'パスワードを変更できません。ログイン状態とアカウント統合状態を確認してください。';
+    }
+    if (statusCode == 409) {
+      return 'パスワードはすでに設定済みです。「パスワードを変更」を利用してください。';
+    }
+    if (statusCode == 429) {
+      return '試行回数が多すぎます。時間をおいてからやり直してください。';
+    }
+    if (statusCode == 400) {
+      return 'パスワードがポリシーを満たしていないか、現在のパスワードが正しくありません。';
+    }
+    return 'パスワード処理に失敗しました。時間をおいてからやり直してください。';
+  }
+
+  String? _readPasswordApiMessage(String? responseBody) {
+    if (responseBody == null || responseBody.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(responseBody);
+      if (decoded is Map<String, dynamic> && decoded['message'] is String) {
+        return decoded['message'] as String;
+      }
+    } catch (_) {
+      // エラー応答の形式がJSONでなくても、ステータスコード側で処理する。
+    }
+    return null;
   }
 
   Future<void> logout() {
