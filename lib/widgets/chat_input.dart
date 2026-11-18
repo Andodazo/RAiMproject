@@ -467,6 +467,7 @@ class ChatMenuButton extends StatefulWidget {
     super.key,
     required this.onSettings,
     required this.onLogout,
+    this.onAccountSettings,
     this.onStationAlarm,
     this.onMemory,
     this.onPlanner,
@@ -475,6 +476,7 @@ class ChatMenuButton extends StatefulWidget {
 
   final VoidCallback onSettings;
   final VoidCallback onLogout;
+  final VoidCallback? onAccountSettings;
 
   /// 駅アラームを開く。null ならメニューに出さない（対応していない端末）
   final VoidCallback? onStationAlarm;
@@ -577,6 +579,9 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
           case 'settings':
             widget.onSettings();
             break;
+          case 'account_settings':
+            widget.onAccountSettings?.call();
+            break;
           case 'passkey':
             await _registerPasskey();
             break;
@@ -645,6 +650,17 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
                 Icon(Icons.event_note_outlined, color: Colors.white70),
                 SizedBox(width: 12),
                 Text('予定とメモ', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+          ),
+        if (widget.onAccountSettings != null)
+          const PopupMenuItem(
+            value: 'account_settings',
+            child: Row(
+              children: [
+                Icon(Icons.manage_accounts_outlined, color: Colors.white70),
+                SizedBox(width: 12),
+                Text('アカウント設定', style: TextStyle(color: Colors.white)),
               ],
             ),
           ),

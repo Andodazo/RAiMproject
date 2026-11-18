@@ -67,12 +67,33 @@ class RaimConfig {
   static const String windowsRedirectUri = webRedirectUri;
 
   /// Cognito へ要求する scope。
-  // 修正: #74 で aws.cognito.signin.user.admin を足していたが、App Client で
-  // 許可されていないため、ログイン画面が「不明なリクエスト」になりログインできな
-  // かった。パスキー登録（/passkeys/add）にはこの scope は要らないので元に戻す。
-  // 登録済みかどうかの確認（ListWebAuthnCredentials）は失敗し、この端末で
-  // 登録した記録を使う。
-  static const String scope = 'openid email phone';
+  ///
+  /// `ChangePassword` を Managed Login のアクセストークンで呼ぶため、
+  /// User Pool App Client 側でも `aws.cognito.signin.user.admin` を許可する。
+  static const String scope =
+      'openid email phone aws.cognito.signin.user.admin';
+
+  /// Cognito User Pool に設定しているパスワードポリシー。
+  ///
+  /// User Pool 側の `PasswordPolicy` と一致させる。ポリシーを変更した場合は、
+  /// アプリに表示する条件も更新すること。
+  static const int passwordMinimumLength = 8;
+  static const bool passwordRequireUppercase = true;
+  static const bool passwordRequireLowercase = true;
+  static const bool passwordRequireNumbers = true;
+  static const bool passwordRequireSymbols = true;
+
+  /// ログイン後のパスワード変更API。
+  ///
+  /// AWS API Gateway の HTTPS エンドポイントをビルド時に注入する。
+  /// 既定のAPIはAWSのdev環境。環境を切り替える場合は
+  /// `--dart-define=RAIM_PASSWORD_CHANGE_API_URL=https://.../account/password`
+  /// で上書きできる。
+  static const String passwordChangeApiUrl = String.fromEnvironment(
+    'RAIM_PASSWORD_CHANGE_API_URL',
+    defaultValue:
+        'https://nqa57ts4di.execute-api.ap-northeast-1.amazonaws.com/dev/account/password',
+  );
 
   // ------------------------------------------------------------
   // RAiM サーバーの接続先

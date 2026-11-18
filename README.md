@@ -56,6 +56,17 @@ Unity 側を変更したときは、Unity Editor で
 flutter run --dart-define=RAIM_SERVER_URL=ws://127.0.0.1:8080
 ```
 
+ログイン後のパスワード変更APIは、dev環境のURLを既定値として設定済みです。
+このAPIは現在のパスワードを検証してCognitoの`ChangePassword`を実行します。Googleユーザーと標準ユーザーの統合は、別のAccount Link APIで行います。
+別環境を使う場合だけ、ビルド時に上書きします。
+
+```powershell
+$passwordApiUrl = 'https://<API Gatewayのホスト>/account/password'
+flutter run -d windows "--dart-define=RAIM_PASSWORD_CHANGE_API_URL=$passwordApiUrl"
+```
+
+指定しない場合は、アプリに設定されたdev環境のURLを使用します。
+
 ## 確認
 
 ```bash
@@ -86,8 +97,10 @@ iOS は Apple の有料登録が無いと配れないため、ページには載
 3. Windows の PowerShell でリポジトリ直下から実行する
 
 ```powershell
-.\tools\release.ps1            # dist\ に作るだけ（中身を確かめたいとき）
-.\tools\release.ps1 -Publish   # 作って GitHub Releases に公開する
+.\tools\release.ps1                         # 既定のdev環境を使用
+.\tools\release.ps1 -Publish                # 既定のdev環境で公開
+# 別環境の場合:
+# .\tools\release.ps1 -PasswordChangeApiUrl 'https://<API Gateway>/account/password'
 ```
 
 公開すると配布ページは自動で新しい版になります。使う側は同じボタンから

@@ -143,6 +143,19 @@ class AuthProvider extends ChangeNotifier {
     return _authService.getValidIdToken();
   }
 
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) {
+    if (!isAuthenticated) {
+      return Future<void>.error(Exception('ログインが必要です。'));
+    }
+    return _authService.changePassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+  }
+
   Future<void> logout() async {
     await _authService.logout();
     _tokens = null;
