@@ -172,7 +172,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
       return Padding(
         padding: const EdgeInsets.only(right: 6),
         child: ChoiceChip(
-          label: Text(label, style: TextStyle(fontSize: 12 * _fs, color: selected ? _p.surface : _p.text)),
+          label: Text(label, style: TextStyle(fontSize: 12 * _fs, color: selected ? _p.surface : Colors.black)),
           selected: selected,
           showCheckmark: false,
           selectedColor: _p.accent,
