@@ -775,6 +775,27 @@ class _ChatMenuButtonState extends State<ChatMenuButton> {
                   '・VOICEVOX: 春日部つむぎ',
                   style: TextStyle(color: Colors.white70),
                 ),
+                // ライムの声（自作の声）は Style-Bert-VITS2 が AGPL-3.0 なので、ソースの場所も出す
+                SizedBox(height: 4),
+                Text(
+                  '・ライムの声：Style-Bert-VITS2（litagin02、AGPL-3.0）',
+                  style: TextStyle(color: Colors.white70),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  '・BERT：ku-nlp/deberta-v2-large-japanese-char-wwm（CC BY-SA 4.0）',
+                  style: TextStyle(color: Colors.white70),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  '・読み：Open JTalk（名古屋工業大学）、NAIST Japanese Dictionary（奈良先端科学技術大学院大学）',
+                  style: TextStyle(color: Colors.white70),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  '・声のソース：https://github.com/Andodazo/raim_aws/tree/main/raim_tts_sbv2_lambda',
+                  style: TextStyle(color: Colors.white70),
+                ),
 
                 Divider(height: 24, color: Colors.white24), //区切り線
                 Text(

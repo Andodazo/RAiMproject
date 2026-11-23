@@ -1304,6 +1304,27 @@ class _WindowsInputWindowState extends State<WindowsInputWindow>
                   '・VOICEVOX: 春日部つむぎ',
                   style: TextStyle(color: _mut, fontSize: 12.5),
                 ),
+                // ライムの声（自作の声）は Style-Bert-VITS2 が AGPL-3.0 なので、ソースの場所も出す
+                SizedBox(height: 3),
+                Text(
+                  '・ライムの声：Style-Bert-VITS2（litagin02、AGPL-3.0）',
+                  style: TextStyle(color: _mut, fontSize: 12.5),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  '・BERT：ku-nlp/deberta-v2-large-japanese-char-wwm（CC BY-SA 4.0）',
+                  style: TextStyle(color: _mut, fontSize: 12.5),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  '・読み：Open JTalk（名古屋工業大学）、NAIST Japanese Dictionary（奈良先端科学技術大学院大学）',
+                  style: TextStyle(color: _mut, fontSize: 12.5),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  '・声のソース：https://github.com/Andodazo/raim_aws/tree/main/raim_tts_sbv2_lambda',
+                  style: TextStyle(color: _mut, fontSize: 12.5),
+                ),
                 Divider(height: 22, color: _line),
                 Text(
                   '音声認識',
