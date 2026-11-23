@@ -172,7 +172,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
       return Padding(
         padding: const EdgeInsets.only(right: 6),
         child: ChoiceChip(
-          label: Text(label, style: TextStyle(fontSize: 12 * _fs, color: selected ? _p.surface : _p.text)),
+          label: Text(label, style: TextStyle(fontSize: 12 * _fs, color: selected ? _p.surface : Colors.black)),
           selected: selected,
           showCheckmark: false,
           selectedColor: _p.accent,
@@ -740,8 +740,8 @@ class _PlannerEditorState extends State<_PlannerEditor> {
   }
 
   Widget _chip(String label, String date) => ActionChip(
-        label: Text(label, style: TextStyle(color: _date == date ? _p.accent : _p.muted, fontSize: 11 * _fs)),
-        backgroundColor: Colors.transparent,
+        label: Text(label, style: TextStyle(color: _date == date ? _p.surface : Colors.black, fontSize: 11 * _fs)),
+        backgroundColor: _date == date ? _p.accent : Colors.transparent,
         side: BorderSide(color: _date == date ? _p.accent : _p.line),
         visualDensity: VisualDensity.compact,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
