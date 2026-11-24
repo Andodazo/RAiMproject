@@ -40,10 +40,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _retryLogin() async {
     final auth = context.read<AuthProvider>();
-    if (auth.status == AuthStatus.authenticating ||
-        auth.status == AuthStatus.checking) {
-      return;
-    }
+    // 認証中でも、外部ブラウザを閉じて新しい試行を開始できるようにする。
+    await auth.cancelLogin();
     _loginStarted = false;
     await _startLogin(force: true);
   }

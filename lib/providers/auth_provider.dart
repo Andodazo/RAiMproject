@@ -78,6 +78,17 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// 外部ブラウザで進行中の認証を取り消し、再試行できる状態に戻します。
+  Future<void> cancelLogin() async {
+    await _authService.cancelLogin();
+    if (_status == AuthStatus.authenticating ||
+        _status == AuthStatus.checking) {
+      _tokens = null;
+      _errorMessage = null;
+      _setStatus(AuthStatus.unauthenticated);
+    }
+  }
+
   Future<Uri> createEmbeddedLoginUri() async {
     try {
       _errorMessage = null;
