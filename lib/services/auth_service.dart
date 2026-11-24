@@ -35,6 +35,7 @@ class AuthService {
 
   /// 進行中のログイン処理。多重実行を防ぐために共有する。
   Future<AuthTokens?>? _loginInFlight;
+  Completer<void>? _loginCancellation;
 
   /// 進行中のパスキー登録。登録ページから戻るまで同じ Future を共有する。
   Future<PasskeyRegistrationResult>? _passkeyInFlight;
@@ -420,30 +421,68 @@ class AuthService {
     });
   }
 
+  /// 進行中の外部ブラウザ認証を取り消します。
+  ///
+  /// Windows の loopback callback 待ちも解除して、画面から再読み込みした
+  /// ときに同じ認証処理を待ち続けないようにします。
+  Future<void> cancelLogin() async {
+    final cancellation = _loginCancellation;
+    if (cancellation != null && !cancellation.isCompleted) {
+      cancellation.complete();
+    }
+
+    await _localCallbackServer.close();
+    await _browserLoginLauncher.closeLaunchedBrowser();
+
+    final inFlight = _loginInFlight;
+    if (inFlight != null) {
+      try {
+        await inFlight;
+      } catch (_) {
+        // 再読み込み時の取り消しでは、元のログイン結果を画面に表示しない。
+      }
+    }
+
+    await _storage.clearPkceState();
+  }
+
   Future<AuthTokens?> _startLoginInternal() async {
-    final loginUri = await createLoginUri();
-    Future<Uri>? loopbackCallback;
-
-    if (_usesLoopbackRedirect) {
-      loopbackCallback = _localCallbackServer.waitForCallback();
-    }
-
-    final launched = await _browserLoginLauncher.launch(loginUri);
-
-    if (!launched) {
-      await _localCallbackServer.close();
-      throw Exception('Cognitoログイン画面を開けませんでした。');
-    }
-
-    if (loopbackCallback == null) {
-      return null;
-    }
-
+    final cancellation = Completer<void>();
+    _loginCancellation = cancellation;
     try {
-      final callbackUri = await loopbackCallback;
+      final loginUri = await createLoginUri();
+      if (cancellation.isCompleted) return null;
+
+      Future<Uri>? loopbackCallback;
+      if (_usesLoopbackRedirect) {
+        loopbackCallback = _localCallbackServer.waitForCallback();
+      }
+
+      final launched = await _browserLoginLauncher.launch(loginUri);
+
+      if (cancellation.isCompleted) return null;
+      if (!launched) {
+        await _localCallbackServer.close();
+        throw Exception('Cognitoログイン画面を開けませんでした。');
+      }
+
+      if (loopbackCallback == null) {
+        return null;
+      }
+
+      final callbackUri = await Future.any<Uri>([
+        loopbackCallback,
+        cancellation.future.then<Uri>((_) => throw _LoginCancelled()),
+      ]);
+      if (cancellation.isCompleted) return null;
       return await handleCallback(callbackUri);
+    } on _LoginCancelled {
+      return null;
     } finally {
       await _browserLoginLauncher.closeLaunchedBrowser();
+      if (identical(_loginCancellation, cancellation)) {
+        _loginCancellation = null;
+      }
     }
   }
 
@@ -818,6 +857,17 @@ class AuthService {
 
     if (!_isExpectedCallbackUri(uri)) return;
 
+    // 取り消し前のブラウザから遅れて届いた callback は無視する。
+    // 新しいログイン試行の state と一致しないため、古い試行で画面を
+    // エラー状態へ戻したり、新しい試行を壊したりしない。
+    final callbackState = uri.queryParameters['state'];
+    if (callbackState != null) {
+      final currentState = await _storage.readState();
+      if (currentState == null || callbackState != currentState) return;
+    } else if (uri.queryParameters.containsKey('code')) {
+      return;
+    }
+
     final callbackUri = uri.toString();
     if (_callbackInFlight || _lastHandledCallbackUri == callbackUri) {
       // URI には認可コードが含まれるためログに出さない
@@ -923,3 +973,5 @@ class AuthService {
     return base64UrlEncode(bytes).replaceAll('=', '');
   }
 }
+
+class _LoginCancelled implements Exception {}
